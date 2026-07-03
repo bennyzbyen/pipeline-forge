@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="PipelineForge logo">
+  <defs>
+    <linearGradient id="baseSurface" x1="218" y1="172" x2="806" y2="852" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.54" stop-color="#fbfbfa"/>
+      <stop offset="1" stop-color="#f2f3f2"/>
+    </linearGradient>
+    <linearGradient id="leftMetal" x1="245" y1="170" x2="530" y2="715" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#242a2f"/>
+      <stop offset="0.48" stop-color="#8d908c"/>
+      <stop offset="1" stop-color="#2b3136"/>
+    </linearGradient>
+    <linearGradient id="rightMetal" x1="779" y1="170" x2="494" y2="715" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#242a2f"/>
+      <stop offset="0.48" stop-color="#90938f"/>
+      <stop offset="1" stop-color="#2b3136"/>
+    </linearGradient>
+    <linearGradient id="lowerMetal" x1="208" y1="840" x2="816" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#343a3f"/>
+      <stop offset="0.5" stop-color="#c5c6c2"/>
+      <stop offset="1" stop-color="#343a3f"/>
+    </linearGradient>
+    <linearGradient id="heat" x1="430" y1="432" x2="594" y2="558" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffbc45"/>
+      <stop offset="0.5" stop-color="#ff8a00"/>
+      <stop offset="1" stop-color="#c66a00"/>
+    </linearGradient>
+    <clipPath id="iconClip">
+      <rect x="154" y="154" width="716" height="716" rx="148" ry="148"/>
+    </clipPath>
+    <filter id="softShadow" x="70" y="90" width="884" height="890" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#1d252b" flood-opacity="0.13"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1d252b" flood-opacity="0.10"/>
+    </filter>
+    <filter id="channelShadow" x="70" y="80" width="884" height="900" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#1a2024" flood-opacity="0.30"/>
+    </filter>
+    <filter id="heatGlow" x="350" y="360" width="324" height="260" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="none"/>
+  <g filter="url(#softShadow)">
+    <rect x="154" y="154" width="716" height="716" rx="148" ry="148" fill="url(#baseSurface)"/>
+    <rect x="155.5" y="155.5" width="713" height="713" rx="146.5" ry="146.5" fill="none" stroke="#dfe1e3" stroke-width="3"/>
+  </g>
+
+  <g clip-path="url(#iconClip)">
+    <g filter="url(#channelShadow)" fill="none" stroke-linecap="butt" stroke-linejoin="round">
+      <path d="M449 154 L449 382 C449 452 408 493 342 536 L154 664" stroke="url(#leftMetal)" stroke-width="104"/>
+      <path d="M575 154 L575 382 C575 452 616 493 682 536 L870 664" stroke="url(#rightMetal)" stroke-width="104"/>
+      <path d="M154 806 L394 646 C464 600 560 600 630 646 L870 806" stroke="url(#lowerMetal)" stroke-width="104"/>
+    </g>
+
+    <g opacity="0.5" fill="none" stroke-linecap="round">
+      <path d="M399 171 L399 382 C399 428 371 459 318 494" stroke="#ffffff" stroke-width="3"/>
+      <path d="M625 171 L625 382 C625 428 653 459 706 494" stroke="#ffffff" stroke-width="3"/>
+      <path d="M250 808 L435 688 C483 657 541 657 589 688 L774 808" stroke="#ffffff" stroke-width="3"/>
+    </g>
+
+    <g fill="none" stroke="#fbfbfa" stroke-linecap="butt" stroke-linejoin="round">
+      <path d="M512 154 L512 454" stroke-width="30"/>
+      <path d="M154 742 L413 568 C471 529 553 529 611 568 L870 742" stroke-width="34"/>
+    </g>
+
+    <g opacity="0.86">
+      <path d="M492 428 C492 475 465 510 423 536" stroke="url(#heat)" stroke-width="20" stroke-linecap="round" fill="none"/>
+      <path d="M532 428 C532 475 559 510 601 536" stroke="url(#heat)" stroke-width="20" stroke-linecap="round" fill="none"/>
+      <g filter="url(#heatGlow)" opacity="0.35">
+        <path d="M492 428 C492 475 465 510 423 536" stroke="#ff9b12" stroke-width="18" stroke-linecap="round" fill="none"/>
+        <path d="M532 428 C532 475 559 510 601 536" stroke="#ff9b12" stroke-width="18" stroke-linecap="round" fill="none"/>
+      </g>
+    </g>
+  </g>
+</svg>

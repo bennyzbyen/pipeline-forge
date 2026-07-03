@@ -1,0 +1,16 @@
+{
+  "database": "demo_db",
+  "schema": "public",
+  "table_name": "demo_order",
+  "table_comment": "demo order table",
+  "columns": [
+    {"name": "id", "type": "bigint", "nullable": false, "primary_key": true, "comment": "primary id"},
+    {"name": "period", "type": "varchar(50)", "nullable": false, "index": true, "comment": "period"},
+    {"name": "amount", "type": "decimal(18,2)", "nullable": true, "comment": "amount"},
+    {"name": "updated_at", "type": "datetime", "nullable": false, "default": "CURRENT_TIMESTAMP", "comment": "last update time"}
+  ],
+  "primary_key": ["id"],
+  "indexes": [{"name": "idx_demo_order_period", "columns": ["period"]}],
+  "partition_by": ["period"],
+  "order_by": ["period", "id"]
+}

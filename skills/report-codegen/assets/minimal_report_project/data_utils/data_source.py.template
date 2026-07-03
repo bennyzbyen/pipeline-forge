@@ -1,0 +1,19 @@
+from common_utils.all_modules import Dict, Tuple, logger, pd
+
+
+class DataSource:
+    def __init__(self, params: dict):
+        self.params = params
+
+    def _resolve_time_range(self) -> dict:
+        return {
+            "current_date": self.params.get("current_date", ""),
+            "period": self.params.get("period", ""),
+        }
+
+    def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
+        logger.info("Start DataSource")
+        time_range = self._resolve_time_range()
+        raise NotImplementedError(
+            "Report scaffold only: implement confirmed source reads from dev_doc.md before deployment."
+        )

@@ -1,0 +1,23 @@
+clickhouse_to_postgres:
+  Int8: smallint
+  UInt8: smallint
+  Int16: smallint
+  UInt16: integer
+  Int32: integer
+  UInt32: bigint
+  Int64: bigint
+  UInt64: numeric(20, 0)
+  Float32: real
+  Float64: double precision
+  Decimal: numeric(p, s)
+  String: text
+  LowCardinality(String): text
+  Date: date
+  DateTime: timestamp
+  DateTime64: timestamp
+  UUID: uuid
+
+notes:
+  - ClickHouse UInt64 may exceed PostgreSQL bigint; use numeric(20, 0).
+  - ClickHouse ORDER BY is not a PostgreSQL primary key; use indexes only when requested.
+  - Nullable wrappers should be unwrapped into PostgreSQL NULL columns.

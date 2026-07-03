@@ -1,0 +1,8 @@
+from typing import List
+
+
+def build_prefixed_rowkey(values: List[str]) -> str:
+    raw = "".join("" if value is None else str(value).strip() for value in values)
+    if not raw:
+        raise ValueError("rowkey is empty")
+    return raw[-1] + raw

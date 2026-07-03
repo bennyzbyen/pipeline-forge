@@ -1,0 +1,27 @@
+mssql_to_clickhouse:
+  bit: Int8
+  tinyint: UInt8
+  smallint: Int16
+  int: Int32
+  bigint: Int64
+  real: Float32
+  float: Float64
+  decimal: Decimal(p, s)
+  numeric: Decimal(p, s)
+  money: Decimal(19, 4)
+  char: String
+  varchar: String
+  nchar: String
+  nvarchar: String
+  text: String
+  ntext: String
+  date: Date
+  datetime: DateTime
+  datetime2: DateTime64
+  smalldatetime: DateTime
+  uniqueidentifier: UUID
+
+notes:
+  - MSSQL IDENTITY has no direct ClickHouse equivalent.
+  - MSSQL clustered indexes do not map directly to ClickHouse ORDER BY.
+  - Extended-property comments should become inline ClickHouse COMMENT clauses.

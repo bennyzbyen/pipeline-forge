@@ -1,0 +1,5 @@
+"""HBase client placeholder.
+
+Use the project-local HBase wrapper or platform-provided gateway client.
+Generated code must not connect locally during scaffolding.
+"""

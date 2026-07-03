@@ -1,0 +1,5 @@
+hbase_export_cols = {}
+hbase_export_range = {}
+mssql_export_cols = {}
+mssql_export_range = {}
+target_table_columns = {}

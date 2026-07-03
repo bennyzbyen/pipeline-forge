@@ -1,0 +1,79 @@
+import datetime
+import glob
+import os
+
+import pandas as pd
+from loguru import logger
+
+from plugin_common import ClientWrapper
+from cot_config.plugin_config import hbase_truncate_list
+
+
+default_insert_sep = "\x1D"
+default_rowkey_key = "rowkey"
+
+
+class HBaseOperation:
+    def __init__(self):
+        self.clients = ClientWrapper(client_type="gateway")
+        self.fs_client = self.clients.fs_client
+        self.hbase_client = self.clients.hbase_client
+
+    def truncate_hbase(self, hbase_table_name):
+        logger.info("truncate HBase table: {}", hbase_table_name)
+        self.hbase_client.truncate(hbase_table_name)
+
+    def insert_hbase(self, file_list, hbase_table, hbase_columns):
+        for file_path in file_list:
+            self.hbase_client.insert_file(
+                file_path=file_path,
+                sep=default_insert_sep,
+                columns=hbase_columns,
+                hbase_table_name=hbase_table,
+            )
+
+    def process_rowkeys(self, df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowkey_key):
+        temp_rowkey = ""
+        for column in rowkey_rule_columns:
+            temp_rowkey += df_data[column].astype(str)
+        df_data[hbase_rowkey_key] = temp_rowkey.str[-1] + temp_rowkey
+        columns = [hbase_rowkey_key] + [column for column in df_data.columns if column != hbase_rowkey_key]
+        return df_data[columns]
+
+    def transfer_csv_file(self, matching_files, rowkey_rule_columns):
+        df_size = 0
+        hbase_columns = None
+        logger.info("start processing HBase rowkeys")
+        for file_path in matching_files:
+            df = pd.read_csv(file_path, dtype=str)
+            df["cl_last_update_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if hbase_columns is None:
+                hbase_columns = [default_rowkey_key] + df.columns.tolist()
+            df_size += len(df)
+            df = self.process_rowkeys(df, rowkey_rule_columns, default_rowkey_key)
+            df.to_csv(f"{file_path}.gz", index=False, header=False, sep=default_insert_sep, compression="gzip")
+            os.remove(file_path)
+        logger.info("finished processing HBase rowkeys")
+        return df_size, hbase_columns
+
+    def hbase_op(self, hbase_table, file_dir, rowkey_rule_columns):
+        start_time = datetime.datetime.now()
+        matching_files = glob.glob(f"{file_dir}/*.csv")
+        if not matching_files:
+            logger.warning("no source files, skip HBase write")
+            hbase_size = 0
+        else:
+            hbase_size, hbase_columns = self.transfer_csv_file(matching_files, rowkey_rule_columns)
+            insert_files = glob.glob(f"{file_dir}/*.csv.gz")
+            if hbase_table in hbase_truncate_list:
+                self.truncate_hbase(hbase_table)
+            self.insert_hbase(insert_files, hbase_table, hbase_columns)
+
+        end_time = datetime.datetime.now()
+        return {
+            "operation": "insert_hbase",
+            "output": hbase_table,
+            "duration": str(end_time - start_time),
+            "hbase_size": hbase_size,
+            "remark": f"insert mysql data to {hbase_table}",
+        }

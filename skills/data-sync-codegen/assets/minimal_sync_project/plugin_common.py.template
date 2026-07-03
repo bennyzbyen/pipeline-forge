@@ -1,0 +1,171 @@
+import datetime
+import os
+import traceback
+from pathlib import Path
+from typing import Optional, Tuple
+
+from loguru import logger
+
+from cot_config.plugin_config import App_key, App_secret, env, fs_root_dir
+
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover - deployment dependency
+    pd = None
+
+try:
+    from gateway.client import GateWayClient
+except ImportError:  # pragma: no cover - deployment dependency
+    GateWayClient = None
+
+try:
+    from clickhouse_connect.driver.tools import insert_file
+except ImportError:  # pragma: no cover - deployment dependency
+    insert_file = None
+
+try:
+    import clickhouse_connect
+except ImportError:  # pragma: no cover - deployment dependency
+    clickhouse_connect = None
+
+try:
+    import mlpapp
+except ImportError:  # pragma: no cover - deployment dependency
+    mlpapp = None
+
+
+def return_pipeline_result(metrics: list) -> dict:
+    return {
+        "__methods__": [
+            {
+                "method": "put",
+                "scope": "inst",
+                "level": "task",
+                "body": {"metrics": metrics},
+            }
+        ]
+    }
+
+
+def now_text() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_exception() -> str:
+    error_detail = traceback.format_exc()
+    logger.error(error_detail)
+    return error_detail
+
+
+class ClientWrapper:
+    def __init__(self, client_type: str, mysql_url: Optional[str] = None):
+        self.client_type = client_type
+        self.mysql_url = mysql_url
+        self.gateway_client = None
+        self.fs_client = None
+        self.hbase_client = None
+        self.clickhouse_client = None
+        self.mysql_engine = None
+
+        if client_type == "gateway":
+            self.initialize_gateway_client()
+        elif client_type == "fs":
+            self.initialize_fs_client()
+        elif client_type == "hbase":
+            self.initialize_hbase_client()
+        elif client_type == "clickhouse":
+            self.initialize_clickhouse_client()
+        elif client_type == "mysql":
+            self.initialize_mysql_engine(mysql_url)
+        else:
+            raise ValueError(f"unsupported client_type: {client_type}")
+
+    def initialize_gateway_client(self):
+        if GateWayClient is None:
+            raise RuntimeError("GateWayClient is unavailable in this runtime")
+        self.gateway_client = GateWayClient(App_key, App_secret)
+
+    def initialize_fs_client(self):
+        self.initialize_gateway_client()
+        self.fs_client = self.gateway_client.getFsClient()
+
+    def initialize_hbase_client(self):
+        self.initialize_gateway_client()
+        self.hbase_client = self.gateway_client.getHbaseClient(fs_root_dir=fs_root_dir)
+
+    def initialize_mysql_engine(self, mysql_url):
+        if not mysql_url:
+            raise ValueError("mysql_url is required")
+        from sqlalchemy import create_engine
+
+        self.mysql_engine = create_engine(mysql_url)
+
+    def initialize_clickhouse_client(self):
+        if mlpapp is not None and App_key and not App_key.startswith("<"):
+            res = mlpapp.get_clickhouse_client(app_key=App_key, app_secret=App_secret, env=env)
+            if res.get("successful") is False:
+                raise RuntimeError(res.get("err_message"))
+            self.clickhouse_client = res.get("object")
+            return
+        if clickhouse_connect is None:
+            raise RuntimeError("clickhouse_connect is unavailable and mlpapp client is not configured")
+        raise RuntimeError("fill clickhouse_connect placeholders or enable mlpapp in deployment")
+
+
+class TimeStamp_Update:
+    def __init__(self):
+        self.fs_client = ClientWrapper(client_type="fs").fs_client
+
+    def fs_last_timestamp_dir_and_file_name(self, mysql_table: str) -> Tuple[str, str, str]:
+        last_timestamp_dir = f"{fs_root_dir}/last_sync_time"
+        timestamp_file = f"{mysql_table}_last_sync_time.tsv"
+        full_update_time_path = f"{last_timestamp_dir}/{timestamp_file}"
+        return last_timestamp_dir, timestamp_file, full_update_time_path
+
+    def fetch_last_timestamp(self, mysql_table: str) -> str:
+        if pd is None:
+            raise RuntimeError("pandas is required to read timestamp marker")
+        last_timestamp_dir, timestamp_file, full_update_time_path = self.fs_last_timestamp_dir_and_file_name(mysql_table)
+        local_path = Path(timestamp_file)
+        try:
+            if self.fs_client.exists(full_update_time_path):
+                self.fs_client.copy_to_local(full_update_time_path, str(local_path))
+                df = pd.read_csv(local_path, sep="\t")
+            else:
+                df = pd.DataFrame({"date": ["1970-01-01 00:00:00"]})
+            last_timestamp = str(df["date"].iloc[0])
+            logger.info("last timestamp for {} is {}", mysql_table, last_timestamp)
+            return last_timestamp
+        finally:
+            if local_path.exists():
+                local_path.unlink()
+
+    def update_last_timestamp(self, mysql_table: str, last_update_timestamp):
+        _dir, timestamp_file, full_update_time_path = self.fs_last_timestamp_dir_and_file_name(mysql_table)
+        local_path = Path(timestamp_file)
+        try:
+            local_path.write_text(f"date\n{last_update_timestamp}", encoding="utf-8")
+            self.fs_client.copy_from_local(str(local_path), full_update_time_path, overwrite=True)
+            logger.info("updated last timestamp for {} to {}", mysql_table, last_update_timestamp)
+        finally:
+            if local_path.exists():
+                local_path.unlink()
+
+
+def clean_local_directory(file_dir: str):
+    path = Path(file_dir)
+    if path.exists():
+        for child in path.glob("*"):
+            if child.is_file():
+                child.unlink()
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def clean_local_files(file_dir: str):
+    path = Path(file_dir)
+    if not path.exists():
+        return
+    for child in path.glob("*"):
+        if child.is_file():
+            child.unlink()

@@ -1,0 +1,154 @@
+import csv
+from datetime import datetime
+
+import pandas as pd
+import pymysql
+from loguru import logger
+
+from plugin_common import ClientWrapper
+from cot_config.plugin_config import (
+    mysql_report_ps_p_params,
+    mysql_report_ps_p_url,
+    mysql_store_report_generator_params,
+    mysql_store_report_generator_url,
+    mysql_store_report_params,
+    mysql_store_report_url,
+    store_report_generator_table_list,
+    store_report_table_list,
+)
+
+
+def get_mysql_url(mysql_table):
+    if mysql_table in store_report_generator_table_list:
+        return mysql_store_report_generator_url, mysql_store_report_generator_params
+    if mysql_table in store_report_table_list:
+        return mysql_store_report_url, mysql_store_report_params
+    return mysql_report_ps_p_url, mysql_report_ps_p_params
+
+
+def create_mysql_engine(mysql_url):
+    return ClientWrapper(client_type="mysql", mysql_url=mysql_url).mysql_engine
+
+
+def process_row(row):
+    trans_table = str.maketrans({
+        "\n": "",
+        "\r": "",
+        "\t": "",
+        "'": "",
+        '"': "",
+        "\x1D": "",
+    })
+    cleaned = []
+    for value in row:
+        if isinstance(value, str):
+            cleaned.append(value.translate(trans_table))
+        else:
+            cleaned.append(value)
+    return cleaned
+
+
+def get_sync_mode(mysql_table, last_update_time_column, period_column, last_timestamp, period, engine, mysql_params):
+    if period:
+        periods = period if isinstance(period, list) else [period]
+        return [(item, "full") for item in periods], None
+
+    query_changed = (
+        f"SELECT {period_column}, count(1) "
+        f"FROM {mysql_table} "
+        f"WHERE `{last_update_time_column}` > '{last_timestamp}' "
+        f"GROUP BY {period_column}"
+    )
+    logger.info("detect changed periods sql: {}", query_changed)
+    changed_df = pd.read_sql(query_changed, engine)
+    if changed_df.empty:
+        return None, None
+
+    period_list = changed_df[period_column].tolist()
+    period_sql = ", ".join([f"'{item}'" for item in period_list])
+    query_total = (
+        f"SELECT {period_column}, count(2) "
+        f"FROM {mysql_table} "
+        f"WHERE {period_column} IN ({period_sql}) "
+        f"GROUP BY {period_column}"
+    )
+    logger.info("detect period total sql: {}", query_total)
+    total_df = pd.read_sql(query_total, engine)
+
+    sync_df = changed_df.merge(total_df, on=period_column, how="left")
+    sync_df["sync_mode"] = sync_df.apply(
+        lambda row: "full" if row["count(1)"] == row["count(2)"] else "delta",
+        axis=1,
+    )
+    sync_list = list(sync_df[[period_column, "sync_mode"]].itertuples(index=False, name=None))
+
+    query_timestamp = (
+        f"SELECT max(`{last_update_time_column}`) AS last_update_timestamp "
+        f"FROM {mysql_params['db']}.{mysql_table} "
+        f"WHERE {period_column} IN ({period_sql})"
+    )
+    logger.info("detect max timestamp sql: {}", query_timestamp)
+    timestamp_df = pd.read_sql(query_timestamp, engine)
+    last_update_timestamp = timestamp_df["last_update_timestamp"].iloc[0]
+    logger.info("mysql max timestamp: {}", last_update_timestamp)
+    return sync_list, last_update_timestamp
+
+
+def create_file_and_header(mysql_table, cols, file_dir, period):
+    now = datetime.now()
+    file_name = f"{period}_{mysql_table}_{now.strftime('%Y%m%d%H%M%S%f')}.csv"
+    file_path = f"{file_dir}/{file_name}"
+    logger.info("file_name: {}", file_name)
+    with open(file_path, "a", newline="", encoding="utf-8") as output_file:
+        output_file.write(",".join(cols) + "\n")
+    return file_path
+
+
+def fetch_mysql(mysql_table, last_update_time_column, period_column, last_timestamp, sync_list, file_dir, file_size, engine, mysql_params):
+    start_time = datetime.now()
+    df_size = 0
+    query_batch_size = 50000
+    columns_df = pd.read_sql(f"SHOW COLUMNS FROM {mysql_table}", engine)
+    cols = columns_df["Field"].to_list()
+
+    for period, mode in sync_list:
+        add_size = 0
+        file_path = None
+        if mode == "full":
+            sql = f"SELECT {','.join(cols)} FROM {mysql_table} WHERE {period_column} = '{period}'"
+        else:
+            sql = (
+                f"SELECT {','.join(cols)} FROM {mysql_table} "
+                f"WHERE {period_column} = '{period}' "
+                f"AND `{last_update_time_column}` > '{last_timestamp}'"
+            )
+        logger.info("execute sql: {}", sql)
+        with pymysql.connect(cursorclass=pymysql.cursors.SSCursor, **mysql_params) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql)
+            while True:
+                rows = cursor.fetchmany(query_batch_size)
+                if len(rows) == 0:
+                    break
+                if add_size == 0 or file_path is None:
+                    file_path = create_file_and_header(mysql_table, cols, file_dir, period)
+                with open(file_path, "a", newline="", encoding="utf-8") as output_file:
+                    writer = csv.writer(output_file)
+                    for row in rows:
+                        writer.writerow(process_row(row))
+                df_size += len(rows)
+                add_size += len(rows)
+                if add_size >= file_size:
+                    add_size = 0
+                logger.info("execute sql finished. count: {}", df_size)
+
+    end_time = datetime.now()
+    logger.info("end query table and write file, duration: {}", end_time - start_time)
+    return {
+        "operation": "fetch_mysql_data",
+        "fetch_mode": str(sync_list),
+        "output": f"{mysql_table} files",
+        "duration": str(end_time - start_time),
+        "mysql_size": df_size,
+        "remark": f"fetch data from {mysql_table}",
+    }

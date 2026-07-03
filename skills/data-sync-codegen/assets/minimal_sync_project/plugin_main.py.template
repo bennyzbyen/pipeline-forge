@@ -1,0 +1,79 @@
+# coding: utf-8
+import json
+import sys
+
+from loguru import logger
+
+from cot_config.plugin_config import table_configs
+from cot_config.plugin_config import with_period_tables as WITH_PERIOD
+from cot_config.plugin_config import without_period_tables as WITHOUT_PERIOD
+from sync_with_period import COT_REPORT_WITH_P
+from sync_without_period import COT_REPORT_WITHOUT_P
+
+
+def _apply_table_defaults(params: dict) -> dict:
+    source_info = params.setdefault("source_informations", {})
+    table_name = source_info.get("mysql_table") or params.get("source_table")
+    if not table_name:
+        return params
+
+    defaults = table_configs.get(table_name, {})
+    if not defaults:
+        return params
+
+    source_info.setdefault("mysql_table", table_name)
+    source_info.setdefault("last_update_time_column", defaults.get("last_update_time_column"))
+    if defaults.get("period_column"):
+        source_info.setdefault("period_column", defaults.get("period_column"))
+    if defaults.get("code_column"):
+        source_info.setdefault("code_column", defaults.get("code_column"))
+    if defaults.get("key_column"):
+        source_info.setdefault("key_column", defaults.get("key_column"))
+    source_info.setdefault("batch_size", 100000)
+    source_info.setdefault("receiver_emails", [])
+
+    hbase_info = params.setdefault("hbase_informations", {})
+    hbase_info.setdefault("hbase_table", defaults.get("hbase_table"))
+    hbase_info.setdefault("rowkey_rule_columns", defaults.get("rowkey_rule_columns", []))
+
+    clickhouse_info = params.setdefault("clickhouse_information", {})
+    clickhouse_info.setdefault("clickhouse_table", defaults.get("clickhouse_table"))
+    return params
+
+
+def calc_single(params: dict):
+    params = _apply_table_defaults(params)
+    logger.info("---------params---------{}", params)
+    source_info = params.get("source_informations", {})
+    table_name = source_info.get("mysql_table") or params.get("source_table")
+    if not table_name:
+        raise ValueError("source_informations.mysql_table is required")
+
+    if table_name in WITH_PERIOD:
+        logger.info("start to execute sync with period task")
+        return COT_REPORT_WITH_P(params).run()
+    if table_name in WITHOUT_PERIOD:
+        logger.info("start to execute sync without period task")
+        return COT_REPORT_WITHOUT_P(params).run()
+    raise ValueError(f"table is not configured in with_period_tables or without_period_tables: {table_name}")
+
+
+def _load_platform_params(params_path: str):
+    with open(params_path, "rb") as handle:
+        execute_params = json.load(handle)
+
+    algorithm_io_mode = execute_params.get("algorithm_io_mode")
+    result_path = params_path
+    if algorithm_io_mode == "SINGLE":
+        body_params = execute_params.get("params", {}).get("body", {}).get("params", "{}")
+        return json.loads(body_params), result_path
+
+    return execute_params, "./result.txt"
+
+
+if __name__ == "__main__":
+    params_path = sys.argv[1]
+    params, result_path = _load_platform_params(params_path)
+    result = calc_single(params)
+    with open(result_path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(result, ensure_ascii=False))

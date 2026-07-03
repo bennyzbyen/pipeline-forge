@@ -1,0 +1,14 @@
+from common_utils.all_modules import Dict, logger, pd
+
+
+class DataStorage:
+    def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
+        self.outputs = outputs
+        self.time_range = time_range
+        self.params = params
+
+    def run(self):
+        logger.info("Start DataStorage")
+        raise NotImplementedError(
+            "Report scaffold only: implement ClickHouse/HBase/FS writes from dev_doc.md before deployment."
+        )

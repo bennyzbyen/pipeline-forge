@@ -1,0 +1,38 @@
+from common_utils.all_modules import datetime, logger, traceback
+from common_utils.common import return_pipeline_result
+from data_utils.data_source import DataSource
+from data_utils.data_process import DataProcess
+from data_utils.data_storage import DataStorage
+
+
+class ReportPipeline:
+    def __init__(self, params: dict):
+        self.params = params
+
+    def execute(self):
+        try:
+            start = datetime.datetime.now()
+            source = DataSource(self.params)
+            source_data, time_range = source.run()
+            data_source_time = datetime.datetime.now() - start
+
+            start = datetime.datetime.now()
+            processed_outputs = DataProcess(source_data, time_range, self.params).run()
+            data_process_time = datetime.datetime.now() - start
+
+            start = datetime.datetime.now()
+            DataStorage(processed_outputs, time_range, self.params).run()
+            data_storage_time = datetime.datetime.now() - start
+
+            return return_pipeline_result([
+                {
+                    "data_source_time": str(data_source_time),
+                    "data_process_time": str(data_process_time),
+                    "data_storage_time": str(data_storage_time),
+                    "total_used_time": str(data_source_time + data_process_time + data_storage_time),
+                }
+            ])
+        except Exception as exc:
+            error_detail = traceback.format_exc()
+            logger.error(error_detail)
+            raise RuntimeError(f"report pipeline failed: {exc}") from exc

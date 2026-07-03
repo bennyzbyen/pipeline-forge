@@ -1,0 +1,34 @@
+# coding: utf-8
+import json
+import os
+import sys
+
+from common_utils.all_modules import logger
+from main_execute import ReportPipeline
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+
+def main(params: dict):
+    logger.info("---------params---------{}", params)
+    return ReportPipeline(params).execute()
+
+
+def _load_platform_params(params_path: str):
+    with open(params_path, "rb") as handle:
+        execute_params = json.load(handle)
+
+    algorithm_io_mode = execute_params.get("algorithm_io_mode")
+    result_path = params_path
+    if algorithm_io_mode == "SINGLE":
+        body_params = execute_params.get("params", {}).get("body", {}).get("params", "{}")
+        return json.loads(body_params), result_path
+
+    return execute_params, "./result.txt"
+
+
+if __name__ == "__main__":
+    params, result_path = _load_platform_params(sys.argv[1])
+    result = main(params)
+    with open(result_path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(result, ensure_ascii=False))

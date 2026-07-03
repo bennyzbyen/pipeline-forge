@@ -1,0 +1,23 @@
+clickhouse_to_mysql:
+  Int8: tinyint
+  UInt8: tinyint unsigned
+  Int16: smallint
+  UInt16: smallint unsigned
+  Int32: int
+  UInt32: int unsigned
+  Int64: bigint
+  UInt64: bigint unsigned
+  Float32: float
+  Float64: double
+  Decimal: decimal(p, s)
+  String: text
+  LowCardinality(String): varchar(255)
+  Date: date
+  DateTime: datetime
+  DateTime64: datetime
+  UUID: char(36)
+
+notes:
+  - ClickHouse Nullable(T) maps to nullable target columns.
+  - ClickHouse ORDER BY is not a MySQL primary key; only create indexes when user accepts the mapping.
+  - ClickHouse String length is unknown; use text or ask for varchar length.

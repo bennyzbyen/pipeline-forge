@@ -1,0 +1,54 @@
+import os
+
+from loguru import logger
+
+
+env = os.environ.get("running_env") or "qa"
+logger.info("running env: {}", env)
+
+fs_root_dir = "/datahub/project_storage/<PROJECT_NAME>"
+
+App_key = "<APP_KEY>"
+App_secret = "<APP_SECRET>"
+
+mysql_report_ps_p_url = "mysql+pymysql://<USER>:<PASSWORD>@<HOST>:<PORT>/report_ps_p?charset=utf8mb4"
+mysql_store_report_generator_url = "mysql+pymysql://<USER>:<PASSWORD>@<HOST>:<PORT>/store_report_generator?charset=utf8mb4"
+mysql_store_report_url = "mysql+pymysql://<USER>:<PASSWORD>@<HOST>:<PORT>/store_report?charset=utf8mb4"
+
+mysql_report_ps_p_params = {
+    "host": "<MYSQL_HOST>",
+    "port": 19923,
+    "user": "<MYSQL_USER>",
+    "password": "<MYSQL_PASSWORD>",
+    "db": "report_ps_p",
+    "charset": "utf8",
+}
+mysql_store_report_generator_params = {
+    "host": "<MYSQL_HOST>",
+    "port": 19923,
+    "user": "<MYSQL_USER>",
+    "password": "<MYSQL_PASSWORD>",
+    "db": "store_report_generator",
+    "charset": "utf8",
+}
+mysql_store_report_params = {
+    "host": "<MYSQL_HOST>",
+    "port": 19923,
+    "user": "<MYSQL_USER>",
+    "password": "<MYSQL_PASSWORD>",
+    "db": "store_report",
+    "charset": "utf8",
+}
+
+cluster = "" if env in {"qa", "uat"} else "<CLICKHOUSE_CLUSTER>"
+
+# Fill these from structured_facts.json and confirmed table exceptions.
+table_configs = {}
+store_report_generator_table_list = []
+store_report_table_list = []
+ck_legacy_database_tables = []
+ck_truncate_list = []
+hbase_truncate_list = []
+
+without_period_tables = []
+with_period_tables = []

@@ -1,0 +1,49 @@
+# coding: utf-8
+"""HBase rowkey rules to confirm before deployment.
+
+This file is the manual review surface for COT sync rowkeys.
+
+Runtime note:
+- The generated sync code currently reads rowkey columns from
+  `cot_config.plugin_config.table_configs[*]["rowkey_rule_columns"]`
+  or from `params["hbase_informations"]["rowkey_rule_columns"]`.
+- After editing this file, copy the confirmed columns/prefix rule back to
+  `plugin_config.py` or the runtime params used by DataEngine.
+
+How to fill each rule:
+- columns: exact exported DataFrame columns, in rowkey order.
+- separator: string used to join columns; current COT scaffold uses "".
+- prefix.enabled: true when HBase rowkey needs a leading bucket/hash prefix.
+- prefix.type: current scaffold default is "last_char".
+- prefix.source: current scaffold default is "joined_rowkey".
+- prefix.mod: bucket count, usually 10 for row prefixes 0-9.
+- date_format: fill only when date/period must be reformatted before joining.
+- example: one real expected rowkey from requirement docs, production code, or deployment logs.
+- confirmed: keep false until verified.
+
+Do not guess rowkey rules. If confirmed=false, treat HBase write behavior as a
+deployment confirmation item.
+"""
+
+hbase_rowkey_rules = {
+    "<HBASE_TABLE_NAME>": {
+        "source_table": "<SOURCE_TABLE_NAME>",
+        "sync_mode": "<with_period|without_period>",
+        "candidate_columns": [],  # Generated candidates, if known.
+        "columns": [],  # TODO: fill exact exported DataFrame columns in rowkey order.
+        "separator": "",  # TODO: confirm separator; current COT scaffold joins directly.
+        "prefix": {
+            "enabled": True,  # TODO: confirm whether rowkey needs a leading prefix.
+            "type": "last_char",  # TODO: confirm prefix rule; current scaffold uses last char of joined rowkey.
+            "source": "joined_rowkey",
+            "mod": 10,  # TODO: confirm bucket count if hash/mod prefix is used.
+        },
+        "date_format": "",  # TODO: fill only if date/period must be reformatted.
+        "example": "",  # TODO: paste one expected rowkey from docs/code/logs.
+        "confirmed": False,  # TODO: set true only after verification.
+        "fill_notes": [
+            "Confirm rowkey columns before production deployment.",
+            "If changed, sync the confirmed columns to plugin_config.py or runtime params.",
+        ],
+    }
+}

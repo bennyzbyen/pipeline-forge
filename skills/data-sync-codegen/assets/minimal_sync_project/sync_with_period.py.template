@@ -1,0 +1,120 @@
+import datetime
+
+from loguru import logger
+
+import cot_sync_with_period.ck_operation as ck_operation
+import cot_sync_with_period.etl_source as etl_source
+import cot_sync_with_period.hbase_operation as hbase_operation
+from plugin_common import TimeStamp_Update, clean_local_directory, clean_local_files, format_exception, return_pipeline_result
+
+
+class COT_REPORT_WITH_P:
+    def __init__(self, params: dict):
+        self.params = params
+        self.source_informations = params["source_informations"]
+        self.mysql_table = self.source_informations["mysql_table"]
+        self.last_update_time_column = self.source_informations["last_update_time_column"]
+        self.period_column = self.source_informations["period_column"]
+        self.code_column = self.source_informations.get("code_column", "code")
+        self.period = self.source_informations.get("period")
+        self.batch_size = self.source_informations.get("batch_size", 100000)
+        self.receiver_emails = self.source_informations.get("receiver_emails", [])
+
+        self.hbase_informations = params.get("hbase_informations", {})
+        self.hbase_table = self.hbase_informations.get("hbase_table")
+        self.rowkey_rule_columns = self.hbase_informations.get("rowkey_rule_columns", [])
+
+        self.clickhouse_information = params.get("clickhouse_information", {})
+        self.clickhouse_table = self.clickhouse_information.get("clickhouse_table")
+        self.timestamp_update = TimeStamp_Update()
+        self._last_timestamp = None
+
+    def _resolve_sync_range(self):
+        if self.period:
+            periods = self.period if isinstance(self.period, list) else [self.period]
+            return [(period, "full") for period in periods], None
+        last_timestamp = self.timestamp_update.fetch_last_timestamp(self.mysql_table)
+        self._last_timestamp = last_timestamp
+        mysql_url, mysql_params = etl_source.get_mysql_url(self.mysql_table)
+        engine = etl_source.create_mysql_engine(mysql_url)
+        sync_list, last_update_timestamp = etl_source.get_sync_mode(
+            self.mysql_table,
+            self.last_update_time_column,
+            self.period_column,
+            last_timestamp,
+            self.period,
+            engine,
+            mysql_params,
+        )
+        return sync_list, last_update_timestamp
+
+    def _fetch_source(self, sync_list):
+        logger.info("fetch mysql_table={}, sync_list={}", self.mysql_table, sync_list)
+        mysql_url, mysql_params = etl_source.get_mysql_url(self.mysql_table)
+        engine = etl_source.create_mysql_engine(mysql_url)
+        last_timestamp = None if self.period else self._last_timestamp
+        return etl_source.fetch_mysql(
+            self.mysql_table,
+            self.last_update_time_column,
+            self.period_column,
+            last_timestamp,
+            sync_list,
+            self.file_dir,
+            self.batch_size,
+            engine,
+            mysql_params,
+        )
+
+    def _write_clickhouse(self, source_files, sync_list):
+        if not self.clickhouse_table:
+            return None
+        logger.info("write clickhouse table={}, sync_list={}", self.clickhouse_table, sync_list)
+        return ck_operation.clickhouse_op(
+            self.file_dir,
+            sync_list,
+            self.clickhouse_table,
+            self.period_column,
+            self.code_column,
+            self.mysql_table,
+        )
+
+    def _write_hbase(self, source_files, sync_list):
+        if not self.hbase_table:
+            return None
+        if not self.rowkey_rule_columns:
+            raise ValueError("rowkey_rule_columns is required for HBase write")
+        logger.info("write hbase table={}, sync_list={}", self.hbase_table, sync_list)
+        return hbase_operation.hbase_op(self.hbase_table, self.file_dir, sync_list, self.rowkey_rule_columns)
+
+    def run(self):
+        start_time = datetime.datetime.now()
+        self.file_dir = f"./perfect_store_{self.mysql_table}"
+        clean_local_directory(self.file_dir)
+        try:
+            sync_list, last_update_timestamp = self._resolve_sync_range()
+            if not sync_list:
+                return return_pipeline_result([{"input": self.mysql_table, "status": "no_changed_periods"}])
+            fetch_metrics = self._fetch_source(sync_list)
+            ck_metrics = self._write_clickhouse(fetch_metrics, sync_list)
+            hbase_metrics = self._write_hbase(fetch_metrics, sync_list)
+            if not self.period and last_update_timestamp:
+                self.timestamp_update.update_last_timestamp(self.mysql_table, last_update_timestamp)
+            metrics = [
+                {
+                    "input": f"mysql_table:{self.mysql_table}",
+                    "output1": f"hbase_table:{self.hbase_table}",
+                    "output2": f"clickhouse_table:{self.clickhouse_table}",
+                    "sync_list": sync_list,
+                    "last_update_timestamp": last_update_timestamp,
+                    "duration": str(datetime.datetime.now() - start_time),
+                    "remark": "insert mysql data to hbase & clickhouse",
+                }
+            ]
+            for item in [fetch_metrics, ck_metrics, hbase_metrics]:
+                if item:
+                    metrics.append(item)
+            return return_pipeline_result(metrics)
+        except Exception:
+            raise RuntimeError(format_exception())
+        finally:
+            clean_local_files(self.file_dir)

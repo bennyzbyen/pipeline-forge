@@ -1,0 +1,90 @@
+import glob
+from datetime import datetime
+
+import pandas as pd
+from clickhouse_connect.driver.tools import insert_file
+from loguru import logger
+
+from plugin_common import ClientWrapper
+from cot_config.plugin_config import ck_legacy_database_tables, ck_truncate_list, cluster
+
+
+class CLickHouseOperation:
+    def __init__(self):
+        self.clients = ClientWrapper(client_type="clickhouse")
+        self.clickhouse_client = self.clients.clickhouse_client
+
+    def clickhouse_database_for_table(self, clickhouse_table):
+        if clickhouse_table in ck_legacy_database_tables:
+            return "cot_report", "cot_report."
+        return None, ""
+
+    def insert_to_clickhouse(self, matching_files, clickhouse_table, database=None):
+        for file_path in matching_files:
+            insert_file(
+                self.clickhouse_client,
+                clickhouse_table,
+                file_path,
+                database=database,
+                settings={"input_format_allow_errors_ratio": 0, "input_format_allow_errors_num": 0},
+            )
+
+    def get_id(self, matching_files, key_column):
+        all_ids = []
+        for file_path in matching_files:
+            df = pd.read_csv(file_path, usecols=[key_column], dtype=str)
+            all_ids.extend(df[key_column].tolist())
+        return all_ids
+
+    def delete_by_id(self, clickhouse_table, key_column, matching_files, database_prefix, delete_size=10000):
+        all_ids = self.get_id(matching_files, key_column)
+        for index in range(0, len(all_ids), delete_size):
+            current_ids = all_ids[index:index + delete_size]
+            id_sql = ", ".join([f"'{item}'" for item in current_ids])
+            if cluster == "":
+                sql = f"DELETE FROM {database_prefix}{clickhouse_table} WHERE {key_column} IN ({id_sql})"
+            else:
+                sql = f"DELETE FROM {database_prefix}{clickhouse_table} ON CLUSTER {cluster} WHERE {key_column} IN ({id_sql})"
+            logger.info("delete by id sql: {}", sql)
+            self.clickhouse_client.command(sql)
+        return len(all_ids)
+
+    def truncate_by_table(self, clickhouse_table, database_prefix):
+        if cluster == "":
+            sql = f"TRUNCATE TABLE {database_prefix}{clickhouse_table}"
+        else:
+            sql = f"TRUNCATE TABLE {database_prefix}{clickhouse_table} ON CLUSTER {cluster}"
+        logger.info("truncate sql: {}", sql)
+        self.clickhouse_client.command(sql)
+
+    def clickhouse_op(self, file_dir, clickhouse_table, last_update_time_column, last_timestamp, key_column):
+        database, database_prefix = self.clickhouse_database_for_table(clickhouse_table)
+        start_time = datetime.now()
+        matching_files = glob.glob(f"{file_dir}/*.csv")
+        if not matching_files:
+            logger.warning("no source files, skip ClickHouse write")
+            size = 0
+            delete_size = 0
+        else:
+            if clickhouse_table in ck_truncate_list:
+                self.truncate_by_table(clickhouse_table, database_prefix)
+                delete_size = 0
+            else:
+                delete_size = self.delete_by_id(clickhouse_table, key_column, matching_files, database_prefix)
+            self.insert_to_clickhouse(matching_files, clickhouse_table, database)
+            count_sql = (
+                f"SELECT COUNT() AS COUNT FROM {database_prefix}{clickhouse_table} "
+                f"WHERE `{last_update_time_column}` > '{last_timestamp}'"
+            )
+            logger.info("count sql: {}", count_sql)
+            size = self.clickhouse_client.query_df(count_sql)["COUNT"].iloc[0]
+
+        end_time = datetime.now()
+        return {
+            "operation": "insert_clickhouse",
+            "output": clickhouse_table,
+            "duration": str(end_time - start_time),
+            "clickhouse_size": str(size),
+            "clickhouse_delete_size": delete_size,
+            "remark": f"insert mysql data to {clickhouse_table}",
+        }

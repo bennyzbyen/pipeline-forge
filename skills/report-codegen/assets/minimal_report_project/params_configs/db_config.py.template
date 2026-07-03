@@ -1,0 +1,14 @@
+import os
+
+env = os.environ.get("running_env") or "uat"
+
+app_key = "<APP_KEY>"
+app_secret = "<APP_SECRET>"
+clickhouse_connect_params = {
+    "CLICKHOUSE_HOST": "<CLICKHOUSE_HOST>",
+    "CLICKHOUSE_PORT": "8123",
+    "CLICKHOUSE_USER": "<CLICKHOUSE_USER>",
+    "CLICKHOUSE_PASSWORD": "<CLICKHOUSE_PASSWORD>",
+    "CLICKHOUSE_DB": "<CLICKHOUSE_DB>",
+}
+cluster = "" if env == "uat" else "ON CLUSTER <CLUSTER_NAME>"

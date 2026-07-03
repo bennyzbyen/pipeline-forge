@@ -1,0 +1,111 @@
+import datetime
+import glob
+import os
+
+import pandas as pd
+from loguru import logger
+
+from plugin_common import ClientWrapper
+
+
+default_insert_sep = "\x1D"
+default_rowkey_key = "rowkey"
+
+clients = ClientWrapper(client_type="gateway")
+fs_client = clients.fs_client
+hbase_client = clients.hbase_client
+
+
+def process_rowkeys(df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowkey_key):
+    temp_rowkey = ""
+    for column in rowkey_rule_columns:
+        temp_rowkey += df_data[column].astype(str)
+    df_data[hbase_rowkey_key] = temp_rowkey.str[-1] + temp_rowkey
+    columns = [hbase_rowkey_key] + [column for column in df_data.columns if column != hbase_rowkey_key]
+    return df_data[columns]
+
+
+def transfer_csv_file(matching_files, rowkey_rule_columns):
+    df_size = 0
+    hbase_columns = None
+    logger.info("start processing HBase rowkeys")
+    for file_path in matching_files:
+        df = pd.read_csv(file_path, dtype=str)
+        df["cl_last_update_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if hbase_columns is None:
+            hbase_columns = [default_rowkey_key] + df.columns.tolist()
+        df_size += len(df)
+        df = process_rowkeys(df, rowkey_rule_columns, default_rowkey_key)
+        df.to_csv(f"{file_path}.gz", index=False, header=False, sep=default_insert_sep, compression="gzip")
+        os.remove(file_path)
+    logger.info("finished processing HBase rowkeys")
+    return df_size, hbase_columns
+
+
+def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
+    old_rowkeys = hbase_client.query_df(
+        hbase_table_name=hbase_table_name,
+        columns=[rowkey_rule_columns[0]],
+        row_start=f"{period}",
+        row_stop=f"{period}Z",
+        row_prefixs=[str(item) for item in range(10)],
+    )
+    if old_rowkeys is None or old_rowkeys.empty:
+        logger.info("no existing HBase rows for {}, skip delete", hbase_table_name)
+        return 0
+    old_rowkeys = old_rowkeys[[default_rowkey_key]]
+
+    new_rowkey_frames = []
+    for file_path in insert_files:
+        new_rowkey_frames.append(pd.read_csv(file_path, sep=default_insert_sep, compression="gzip", header=None, usecols=[0]))
+    if not new_rowkey_frames:
+        return 0
+
+    new_rowkeys = pd.concat(new_rowkey_frames, ignore_index=True)
+    delete_rowkeys = old_rowkeys[~old_rowkeys[default_rowkey_key].isin(new_rowkeys[0])]
+    if len(delete_rowkeys) == 0:
+        logger.info("no stale HBase rowkeys for {}", hbase_table_name)
+        return 0
+
+    logger.info("delete stale HBase rows table={}, size={}", hbase_table_name, len(delete_rowkeys))
+    hbase_client.delete_df(df=delete_rowkeys[[default_rowkey_key]], hbase_table_name=hbase_table_name)
+    return len(delete_rowkeys)
+
+
+def insert_hbase(file_list, hbase_table, hbase_columns):
+    for file_path in file_list:
+        hbase_client.insert_file(
+            file_path=file_path,
+            sep=default_insert_sep,
+            columns=hbase_columns,
+            hbase_table_name=hbase_table,
+        )
+
+
+def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns):
+    start_time = datetime.datetime.now()
+    total_size = 0
+    delete_size = 0
+    for period, mode in sync_list:
+        source_pattern = f"{file_dir}/{period}*.csv"
+        source_files = glob.glob(source_pattern)
+        if not source_files:
+            logger.warning("no source files for period={}, skip HBase write", period)
+            continue
+
+        size, hbase_columns = transfer_csv_file(source_files, rowkey_rule_columns)
+        insert_files = glob.glob(f"{file_dir}/{period}*.csv.gz")
+        if mode == "full":
+            delete_size += delete_hbase(hbase_table, rowkey_rule_columns, period, insert_files)
+        insert_hbase(insert_files, hbase_table, hbase_columns)
+        total_size += size
+
+    end_time = datetime.datetime.now()
+    return {
+        "operation": "insert_hbase",
+        "output": hbase_table,
+        "duration": str(end_time - start_time),
+        "hbase_size": total_size,
+        "hbase_delete_size": delete_size,
+        "remark": f"insert mysql data to {hbase_table}",
+    }

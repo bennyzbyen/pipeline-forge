@@ -1,0 +1,19 @@
+{
+  "source_informations": {
+    "mysql_table": "<SOURCE_TABLE>",
+    "last_update_time_column": "inksaa_last_modified_timestamp",
+    "period_column": "period",
+    "period": [],
+    "code_column": "code",
+    "key_column": "id",
+    "batch_size": 100000,
+    "receiver_emails": []
+  },
+  "hbase_informations": {
+    "hbase_table": "<HBASE_TABLE>",
+    "rowkey_rule_columns": []
+  },
+  "clickhouse_information": {
+    "clickhouse_table": "<CLICKHOUSE_TABLE>"
+  }
+}

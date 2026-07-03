@@ -1,0 +1,42 @@
+# coding: utf-8
+"""HBase rowkey rules that must be confirmed before deployment.
+
+Fill this file when the generated report project writes to HBase or triggers a
+downstream HBase write.
+
+How to fill each rule:
+- columns: exact output DataFrame columns, in rowkey order.
+- separator: string used to join column values, usually "_" or "".
+- prefix.enabled: true only if the platform table requires a leading hash/salt prefix.
+- prefix.type: supported notes include "mod", "hash_mod", or project-specific text.
+- prefix.source_column: column used to calculate the prefix when enabled.
+- prefix.mod: modulo bucket count, commonly 10 when row_prefixs are 0-9.
+- date_format: fill only when the source date/period must be reformatted before joining.
+- example: one real expected rowkey from requirement docs, production code, or deployment logs.
+- confirmed: keep false until verified by docs/code/logs.
+
+Do not guess rowkey rules. If confirmed=false, treat HBase write behavior as a
+deployment confirmation item.
+"""
+
+hbase_rowkey_rules = {
+    "<HBASE_TABLE_NAME>": {
+        "target_name": "<LOGICAL_TARGET_NAME>",
+        "candidate_columns": [],
+        "columns": [],  # TODO: fill exact DataFrame column names in rowkey order, for example ["period", "code"].
+        "separator": "_",  # TODO: confirm separator; use "" if columns are concatenated directly.
+        "prefix": {
+            "enabled": False,  # TODO: set true only if rowkey needs a leading hash/salt prefix.
+            "type": "",  # TODO: fill "mod", "hash_mod", or project-specific rule name.
+            "source_column": "",  # TODO: fill column used to calculate prefix, for example "code".
+            "mod": 10,  # TODO: confirm bucket count; keep 10 for 0-9 row prefixes.
+        },
+        "date_format": "",  # TODO: fill only if date/period must be reformatted.
+        "example": "",  # TODO: paste one expected rowkey from docs/code/logs.
+        "confirmed": False,  # TODO: set true only after verification.
+        "fill_notes": [
+            "Fill columns with exact DataFrame columns in rowkey order.",
+            "Confirm prefix/separator/date formatting from requirement docs, production code, or deployment logs.",
+        ],
+    }
+}

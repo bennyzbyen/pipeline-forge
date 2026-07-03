@@ -1,0 +1,11 @@
+def return_pipeline_result(metrics: list) -> dict:
+    return {
+        "__methods__": [
+            {
+                "method": "put",
+                "scope": "inst",
+                "level": "task",
+                "body": {"metrics": metrics},
+            }
+        ]
+    }

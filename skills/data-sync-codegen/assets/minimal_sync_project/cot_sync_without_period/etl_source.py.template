@@ -1,0 +1,118 @@
+import csv
+from datetime import datetime
+
+import pandas as pd
+import pymysql
+from loguru import logger
+
+from plugin_common import ClientWrapper
+from cot_config.plugin_config import (
+    mysql_report_ps_p_params,
+    mysql_report_ps_p_url,
+    mysql_store_report_generator_params,
+    mysql_store_report_generator_url,
+    mysql_store_report_params,
+    mysql_store_report_url,
+    store_report_generator_table_list,
+    store_report_table_list,
+)
+
+
+def get_mysql_url(mysql_table):
+    if mysql_table in store_report_generator_table_list:
+        return mysql_store_report_generator_url, mysql_store_report_generator_params
+    if mysql_table in store_report_table_list:
+        return mysql_store_report_url, mysql_store_report_params
+    return mysql_report_ps_p_url, mysql_report_ps_p_params
+
+
+class ETLSource:
+    def __init__(self, mysql_table):
+        self.mysql_url, self.mysql_params = get_mysql_url(mysql_table)
+        self.clients = ClientWrapper(client_type="mysql", mysql_url=self.mysql_url)
+        self.engine = self.clients.mysql_engine
+
+    @staticmethod
+    def process_row(row):
+        trans_table = str.maketrans({
+            "\n": "",
+            "\r": "",
+            "\t": "",
+            "'": "",
+            '"': "",
+            "\x1D": "",
+        })
+        cleaned = []
+        for value in row:
+            if isinstance(value, str):
+                cleaned.append(value.translate(trans_table))
+            else:
+                cleaned.append(value)
+        return cleaned
+
+    def fetch_sync_mode(self, mysql_table, last_update_time_column, last_timestamp):
+        query_changed = f"SELECT count(1) FROM {mysql_table} WHERE `{last_update_time_column}` > '{last_timestamp}'"
+        logger.info("detect changed rows sql: {}", query_changed)
+        changed_df = pd.read_sql(query_changed, self.engine)
+        sync_size = changed_df["count(1)"].iloc[0]
+        if sync_size == 0:
+            return False, None, "0"
+
+        query_timestamp = (
+            f"SELECT max(`{last_update_time_column}`) AS last_update_timestamp "
+            f"FROM {self.mysql_params['db']}.{mysql_table}"
+        )
+        logger.info("detect max timestamp sql: {}", query_timestamp)
+        timestamp_df = pd.read_sql(query_timestamp, self.engine)
+        last_update_timestamp = timestamp_df["last_update_timestamp"].iloc[0]
+        logger.info("mysql max timestamp: {}", last_update_timestamp)
+        return True, last_update_timestamp, sync_size
+
+    def create_file_and_header(self, mysql_table, cols, file_dir):
+        now = datetime.now()
+        file_name = f"{mysql_table}_{now.strftime('%Y%m%d%H%M%S%f')}.csv"
+        file_path = f"{file_dir}/{file_name}"
+        logger.info("file_name: {}", file_name)
+        with open(file_path, "a", newline="", encoding="utf-8") as output_file:
+            output_file.write(",".join(cols) + "\n")
+        return file_path
+
+    def fetch_mysql(self, mysql_table, last_update_time_column, last_timestamp, file_dir, file_size):
+        start_time = datetime.now()
+        df_size = 0
+        add_size = 0
+        file_path = None
+        query_batch_size = 50000
+
+        columns_df = pd.read_sql(f"SHOW COLUMNS FROM {mysql_table}", self.engine)
+        cols = columns_df["Field"].to_list()
+        sql = f"SELECT {','.join(cols)} FROM {mysql_table} WHERE `{last_update_time_column}` > '{last_timestamp}'"
+        logger.info("execute sql: {}", sql)
+        with pymysql.connect(cursorclass=pymysql.cursors.SSCursor, **self.mysql_params) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql)
+            while True:
+                rows = cursor.fetchmany(query_batch_size)
+                if len(rows) == 0:
+                    break
+                if add_size == 0 or file_path is None:
+                    file_path = self.create_file_and_header(mysql_table, cols, file_dir)
+                with open(file_path, "a", newline="", encoding="utf-8") as output_file:
+                    writer = csv.writer(output_file)
+                    for row in rows:
+                        writer.writerow(self.process_row(row))
+                df_size += len(rows)
+                add_size += len(rows)
+                if add_size >= file_size:
+                    add_size = 0
+                logger.info("execute sql finished. count: {}", df_size)
+
+        end_time = datetime.now()
+        logger.info("end query table and write file, duration: {}", end_time - start_time)
+        return {
+            "operation": "fetch_mysql_data",
+            "output": f"{mysql_table} files",
+            "duration": str(end_time - start_time),
+            "mysql_size": df_size,
+            "remark": f"fetch data from {mysql_table}",
+        }

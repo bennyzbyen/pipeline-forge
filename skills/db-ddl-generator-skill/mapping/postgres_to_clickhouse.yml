@@ -1,0 +1,28 @@
+postgres_to_clickhouse:
+  boolean: Int8
+  smallint: Int16
+  integer: Int32
+  int4: Int32
+  bigint: Int64
+  int8: Int64
+  real: Float32
+  double precision: Float64
+  numeric: Decimal(p, s)
+  decimal: Decimal(p, s)
+  char: String
+  character: String
+  varchar: String
+  character varying: String
+  text: String
+  json: String
+  jsonb: String
+  date: Date
+  timestamp: DateTime
+  timestamp without time zone: DateTime
+  timestamp with time zone: DateTime
+  uuid: UUID
+
+notes:
+  - PostgreSQL identity/serial columns have no direct ClickHouse equivalent.
+  - PostgreSQL indexes and constraints are not equivalent to ClickHouse sorting keys.
+  - json/jsonb becomes String unless a target JSON strategy is specified.

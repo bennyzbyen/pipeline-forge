@@ -1,0 +1,11 @@
+class GateWayClient:
+    def __init__(self, app_key: str, app_secret: str, env: str = "uat"):
+        self.app_key = app_key
+        self.app_secret = app_secret
+        self.env = env
+
+    def getHbaseClient(self, fs_root_dir=None):
+        raise NotImplementedError("Install or copy the fixed platform gateway package for deployment.")
+
+    def getFsClient(self):
+        raise NotImplementedError("Install or copy the fixed platform gateway package for deployment.")

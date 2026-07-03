@@ -1,0 +1,67 @@
+header_aliases:
+  name:
+    - 字段
+    - 字段名
+    - 字段英文名
+    - 英文字段
+    - column_name
+    - column
+    - name
+    - field
+    - field_name
+  comment:
+    - 字段描述
+    - 字段中文名
+    - 中文名
+    - comment
+    - description
+    - desc
+    - label
+    - remarks
+    - 备注
+  type:
+    - 字段类型
+    - 字段类型(mysql)
+    - 字段类型(pg)
+    - 字段类型(clickhouse)
+    - 类型
+    - type
+    - data_type
+    - datatype
+    - db_type
+  length:
+    - 长度
+    - length
+    - len
+    - size
+  nullable:
+    - 是否为空
+    - 可为空
+    - nullable
+    - null
+    - is_nullable
+  not_null:
+    - 非空
+    - not_null
+    - not null
+    - required
+    - mandatory
+  default:
+    - 默认值
+    - default
+    - default_value
+  primary_key:
+    - 主键
+    - primary_key
+    - pk
+    - is_pk
+  index:
+    - 索引
+    - index
+    - key
+    - idx
+
+type_defaults:
+  missing_type: string
+  missing_varchar_length: 255
+  missing_nullable: true

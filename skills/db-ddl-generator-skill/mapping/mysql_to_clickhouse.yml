@@ -1,0 +1,26 @@
+mysql_to_clickhouse:
+  tinyint(1): Int8
+  tinyint: Int8
+  smallint: Int16
+  int: Int32
+  integer: Int32
+  bigint: Int64
+  float: Float32
+  double: Float64
+  decimal: Decimal(p, s)
+  numeric: Decimal(p, s)
+  char: String
+  varchar: String
+  text: String
+  mediumtext: String
+  longtext: String
+  date: Date
+  datetime: DateTime
+  timestamp: DateTime
+  time: String
+  json: String
+
+notes:
+  - MySQL AUTO_INCREMENT has no direct ClickHouse equivalent; usually omit or load source ids.
+  - MySQL secondary indexes are not equivalent to ClickHouse ORDER BY or skip indexes.
+  - MySQL varchar length is not enforced by ClickHouse String.

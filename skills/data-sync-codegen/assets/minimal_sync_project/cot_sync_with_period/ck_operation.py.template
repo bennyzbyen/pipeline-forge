@@ -1,0 +1,104 @@
+import glob
+from datetime import datetime
+
+import pandas as pd
+from clickhouse_connect.driver.tools import insert_file
+from loguru import logger
+
+from plugin_common import ClientWrapper
+from cot_config.plugin_config import ck_legacy_database_tables, cluster
+
+
+def clickhouse_database_for_table(clickhouse_table):
+    if clickhouse_table in ck_legacy_database_tables:
+        return "cot_report", "cot_report."
+    return None, ""
+
+
+def insert_to_clickhouse(matching_files, clickhouse_table, clickhouse_client, database=None):
+    for file_path in matching_files:
+        insert_file(
+            clickhouse_client,
+            clickhouse_table,
+            file_path,
+            database=database,
+            settings={"input_format_allow_errors_ratio": 0, "input_format_allow_errors_num": 0},
+        )
+
+
+def delete_by_partition(clickhouse_table, partition, clickhouse_client, database_prefix):
+    if cluster == "":
+        sql = f"ALTER TABLE {database_prefix}{clickhouse_table} DROP PARTITION '{partition}'"
+    else:
+        sql = f"ALTER TABLE {database_prefix}{clickhouse_table} ON CLUSTER {cluster} DROP PARTITION '{partition}'"
+    logger.info("drop partition sql: {}", sql)
+    clickhouse_client.command(sql)
+
+
+def get_store_code(matching_files, code_column):
+    all_codes = []
+    for file_path in matching_files:
+        df = pd.read_csv(file_path, usecols=[code_column], dtype=str)
+        all_codes.extend(df[code_column].tolist())
+    return all_codes
+
+
+def delete_delta(clickhouse_table, period, period_column, code_column, matching_files, clickhouse_client, database_prefix, delete_size=10000):
+    all_codes = get_store_code(matching_files, code_column)
+    for index in range(0, len(all_codes), delete_size):
+        current_codes = all_codes[index:index + delete_size]
+        code_sql = ", ".join([f"'{code}'" for code in current_codes])
+        if cluster == "":
+            sql = (
+                f"DELETE FROM {database_prefix}{clickhouse_table} "
+                f"WHERE {code_column} IN ({code_sql}) AND {period_column} = '{period}'"
+            )
+        else:
+            sql = (
+                f"DELETE FROM {database_prefix}{clickhouse_table} ON CLUSTER {cluster} "
+                f"WHERE {code_column} IN ({code_sql}) AND {period_column} = '{period}'"
+            )
+        logger.info("delete delta sql: {}", sql)
+        clickhouse_client.command(sql)
+    return len(all_codes)
+
+
+def clickhouse_op(file_dir, sync_list, clickhouse_table, period_column, code_column, mysql_table):
+    clients = ClientWrapper(client_type="clickhouse")
+    clickhouse_client = clients.clickhouse_client
+    database, database_prefix = clickhouse_database_for_table(clickhouse_table)
+
+    start_time = datetime.now()
+    size = 0
+    delete_size = 0
+    for period, mode in sync_list:
+        matching_files = glob.glob(f"{file_dir}/{period}*.csv")
+        if not matching_files:
+            logger.warning("no source files for period={}, skip ClickHouse write", period)
+            continue
+        if mode == "full":
+            delete_by_partition(clickhouse_table, period, clickhouse_client, database_prefix)
+        elif mode == "delta":
+            delete_size += delete_delta(
+                clickhouse_table,
+                period,
+                period_column,
+                code_column,
+                matching_files,
+                clickhouse_client,
+                database_prefix,
+            )
+        insert_to_clickhouse(matching_files, clickhouse_table, clickhouse_client, database)
+        count_sql = f"SELECT COUNT() AS COUNT FROM {database_prefix}{clickhouse_table} WHERE {period_column} = '{period}'"
+        logger.info("count sql: {}", count_sql)
+        size += clickhouse_client.query_df(count_sql)["COUNT"].iloc[0]
+
+    end_time = datetime.now()
+    return {
+        "operation": "insert_clickhouse",
+        "output": clickhouse_table,
+        "duration": str(end_time - start_time),
+        "clickhouse_size": str(size),
+        "clickhouse_delete_size": delete_size,
+        "remark": f"insert mysql data from {mysql_table} to {clickhouse_table}",
+    }
