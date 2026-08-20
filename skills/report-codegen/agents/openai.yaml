@@ -1,0 +1,6 @@
+interface:
+  display_name: "Report Codegen"
+  short_description: "Generate DataEngine report projects"
+  default_prompt: "Use $report-codegen to generate the matching DataEngine report project from this three-file Technical Design handoff."
+policy:
+  allow_implicit_invocation: true

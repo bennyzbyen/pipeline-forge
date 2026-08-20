@@ -21,10 +21,20 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "0.1.0+pf.20260703075507";
+export const PLUGIN_VERSION = "0.1.0+codex.20260820110400";
 export const ENABLE_URI = "plugin://pipeline-forge@personal";
 
 export const capabilities: readonly Capability[] = [
+  {
+    id: "guided-workflow",
+    eyebrow: "BEGINNER GUIDE",
+    title: "一条龙开发向导",
+    description: "先检查材料，再选择正确模块；把 rowkey、周期分类与写入策略等阻塞项翻译成易回答的问题，并持续推进到本地验证交付。",
+    input: "任意现场材料",
+    output: "路线 / 产物 / 状态",
+    glyph: "导",
+    tone: "violet",
+  },
   {
     id: "requirements",
     eyebrow: "DOCUMENT INTELLIGENCE",
@@ -49,7 +59,7 @@ export const capabilities: readonly Capability[] = [
     id: "sync-code",
     eyebrow: "SYNC CODEGEN",
     title: "数据同步项目代码生成",
-    description: "依据开发说明生成可迁移的 DataEngine / DataHub Python 同步项目，保留参数、rowkey 与运行语义。",
+    description: "依据开发说明生成可迁移的 DataEngine / DataHub Python 同步项目，逐表校验字段、调度形态、rowkey 与运行配置，并熔断未解决契约。",
     input: "开发说明",
     output: "Python 项目",
     glyph: "同",
@@ -59,11 +69,21 @@ export const capabilities: readonly Capability[] = [
     id: "report-code",
     eyebrow: "REPORT CODEGEN",
     title: "报表项目代码生成",
-    description: "生成覆盖 KPI、汇总明细、ClickHouse 写入与 HBase prepare 的报表项目结构和计算代码。",
+    description: "生成覆盖 KPI、汇总明细、ClickHouse 写入与 HBase prepare 的报表代码；通用项目使用受限执行契约并校验全部输出。",
     input: "报表规则",
     output: "报表项目",
     glyph: "报",
     tone: "indigo",
+  },
+  {
+    id: "pipeline-excel",
+    eyebrow: "PIPELINE EXPORT",
+    title: "Pipeline Export 工作簿生成",
+    description: "根据水线设计和结构化事实填充 DataHub / DataEngine Pipeline Export 模板，并校验工作表、引用与字段规则。",
+    input: "水线事实 / XLSX",
+    output: "可导入工作簿",
+    glyph: "表",
+    tone: "blue",
   },
   {
     id: "ddl",
@@ -78,10 +98,10 @@ export const capabilities: readonly Capability[] = [
 ] as const;
 
 export const workflowSteps: readonly WorkflowStep[] = [
-  { index: "01", verb: "输入", title: "接住现场材料", description: "读取需求文档、任务日志、字段表或已有 DDL。" },
-  { index: "02", verb: "理解", title: "还原工程语义", description: "识别映射、口径、rowkey、依赖与运行约束。" },
-  { index: "03", verb: "生成", title: "交付真实产物", description: "输出开发说明、诊断结论、项目代码与 SQL。" },
-  { index: "04", verb: "验证", title: "守住交付边界", description: "核对运行语义、结构完整性与可审计变更。" },
+  { index: "01", verb: "识别", title: "接住现场材料", description: "向导先读取需求文档、任务日志、Pipeline Export 模板、字段表或已有 DDL。" },
+  { index: "02", verb: "路由", title: "选择专业路线", description: "识别任务类型和工程语义，只调用当前交付真正需要的模块。" },
+  { index: "03", verb: "生成", title: "交付真实产物", description: "输出开发说明、诊断结论、项目代码、Excel 工作簿与 SQL。" },
+  { index: "04", verb: "验证", title: "给出明确状态", description: "运行适用校验，区分阻塞、安全脚手架、测试通过和待部署复核。" },
 ] as const;
 
 export const reliabilityPoints: readonly ReliabilityPoint[] = [

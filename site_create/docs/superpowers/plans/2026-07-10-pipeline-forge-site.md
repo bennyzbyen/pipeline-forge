@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Formal working directory: `D:\Benny\skill_lab\plugins\pipeline-forge\site_create`.
+- Formal working directory: the repository-local `site_create/` directory.
 - Use the existing `..\assets\logo.png` and `..\assets\icon.png`; do not redraw or alter the brand mark.
 - Chinese is the primary language; English is limited to short labels and technical terms.
 - Present exactly five current capabilities: requirement-doc conversion, job-log diagnosis, synchronization code generation, report code generation, and multi-database DDL generation/conversion.
@@ -339,7 +339,7 @@
 
 - [ ] **Step 6: Publish only after the production build succeeds**
 
-  Invoke Sites hosting from `D:\Benny\skill_lab\plugins\pipeline-forge\site_create`, choose private publication unless the user explicitly changes visibility, and retain the returned deployment URL.
+  Invoke Sites hosting from the repository-local `site_create/` directory, choose private publication unless the user explicitly changes visibility, and retain the returned deployment URL.
 
 - [ ] **Step 7: Verify the hosted page**
 

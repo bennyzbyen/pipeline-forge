@@ -1,0 +1,213 @@
+# coding: utf-8
+"""Deterministic interpreter for the normalized report execution contract.
+
+The contract is data, not Python code. This module deliberately does not use
+eval/exec or dynamically import user-provided functions.
+"""
+
+from common_utils.all_modules import Dict, logger, pd
+
+
+def _require_columns(df: pd.DataFrame, columns, context: str) -> None:
+    missing = [column for column in columns if column not in df.columns]
+    if missing:
+        raise ValueError(f"{context} missing required columns: {missing}")
+
+
+def _lookup_value(value_from: str, time_range: dict, params: dict):
+    root, _, key = str(value_from or "").partition(".")
+    if not key or root not in {"time_range", "params"}:
+        raise ValueError(f"value_from must use time_range.<key> or params.<key>: {value_from!r}")
+    values = time_range if root == "time_range" else params
+    if key not in values:
+        raise ValueError(f"value_from key is missing: {value_from}")
+    return values[key]
+
+
+def _operand(df: pd.DataFrame, spec, time_range: dict, params: dict):
+    if isinstance(spec, dict):
+        if "column" in spec:
+            column = str(spec["column"])
+            _require_columns(df, [column], "expression")
+            return df[column]
+        if "value_from" in spec:
+            return _lookup_value(spec["value_from"], time_range, params)
+        if "value" in spec:
+            return spec["value"]
+        raise ValueError(f"operand object needs column, value, or value_from: {spec}")
+    return spec
+
+
+def _expression(df: pd.DataFrame, expression: dict, time_range: dict, params: dict):
+    op = expression.get("op")
+    if op == "copy":
+        column = str(expression.get("column") or "")
+        _require_columns(df, [column], "copy expression")
+        return df[column]
+    if op == "literal":
+        if "value_from" in expression:
+            return _lookup_value(expression["value_from"], time_range, params)
+        return expression.get("value")
+    if op == "coalesce":
+        columns = list(expression.get("columns") or [])
+        _require_columns(df, columns, "coalesce expression")
+        result = df[columns[0]].copy()
+        for column in columns[1:]:
+            result = result.combine_first(df[column])
+        return result
+
+    operands = [_operand(df, item, time_range, params) for item in expression.get("operands", [])]
+    if op == "concat":
+        separator = str(expression.get("separator") or "")
+        values = []
+        for operand in operands:
+            if isinstance(operand, pd.Series):
+                values.append(operand.fillna("").astype(str))
+            else:
+                values.append(pd.Series(["" if operand is None else str(operand)] * len(df), index=df.index))
+        if not values:
+            raise ValueError("concat expression requires operands")
+        result = values[0]
+        for value in values[1:]:
+            result = result.str.cat(value, sep=separator)
+        return result
+    if len(operands) < 2:
+        raise ValueError(f"{op} expression requires at least two operands")
+    result = operands[0]
+    for operand in operands[1:]:
+        if op == "add":
+            result = result + operand
+        elif op == "subtract":
+            result = result - operand
+        elif op == "multiply":
+            result = result * operand
+        elif op == "divide":
+            denominator = operand.replace(0, pd.NA) if isinstance(operand, pd.Series) else (pd.NA if operand == 0 else operand)
+            result = result / denominator
+        else:
+            raise ValueError(f"unsupported expression op: {op}")
+    if op == "divide" and expression.get("fill_value") is not None:
+        result = result.fillna(expression.get("fill_value"))
+    return result
+
+
+def _filter(df: pd.DataFrame, conditions, time_range: dict, params: dict) -> pd.DataFrame:
+    mask = pd.Series(True, index=df.index)
+    for condition in conditions:
+        column = str(condition.get("column") or "")
+        _require_columns(df, [column], "filter")
+        operator = condition.get("operator")
+        series = df[column]
+        value = _lookup_value(condition["value_from"], time_range, params) if condition.get("value_from") else condition.get("value")
+        if operator == "eq":
+            item_mask = series == value
+        elif operator == "ne":
+            item_mask = series != value
+        elif operator == "in":
+            item_mask = series.isin(value if isinstance(value, list) else [value])
+        elif operator == "not_in":
+            item_mask = ~series.isin(value if isinstance(value, list) else [value])
+        elif operator == "gt":
+            item_mask = series > value
+        elif operator == "ge":
+            item_mask = series >= value
+        elif operator == "lt":
+            item_mask = series < value
+        elif operator == "le":
+            item_mask = series <= value
+        elif operator == "isnull":
+            item_mask = series.isna()
+        elif operator == "notnull":
+            item_mask = series.notna()
+        elif operator == "contains":
+            item_mask = series.fillna("").astype(str).str.contains(str(value), regex=False)
+        else:
+            raise ValueError(f"unsupported filter operator: {operator}")
+        mask &= item_mask.fillna(False)
+    return df.loc[mask].copy()
+
+
+def _run_step(frames: Dict[str, pd.DataFrame], step: dict, time_range: dict, params: dict) -> pd.DataFrame:
+    op = step.get("op")
+    if op in {"select", "project"}:
+        input_name = step.get("input") or step.get("source")
+        df = frames[input_name]
+        columns = list(step.get("columns") or [])
+        _require_columns(df, columns, op)
+        return df.loc[:, columns].copy()
+    if op == "filter":
+        return _filter(frames[step["input"]], step.get("conditions") or [], time_range, params)
+    if op == "rename":
+        df = frames[step["input"]].copy()
+        mapping = dict(step.get("columns") or {})
+        _require_columns(df, list(mapping), "rename")
+        return df.rename(columns=mapping)
+    if op == "derive":
+        df = frames[step["input"]].copy()
+        for column, expression in (step.get("columns") or {}).items():
+            df[column] = _expression(df, expression, time_range, params)
+        return df
+    if op == "join":
+        left = frames[step["left"]]
+        right = frames[step["right"]]
+        kwargs = {
+            "how": step.get("how") or "left",
+            "suffixes": tuple(step.get("suffixes") or ["_x", "_y"]),
+        }
+        if step.get("on"):
+            kwargs["on"] = list(step["on"])
+            _require_columns(left, kwargs["on"], "join left")
+            _require_columns(right, kwargs["on"], "join right")
+        else:
+            kwargs["left_on"] = list(step.get("left_on") or [])
+            kwargs["right_on"] = list(step.get("right_on") or [])
+            _require_columns(left, kwargs["left_on"], "join left")
+            _require_columns(right, kwargs["right_on"], "join right")
+        return left.merge(right, **kwargs)
+    if op == "aggregate":
+        df = frames[step["input"]]
+        group_by = list(step.get("group_by") or [])
+        _require_columns(df, group_by, "aggregate group_by")
+        named_aggs = {}
+        for output_column, aggregation in (step.get("aggregations") or {}).items():
+            agg = aggregation.get("agg")
+            source_column = aggregation.get("column")
+            if agg == "count" and not source_column:
+                source_column = group_by[0] if group_by else df.columns[0]
+            _require_columns(df, [source_column], "aggregate")
+            named_aggs[output_column] = pd.NamedAgg(column=source_column, aggfunc=agg)
+        if group_by:
+            return df.groupby(group_by, dropna=False).agg(**named_aggs).reset_index()
+        values = {name: getattr(df[item.column], item.aggfunc)() for name, item in named_aggs.items()}
+        return pd.DataFrame([values])
+    if op == "union":
+        return pd.concat([frames[name] for name in step.get("inputs") or []], ignore_index=True, sort=False)
+    if op == "deduplicate":
+        df = frames[step["input"]]
+        subset = list(step.get("subset") or [])
+        _require_columns(df, subset, "deduplicate")
+        return df.drop_duplicates(subset=subset, keep=step.get("keep") or "first").reset_index(drop=True)
+    raise ValueError(f"unsupported execution-contract step: {op}")
+
+
+def execute_contract(
+    source_data: Dict[str, pd.DataFrame],
+    time_range: dict,
+    params: dict,
+    execution_contract: dict,
+) -> Dict[str, pd.DataFrame]:
+    frames: Dict[str, pd.DataFrame] = {name: df.copy() for name, df in source_data.items()}
+    for step in execution_contract.get("steps") or []:
+        step_id = step["id"]
+        logger.info("contract_step_start id={} op={}", step_id, step.get("op"))
+        frames[step_id] = _run_step(frames, step, time_range, params)
+        logger.info("contract_step_complete id={} rows={} columns={}", step_id, len(frames[step_id]), len(frames[step_id].columns))
+
+    outputs: Dict[str, pd.DataFrame] = {}
+    for output_name, output in (execution_contract.get("outputs") or {}).items():
+        df = frames[output["input"]]
+        columns = list(output.get("columns") or [])
+        _require_columns(df, columns, f"output {output_name}")
+        outputs[output_name] = df.loc[:, columns].copy()
+        logger.info("contract_output_ready output={} rows={} columns={}", output_name, len(df), len(columns))
+    return outputs

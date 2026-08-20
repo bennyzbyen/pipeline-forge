@@ -9,6 +9,8 @@ from plugin_common import TimeStamp_Update, clean_local_directory, clean_local_f
 
 
 class COT_REPORT_WITHOUT_P:
+    """Synchronize changed rows for a table without a business period column."""
+
     def __init__(self, params: dict):
         self.params = params
         self.source_informations = params["source_informations"]
@@ -31,11 +33,11 @@ class COT_REPORT_WITHOUT_P:
         return self.timestamp_update.fetch_last_timestamp(self.mysql_table)
 
     def _detect_changes(self, last_timestamp):
-        logger.info("detect changed rows mysql_table={}, last_timestamp={}", self.mysql_table, last_timestamp)
+        logger.info("change_detection table={} predicate=updated_after", self.mysql_table)
         return self.etl_source.fetch_sync_mode(self.mysql_table, self.last_update_time_column, last_timestamp)
 
     def _fetch_source(self, last_timestamp):
-        logger.info("fetch changed rows mysql_table={}", self.mysql_table)
+        logger.info("source_export table={} predicate=updated_after", self.mysql_table)
         return self.etl_source.fetch_mysql(
             self.mysql_table,
             self.last_update_time_column,
@@ -46,8 +48,9 @@ class COT_REPORT_WITHOUT_P:
 
     def _write_clickhouse(self, source_files, last_timestamp):
         if not self.clickhouse_table:
+            logger.info("stage_skip stage=clickhouse_write table={} reason=target_not_configured", self.mysql_table)
             return None
-        logger.info("write clickhouse table={}", self.clickhouse_table)
+        logger.info("stage_start stage=clickhouse_write target={} predicate=changed_keys", self.clickhouse_table)
         return ck_operation.CLickHouseOperation().clickhouse_op(
             self.file_dir,
             self.clickhouse_table,
@@ -58,23 +61,38 @@ class COT_REPORT_WITHOUT_P:
 
     def _write_hbase(self, source_files):
         if not self.hbase_table:
+            logger.info("stage_skip stage=hbase_write table={} reason=target_not_configured", self.mysql_table)
             return None
         if not self.rowkey_rule_columns:
             raise ValueError("rowkey_rule_columns is required for HBase write")
-        logger.info("write hbase table={}", self.hbase_table)
+        logger.info("stage_start stage=hbase_write target={} rowkey_columns={}", self.hbase_table, len(self.rowkey_rule_columns))
         return hbase_operation.HBaseOperation().hbase_op(self.hbase_table, self.file_dir, self.rowkey_rule_columns)
 
     def _update_timestamp(self, last_update_timestamp):
         self.timestamp_update.update_last_timestamp(self.mysql_table, last_update_timestamp)
 
     def run(self):
+        """Run incremental export and advance progress only after target success."""
         start_time = datetime.datetime.now()
         self.file_dir = f"./exec_{self.mysql_table}"
         clean_local_directory(self.file_dir)
+        stage = "initialization"
+        logger.info(
+            "pipeline_start component=cot_sync table={} sync_shape=without_period mode=automatic hbase_target={} clickhouse_target={}",
+            self.mysql_table,
+            self.hbase_table,
+            self.clickhouse_table,
+        )
         try:
+            stage = "timestamp_read"
             last_timestamp = self._get_last_timestamp()
+            stage = "change_detection"
+            logger.info("stage_start stage={} table={}", stage, self.mysql_table)
             is_sync, last_update_timestamp, sync_size = self._detect_changes(last_timestamp)
             if not is_sync:
+                duration = datetime.datetime.now() - start_time
+                logger.info("stage_skip stage={} table={} reason=no_changes", stage, self.mysql_table)
+                logger.info("pipeline_complete component=cot_sync table={} status=no_changes duration={}", self.mysql_table, duration)
                 return return_pipeline_result(
                     [
                         {
@@ -86,11 +104,45 @@ class COT_REPORT_WITHOUT_P:
                     ]
                 )
 
+            logger.info("stage_complete stage={} table={} changed_rows={}", stage, self.mysql_table, sync_size)
+            stage = "source_export"
+            logger.info("stage_start stage={} table={}", stage, self.mysql_table)
             fetch_metrics = self._fetch_source(last_timestamp)
+            logger.info(
+                "stage_complete stage={} table={} rows={} duration={}",
+                stage,
+                self.mysql_table,
+                fetch_metrics.get("mysql_size"),
+                fetch_metrics.get("duration"),
+            )
+            stage = "clickhouse_write"
             ck_metrics = self._write_clickhouse(fetch_metrics, last_timestamp)
+            if ck_metrics:
+                logger.info(
+                    "stage_complete stage={} target={} rows={} deleted_rows={} duration={}",
+                    stage,
+                    self.clickhouse_table,
+                    ck_metrics.get("clickhouse_size"),
+                    ck_metrics.get("clickhouse_delete_size"),
+                    ck_metrics.get("duration"),
+                )
+            stage = "hbase_write"
             hbase_metrics = self._write_hbase(fetch_metrics)
+            if hbase_metrics:
+                logger.info(
+                    "stage_complete stage={} target={} rows={} duration={}",
+                    stage,
+                    self.hbase_table,
+                    hbase_metrics.get("hbase_size"),
+                    hbase_metrics.get("duration"),
+                )
+
+            # Safety: progress advances only after all configured target writes return successfully.
+            stage = "timestamp_update"
+            logger.info("stage_start stage={} table={}", stage, self.mysql_table)
             self._update_timestamp(last_update_timestamp)
 
+            duration = datetime.datetime.now() - start_time
             metrics = [
                 {
                     "input": f"mysql_table:{self.mysql_table}",
@@ -98,15 +150,24 @@ class COT_REPORT_WITHOUT_P:
                     "output2": f"clickhouse_table:{self.clickhouse_table}",
                     "last_timestamp": last_timestamp,
                     "last_update_timestamp": last_update_timestamp,
-                    "duration": str(datetime.datetime.now() - start_time),
+                    "duration": str(duration),
                     "remark": "insert mysql data to hbase & clickhouse",
                 }
             ]
             for item in [fetch_metrics, ck_metrics, hbase_metrics]:
                 if item:
                     metrics.append(item)
+            logger.info(
+                "pipeline_complete component=cot_sync table={} status=success source_rows={} clickhouse_rows={} hbase_rows={} duration={}",
+                self.mysql_table,
+                fetch_metrics.get("mysql_size"),
+                ck_metrics.get("clickhouse_size") if ck_metrics else None,
+                hbase_metrics.get("hbase_size") if hbase_metrics else None,
+                duration,
+            )
             return return_pipeline_result(metrics)
-        except Exception:
-            raise RuntimeError(format_exception())
+        except Exception as exc:
+            logger.exception("pipeline_failed component=cot_sync table={} stage={} mode=automatic", self.mysql_table, stage)
+            raise RuntimeError(format_exception()) from exc
         finally:
             clean_local_files(self.file_dir)

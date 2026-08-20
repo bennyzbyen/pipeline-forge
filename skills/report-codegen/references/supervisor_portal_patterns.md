@@ -1,8 +1,6 @@
 # Supervisor Portal Report Patterns
 
-This reference is self-contained and should be used before any external sample. The remote repository `https://github.com/bennyzbyen/datahub_supervisor_portal.git` is optional style guidance only when it is accessible.
-
-Use this as the first-choice pattern for report development unless the user explicitly selects another pattern.
+Use this reference only for supervisor-portal target families. It is self-contained and should be used before any external sample. The remote repository `https://github.com/bennyzbyen/datahub_supervisor_portal.git` is optional style guidance only when it is accessible.
 
 ## Project Shape
 
@@ -192,46 +190,3 @@ For deployed logs, confirm:
 - output row counts per table
 - ClickHouse delete and insert target table names
 - final metrics
-
-## HBase Prepare / Pipeline Pattern
-
-Use this pattern when a DataEngine report document has HBase physical targets, source export tasks such as `init_data_source` or `period_export_execute`, and downstream calculation tasks such as `cal_store_yield_grade`.
-
-This is a report-development component, but it is not a normal ClickHouse writer:
-
-- `DataSource` derives the target period or R13P period list from the calendar HBase table.
-- `DataSource` reads the configured HBase source table by period range.
-- `DataSource` filters source rows using documented filters such as `SubSegmentID in (1,2,3,6,7)`.
-- `DataSource` aggregates source rows before export when the production pattern does so, for example `SelloutAmount` by `StoreID`.
-- `DataSource` writes compressed CSV files to FS, for example `cmt_sellout_<period>.csv.gz`.
-- `DataProcess` optionally activates downstream DataHub pipeline process UIDs when params request it.
-- `DataStorage` may intentionally be no-op because the downstream DataHub pipeline owns final HBase calculation and write.
-
-Keep these values configurable:
-
-- `export_mode`: `init` for R13P export, `daily` for previous-period export.
-- `specific_range`: manual period list for reruns.
-- `hbase_export_cols`: runtime source columns.
-- `is_run_pipeline`: whether to activate downstream pipeline after export.
-- FS root and pipeline process UIDs as placeholders in config.
-
-Existing project files may already contain real app keys, app secrets, API keys, process UIDs, or URLs. Preserve them when editing the same in-scope file unless the user asks to change them. Do not copy real values from production samples into new scaffold files, examples, generated params, or documentation unless the user explicitly asks.
-
-Generate or preserve `params_configs/rowkey_config.py` for HBase prepare projects. It should include fill-in comments for:
-
-- exact rowkey columns and order
-- separator
-- prefix/hash/salt behavior
-- date or period formatting
-- one expected rowkey example
-- `confirmed = False` until docs/code/logs prove the rule
-
-For local verification, generated code should support injected `hbase_data`, `hbase_client`, `fs_client`, `gateway_client`, and `pipeline_client` so period derivation and export semantics can be tested without production services.
-
-For deployed logs, confirm:
-
-- resolved current date and period list
-- source HBase table and row range
-- source rows before and after filters
-- generated FS file name and destination path
-- optional pipeline process UID activation result

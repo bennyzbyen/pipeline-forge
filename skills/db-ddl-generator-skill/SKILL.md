@@ -1,6 +1,6 @@
 ---
 name: db-ddl-generator-skill
-description: Use when the user asks to generate, parse, convert, or review database CREATE TABLE DDL from schemas, documents, or existing SQL.
+description: Generate, parse, convert, and review CREATE TABLE DDL for MySQL, Microsoft SQL Server/MSSQL, ClickHouse, and PostgreSQL/PGSQL from Excel/CSV field lists, docx embedded Excel or tables, existing DDL, and column descriptions. Use when Codex needs to produce auditable table DDL, convert DDL between supported databases, extract a reusable ClickHouse QA/PROD template from production DDL, or explain type mappings, assumptions, and SQL conversion risks. This skill only generates SQL and validation notes; it must not connect to databases, store credentials, or execute SQL.
 ---
 
 # DB DDL Generator

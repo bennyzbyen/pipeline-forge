@@ -2,13 +2,15 @@ from common_utils.all_modules import Dict, logger, pd
 
 
 class DataStorage:
+    """Persist named outputs with requirement-defined replacement semantics."""
+
     def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.outputs = outputs
         self.time_range = time_range
         self.params = params
 
     def run(self):
-        logger.info("Start DataStorage")
+        logger.info("storage_plan status=placeholder outputs={}", len(self.outputs))
         raise NotImplementedError(
-            "Report scaffold only: implement ClickHouse/HBase/FS writes from dev_doc.md before deployment."
+            "Report scaffold only: implement ClickHouse/HBase/FS writes from technical_design.md before deployment."
         )

@@ -213,6 +213,30 @@ def classify_source_group(source_table: str, with_period: bool) -> str:
     return "report_ps_p"
 
 
+def find_table_contract_issues(config: Dict[str, Any]) -> List[str]:
+    """Return deterministic per-table blockers without guessing replacement columns."""
+    fields = unique(clean_text(value) for value in config.get("fields", []))
+    if not fields:
+        return ["missing_field_dictionary"]
+
+    required_columns = [clean_text(config.get("last_update_time_column"))]
+    if config.get("sync_mode") == "with_period":
+        required_columns.extend(
+            [clean_text(config.get("period_column")), clean_text(config.get("code_column"))]
+        )
+    else:
+        required_columns.append(clean_text(config.get("key_column")))
+    required_columns.extend(clean_text(value) for value in config.get("rowkey_rule_columns", []))
+
+    issues: List[str] = []
+    if any(not column for column in required_columns):
+        issues.append("missing_required_column_name")
+    for column in unique(required_columns):
+        if column not in fields:
+            issues.append(f"column_not_in_fields:{column}")
+    return unique(issues)
+
+
 def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path]) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
     field_map = build_field_map(facts, extracted_tables)
     schedule_map = build_schedule_map(facts)
@@ -249,7 +273,7 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
         mapping = target_map.get(doc_source_table, {})
         schedule = schedule_map.get(doc_source_table, {})
         hbase_table = COT_HBASE_TABLE_OVERRIDES.get(source_table, clean_text(row.get("source_hbase_table")))
-        configs[source_table] = {
+        config = {
             "business_desc": clean_text(row.get("business_desc")),
             "report_type": clean_text(row.get("report_type")),
             "source_range": clean_text(row.get("source_range")),
@@ -273,6 +297,15 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
             "schedule": schedule,
             "fields": fields,
         }
+        config["contract_issues"] = find_table_contract_issues(config)
+        config["runtime_enabled"] = not config["contract_issues"]
+        if config["contract_issues"]:
+            questions.append(
+                f"{source_table}: runtime is disabled until table contract issues are resolved: "
+                + ", ".join(config["contract_issues"])
+                + "."
+            )
+        configs[source_table] = config
 
     return configs, unique(questions)
 
@@ -322,6 +355,8 @@ def render_plugin_config(configs: Dict[str, Dict[str, Any]], project_name: str) 
             "clickhouse_table": item["clickhouse_table"],
             "source_group": item["source_group"],
             "sync_mode": item["sync_mode"],
+            "contract_issues": item["contract_issues"],
+            "runtime_enabled": item["runtime_enabled"],
         }
         for name, item in configs.items()
     }
@@ -474,13 +509,19 @@ hbase_rowkey_rules = {py_literal(rules)}
 '''
 
 
-def write_manifest(output_dir: Path, configs: Dict[str, Dict[str, Any]], questions: List[str]) -> None:
+def write_manifest(
+    output_dir: Path,
+    configs: Dict[str, Dict[str, Any]],
+    questions: List[str],
+    codegen_contract: Dict[str, Any],
+) -> None:
     manifest = {
         "summary": {
             "table_count": len(configs),
             "with_period_count": len([item for item in configs.values() if item["sync_mode"] == "with_period"]),
             "without_period_count": len([item for item in configs.values() if item["sync_mode"] == "without_period"]),
         },
+        "codegen_contract": codegen_contract,
         "tables": list(configs.values()),
         "questions": questions,
     }
@@ -502,6 +543,7 @@ def write_manifest(output_dir: Path, configs: Dict[str, Dict[str, Any]], questio
         "",
         "- Local check: run `python -m py_compile` for generated Python files.",
         "- Local check: parse `params.example.json` and `cot_sync_manifest.json` as JSON.",
+        "- Contract check: run `verify_cot_manifest_semantics.py --project-dir <project>` to validate every table; add `--strict-deployment` only for deployment review.",
         "- Deployment check: verify logs for source table, sync mode, period/timestamp range, exported rows, HBase rows, ClickHouse rows, and final DataEngine metrics.",
         "- Credentials are placeholders; fill app keys, database hosts, passwords, and cluster only in the deployment environment.",
     ]
@@ -514,6 +556,20 @@ def scaffold_project(args: argparse.Namespace) -> None:
     template_root = skill_dir / "assets" / "minimal_sync_project"
 
     facts = load_json(args.structured_facts)
+    codegen_contract = facts.get("codegen_contract", {})
+    if codegen_contract and (
+        codegen_contract.get("project_type") != "data-sync"
+        or codegen_contract.get("component_kind") == "bysku_report_pipeline"
+    ):
+        raise ValueError(
+            "codegen_contract routes this design package to report-codegen, not data-sync-codegen."
+        )
+    if codegen_contract and not codegen_contract.get("ready_for_codegen", False) and not args.allow_blocked_scaffold:
+        blockers = "; ".join(str(item) for item in codegen_contract.get("blockers", [])) or "unresolved design blockers"
+        raise ValueError(
+            "codegen_contract blocks full scaffolding: "
+            f"{blockers}. Re-run with --allow-blocked-scaffold only for an explicitly requested safe scaffold."
+        )
     configs, questions = build_table_configs(facts, args.extracted_tables)
 
     copy_template_tree(template_root, args.output_dir, args.force)
@@ -521,7 +577,7 @@ def scaffold_project(args: argparse.Namespace) -> None:
     config_path.write_text(render_plugin_config(configs, args.project_name), encoding="utf-8")
     rowkey_config_path = args.output_dir / "cot_config" / "rowkey_config.py"
     rowkey_config_path.write_text(render_rowkey_config(configs), encoding="utf-8")
-    write_manifest(args.output_dir, configs, questions)
+    write_manifest(args.output_dir, configs, questions, facts.get("codegen_contract", {}))
 
 
 def parse_args() -> argparse.Namespace:
@@ -531,6 +587,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--extracted-tables", type=Path, default=None, help="Optional extracted_tables directory with embedded CSV field dictionaries.")
     parser.add_argument("--project-name", default="cot_2026_sync", help="Project storage name used in placeholder fs_root_dir.")
     parser.add_argument("--force", action="store_true", help="Overwrite files generated by this scaffold.")
+    parser.add_argument(
+        "--allow-blocked-scaffold",
+        action="store_true",
+        help="Generate a safe placeholder scaffold even when codegen_contract is blocked.",
+    )
     return parser.parse_args()
 
 

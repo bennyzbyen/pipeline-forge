@@ -43,17 +43,34 @@ def _apply_table_defaults(params: dict) -> dict:
 
 def calc_single(params: dict):
     params = _apply_table_defaults(params)
-    logger.info("---------params---------{}", params)
     source_info = params.get("source_informations", {})
     table_name = source_info.get("mysql_table") or params.get("source_table")
     if not table_name:
         raise ValueError("source_informations.mysql_table is required")
 
+    defaults = table_configs.get(table_name, {})
+    if defaults.get("runtime_enabled") is False:
+        issues = defaults.get("contract_issues") or ["unresolved table contract"]
+        raise ValueError(
+            f"table runtime is disabled until contract issues are resolved: {table_name}: "
+            + ", ".join(str(item) for item in issues)
+        )
+
+    # Security: log an allowlisted dispatch summary, never the raw runtime payload.
+    logger.info(
+        "dispatch table={} period_supplied={} batch_size={} hbase_target={} clickhouse_target={}",
+        table_name,
+        bool(source_info.get("period")),
+        source_info.get("batch_size"),
+        params.get("hbase_informations", {}).get("hbase_table"),
+        params.get("clickhouse_information", {}).get("clickhouse_table"),
+    )
+
     if table_name in WITH_PERIOD:
-        logger.info("start to execute sync with period task")
+        logger.info("dispatch_selected table={} sync_shape=with_period", table_name)
         return COT_REPORT_WITH_P(params).run()
     if table_name in WITHOUT_PERIOD:
-        logger.info("start to execute sync without period task")
+        logger.info("dispatch_selected table={} sync_shape=without_period", table_name)
         return COT_REPORT_WITHOUT_P(params).run()
     raise ValueError(f"table is not configured in with_period_tables or without_period_tables: {table_name}")
 

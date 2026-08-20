@@ -4,14 +4,16 @@
 
 # PipelineForge
 
-PipelineForge is a data pipeline development toolkit built around independent, focused modules. Each module keeps a single responsibility and can be used alone or as part of a document-to-code workflow.
+PipelineForge is a data pipeline development toolkit with a beginner-friendly front door and independent specialist modules. Use the guide for an end-to-end workflow or invoke a focused module directly.
 
 ## What It Covers
 
+- Guided intake, routing, blocker handling, generation, and verification for beginners.
 - Requirement document extraction for PRD, DataEngine, DataHub, waterline, COT, HBase, ClickHouse, Superview, and report documents.
 - Job log diagnosis for DataEngine/DataHub synchronization and report jobs.
-- Portable Python synchronization project generation.
-- Portable Python report pipeline generation.
+- Portable Python synchronization project generation with all-table contract verification and runtime guards.
+- Portable Python report pipeline generation with bounded execution contracts and complete output/write verification.
+- DataHub/DataEngine Pipeline Export workbook generation and validation.
 - Database DDL generation, conversion, and review.
 
 ## Installation
@@ -38,11 +40,15 @@ pipeline-forge/
 
 | Module | Use when you need to |
 | --- | --- |
+| `pipeline-forge-guide` | Move from source files to a verified safe deliverable with step-by-step guidance. |
 | `data-doc-to-dev-md` | Extract structured facts and development notes from requirement documents. |
 | `data-job-log-debugger` | Diagnose failed data jobs from logs or screenshots. |
-| `data-sync-codegen` | Generate or revise synchronization project code. |
-| `report-codegen` | Generate or revise report pipeline project code. |
+| `data-sync-codegen` | Generate or revise synchronization code with all-table contract checks. |
+| `report-codegen` | Generate specialized or contract-driven report code with output/write checks. |
+| `pipeline-excel-builder` | Fill and validate Pipeline Export Excel workbooks from waterline facts. |
 | `db-ddl-generator-skill` | Build or convert DDL for MySQL, SQL Server, ClickHouse, and PostgreSQL. |
+
+Start the guided route with `$pipeline-forge-guide` or: `Guide me from these source files to a verified deliverable.`
 
 ## Validation
 

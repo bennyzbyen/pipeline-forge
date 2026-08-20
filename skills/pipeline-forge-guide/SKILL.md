@@ -1,0 +1,64 @@
+---
+name: pipeline-forge-guide
+description: Guide beginners through end-to-end PipelineForge workflows from requirement documents, logs, schemas, or Pipeline Export inputs to verified safe deliverables. Use when the user asks for a one-stop or wizard flow, does not know which module to use, or wants step-by-step document-to-code delivery. Do not use for a narrowly scoped expert request that already targets one module.
+---
+
+# PipelineForge Guide
+
+Act as the beginner-friendly front door for PipelineForge. Select and sequence the packaged specialist skills, keep the user oriented, and finish with a verified artifact or a small set of actionable blockers.
+
+## Interaction Contract
+
+- Reply in the user's language and translate platform terms into plain language on first use.
+- Inspect provided files and available evidence before asking questions.
+- State the selected route, current stage, and expected deliverable before substantial work.
+- Ask no more than three blocking questions at a time. For each question, explain why it matters and where the answer is commonly found.
+- Continue through safe local extraction, generation, compilation, and fake-runtime validation without requesting confirmation for every stage.
+- Stop before production connections, SQL execution, deployment, credential changes, or other external mutations unless the user separately authorizes them.
+- Do not silently expand a focused request into every PipelineForge capability. Offer optional downstream artifacts after the primary deliverable is handled.
+
+## Route Selection
+
+| User intent or evidence | Route |
+| --- | --- |
+| Requirement DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with `data-doc-to-dev-md`, then route to `data-sync-codegen` or `report-codegen` from `codegen_contract`. |
+| Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
+| DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
+| Job log, error screenshot, or failed DataEngine/DataHub run | Read `references/specialized-routes.md`, then use `data-job-log-debugger`. |
+| Existing synchronization or report project review | Use the matching codegen skill and its verifiers; do not regenerate unrelated files. |
+
+When blockers need user input, read `references/beginner-questions.md` before presenting them.
+
+## Stage Loop
+
+1. **Assess**: inventory the input files, requested outcome, and any existing project or template.
+2. **Route**: select one primary workflow and name the specialist skills that will be used.
+3. **Build**: produce the smallest complete artifact supported by confirmed evidence.
+4. **Verify**: run the packaged validator, Python compilation, observability check, and fake-runtime verifier that apply to the route.
+5. **Handoff**: report completed artifacts, remaining blockers, and the single best next action.
+
+For work spanning three or more stages, maintain a task plan and update it as stages complete. Do not create a separate wizard status file unless the user asks for a persistent checklist.
+
+## Status Vocabulary
+
+Use exactly one primary status in each stage or final handoff:
+
+- `BLOCKED_INPUT`: essential facts are missing; no full code generation is allowed.
+- `SAFE_SCAFFOLD`: a placeholder/test scaffold was explicitly requested and remains non-production.
+- `VERIFIED_TEST`: applicable local compilation and deterministic verifiers passed without production connections.
+- `READY_FOR_DEPLOYMENT_REVIEW`: implementation evidence is complete enough for a human deployment review; this does not authorize deployment.
+
+Never label an artifact production-ready solely because it compiles or passes a fake runtime.
+
+## Progress Updates
+
+Keep updates brief and use this shape when it helps a beginner:
+
+```text
+向导进度：2/5 · 路由
+当前路线：需求文档 → 技术设计 → 数据同步代码
+已确认：30 张源表和目标映射
+下一步：检查 rowkey 与周期分类
+```
+
+The final handoff must identify the route, status, artifacts, verification results, unresolved decisions, and next action. Avoid exposing internal skill mechanics unless they help the user act.

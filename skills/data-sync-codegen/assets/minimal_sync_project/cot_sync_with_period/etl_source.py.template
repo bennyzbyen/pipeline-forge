@@ -59,7 +59,11 @@ def get_sync_mode(mysql_table, last_update_time_column, period_column, last_time
         f"WHERE `{last_update_time_column}` > '{last_timestamp}' "
         f"GROUP BY {period_column}"
     )
-    logger.info("detect changed periods sql: {}", query_changed)
+    logger.info(
+        "source_query operation=detect_changed_periods table={} predicate=updated_after column={}",
+        mysql_table,
+        last_update_time_column,
+    )
     changed_df = pd.read_sql(query_changed, engine)
     if changed_df.empty:
         return None, None
@@ -72,7 +76,7 @@ def get_sync_mode(mysql_table, last_update_time_column, period_column, last_time
         f"WHERE {period_column} IN ({period_sql}) "
         f"GROUP BY {period_column}"
     )
-    logger.info("detect period total sql: {}", query_total)
+    logger.info("source_query operation=count_period_totals table={} period_count={}", mysql_table, len(period_list))
     total_df = pd.read_sql(query_total, engine)
 
     sync_df = changed_df.merge(total_df, on=period_column, how="left")
@@ -87,10 +91,10 @@ def get_sync_mode(mysql_table, last_update_time_column, period_column, last_time
         f"FROM {mysql_params['db']}.{mysql_table} "
         f"WHERE {period_column} IN ({period_sql})"
     )
-    logger.info("detect max timestamp sql: {}", query_timestamp)
+    logger.info("source_query operation=max_timestamp table={} period_count={}", mysql_table, len(period_list))
     timestamp_df = pd.read_sql(query_timestamp, engine)
     last_update_timestamp = timestamp_df["last_update_timestamp"].iloc[0]
-    logger.info("mysql max timestamp: {}", last_update_timestamp)
+    logger.info("stage_complete stage=max_timestamp table={} timestamp={}", mysql_table, last_update_timestamp)
     return sync_list, last_update_timestamp
 
 
@@ -98,7 +102,7 @@ def create_file_and_header(mysql_table, cols, file_dir, period):
     now = datetime.now()
     file_name = f"{period}_{mysql_table}_{now.strftime('%Y%m%d%H%M%S%f')}.csv"
     file_path = f"{file_dir}/{file_name}"
-    logger.info("file_name: {}", file_name)
+    logger.info("source_file_created table={} period={} file={}", mysql_table, period, file_name)
     with open(file_path, "a", newline="", encoding="utf-8") as output_file:
         output_file.write(",".join(cols) + "\n")
     return file_path
@@ -122,7 +126,13 @@ def fetch_mysql(mysql_table, last_update_time_column, period_column, last_timest
                 f"WHERE {period_column} = '{period}' "
                 f"AND `{last_update_time_column}` > '{last_timestamp}'"
             )
-        logger.info("execute sql: {}", sql)
+        logger.info(
+            "source_query operation=export_rows table={} period={} mode={} selected_columns={}",
+            mysql_table,
+            period,
+            mode,
+            len(cols),
+        )
         with pymysql.connect(cursorclass=pymysql.cursors.SSCursor, **mysql_params) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
@@ -140,10 +150,10 @@ def fetch_mysql(mysql_table, last_update_time_column, period_column, last_timest
                 add_size += len(rows)
                 if add_size >= file_size:
                     add_size = 0
-                logger.info("execute sql finished. count: {}", df_size)
+                logger.info("stage_progress stage=source_export table={} period={} rows={}", mysql_table, period, df_size)
 
     end_time = datetime.now()
-    logger.info("end query table and write file, duration: {}", end_time - start_time)
+    logger.info("stage_complete stage=source_export table={} rows={} duration={}", mysql_table, df_size, end_time - start_time)
     return {
         "operation": "fetch_mysql_data",
         "fetch_mode": str(sync_list),

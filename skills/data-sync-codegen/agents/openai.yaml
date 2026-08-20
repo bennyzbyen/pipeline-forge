@@ -1,0 +1,6 @@
+interface:
+  display_name: "Data Sync Codegen"
+  short_description: "Generate DataEngine sync projects"
+  default_prompt: "Use $data-sync-codegen to generate a COT-style synchronization project from this three-file Technical Design handoff."
+policy:
+  allow_implicit_invocation: true

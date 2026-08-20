@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pipeline Excel Builder"
+  short_description: "Fill DataHub Pipeline Export Excel files"
+  default_prompt: "Use $pipeline-excel-builder to fill the provided Pipeline Export Excel workbook from this DataEngine waterline document."
+policy:
+  allow_implicit_invocation: true

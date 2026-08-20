@@ -31,7 +31,7 @@ def delete_by_partition(clickhouse_table, partition, clickhouse_client, database
         sql = f"ALTER TABLE {database_prefix}{clickhouse_table} DROP PARTITION '{partition}'"
     else:
         sql = f"ALTER TABLE {database_prefix}{clickhouse_table} ON CLUSTER {cluster} DROP PARTITION '{partition}'"
-    logger.info("drop partition sql: {}", sql)
+    logger.info("target_replace target={} operation=drop_partition partition={}", clickhouse_table, partition)
     clickhouse_client.command(sql)
 
 
@@ -58,7 +58,12 @@ def delete_delta(clickhouse_table, period, period_column, code_column, matching_
                 f"DELETE FROM {database_prefix}{clickhouse_table} ON CLUSTER {cluster} "
                 f"WHERE {code_column} IN ({code_sql}) AND {period_column} = '{period}'"
             )
-        logger.info("delete delta sql: {}", sql)
+        logger.info(
+            "target_replace target={} operation=delete_keys predicate=period_and_keys period={} batch_rows={}",
+            clickhouse_table,
+            period,
+            len(current_codes),
+        )
         clickhouse_client.command(sql)
     return len(all_codes)
 
@@ -74,7 +79,7 @@ def clickhouse_op(file_dir, sync_list, clickhouse_table, period_column, code_col
     for period, mode in sync_list:
         matching_files = glob.glob(f"{file_dir}/{period}*.csv")
         if not matching_files:
-            logger.warning("no source files for period={}, skip ClickHouse write", period)
+            logger.warning("stage_skip stage=clickhouse_write target={} period={} reason=no_source_files", clickhouse_table, period)
             continue
         if mode == "full":
             delete_by_partition(clickhouse_table, period, clickhouse_client, database_prefix)
@@ -90,7 +95,6 @@ def clickhouse_op(file_dir, sync_list, clickhouse_table, period_column, code_col
             )
         insert_to_clickhouse(matching_files, clickhouse_table, clickhouse_client, database)
         count_sql = f"SELECT COUNT() AS COUNT FROM {database_prefix}{clickhouse_table} WHERE {period_column} = '{period}'"
-        logger.info("count sql: {}", count_sql)
         size += clickhouse_client.query_df(count_sql)["COUNT"].iloc[0]
 
     end_time = datetime.now()

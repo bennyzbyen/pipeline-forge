@@ -727,8 +727,10 @@ img {
   transition: transform 240ms ease, box-shadow 240ms ease, border-color 240ms ease;
 }
 
-.capability-card:nth-child(4) { grid-column: 2 / span 2; }
-.capability-card:nth-child(5) { grid-column: 4 / span 2; }
+.capability-card.card-1 {
+  grid-column: span 6;
+  min-height: 285px;
+}
 
 .capability-card:hover,
 .capability-card:focus-within {
@@ -1216,8 +1218,6 @@ img {
   .value-strip { margin-bottom: 110px; }
   .value-strip > div { justify-content: center; padding-inline: 12px; }
   .capability-card { grid-column: span 3; }
-  .capability-card:nth-child(4), .capability-card:nth-child(5) { grid-column: span 3; }
-  .capability-card:nth-child(5) { grid-column: 2 / span 4; }
   .workflow-grid { grid-template-columns: repeat(2, 1fr); gap: 35px 0; }
   .workflow-step:nth-child(2) .workflow-marker i { display: none; }
   .artifact-flow { grid-template-columns: 1fr; justify-items: center; text-align: center; }
@@ -1269,9 +1269,8 @@ img {
   .section-heading { display: block; }
   .section-heading > p { margin-top: 20px; }
   .capability-grid { grid-template-columns: 1fr; }
-  .capability-card,
-  .capability-card:nth-child(4),
-  .capability-card:nth-child(5) { grid-column: auto; }
+  .capability-card { grid-column: auto; }
+  .capability-card.card-1 { grid-column: auto; }
   .workflow-section { padding-block: 110px; }
   .workflow-grid { grid-template-columns: 1fr; }
   .workflow-step { padding-right: 0; }

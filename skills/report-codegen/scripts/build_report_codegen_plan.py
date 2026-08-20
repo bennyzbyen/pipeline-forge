@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+from report_contract import validate_execution_contract
+
 
 def load_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -119,6 +121,39 @@ def infer_component_kind(
     return "standard_report"
 
 
+def has_specialized_implementation(
+    component_kind: str,
+    sources: List[Dict[str, Any]],
+    outputs: List[Dict[str, Any]],
+) -> bool:
+    if component_kind == "hbase_prepare_pipeline":
+        return True
+    output_text = " ".join(
+        clean_text(value).lower()
+        for output in outputs
+        for value in [output.get("target_name"), output.get("physical_table"), output.get("target_description")]
+    )
+    if "vehicle_verify" in output_text or "车辆核销" in output_text:
+        return True
+    output_names = {clean_text(output.get("target_name")).lower() for output in outputs}
+    if {
+        "supervisor_portal_store",
+        "supervisor_portal_store_sales",
+        "supervisor_portal_salesman",
+    }.issubset(output_names):
+        return True
+    source_text = " ".join(clean_text(source.get("table_or_path")).lower() for source in sources)
+    return any(
+        marker in source_text
+        for marker in [
+            "l1_mdp.vehicle_info_p",
+            "l0_dtr_order.t5_eo_erp_sales_order_line_p",
+            "dms_sellout",
+            "dms_soldto_subd_config",
+        ]
+    )
+
+
 def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
     sources = facts.get("report_sources", [])
     physical_targets = facts.get("report_physical_targets") or facts.get("report_clickhouse_targets", [])
@@ -126,6 +161,14 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
     field_mappings = facts.get("report_field_mappings", [])
     schedules = facts.get("report_schedules", [])
     component_hints = facts.get("component_hints", [])
+    codegen_contract = facts.get("codegen_contract", {})
+    component_kind = clean_text(codegen_contract.get("component_kind")) or infer_component_kind(
+        sources,
+        physical_targets,
+        logical_targets,
+        schedules,
+        component_hints,
+    )
 
     outputs = []
     for index, mapping in enumerate(field_mappings):
@@ -164,6 +207,16 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    execution_contract = facts.get("report_execution_contract") or facts.get("execution_contract") or {}
+    specialized = has_specialized_implementation(component_kind, sources, outputs)
+    execution_validation = (
+        {"status": "specialized", "error_count": 0, "warning_count": 0, "errors": [], "warnings": []}
+        if specialized
+        else validate_execution_contract(execution_contract, outputs)
+    )
+    design_ready = codegen_contract.get("ready_for_codegen") is True
+    implementation_ready = specialized or execution_validation.get("status") == "passed"
+
     return {
         "summary": {
             "source_count": len(sources),
@@ -171,7 +224,10 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
             "logical_target_count": len(logical_targets),
             "output_count": len(outputs),
             "schedule_count": len(schedules),
-            "component_kind": infer_component_kind(sources, physical_targets, logical_targets, schedules, component_hints),
+            "component_kind": component_kind,
+            "design_ready_for_codegen": design_ready,
+            "implementation_ready": implementation_ready,
+            "ready_for_codegen": design_ready and implementation_ready,
         },
         "sources": grouped_sources,
         "physical_targets": physical_targets,
@@ -179,6 +235,9 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
         "outputs": outputs,
         "schedules": schedules,
         "component_hints": component_hints,
+        "codegen_contract": codegen_contract,
+        "execution_contract": execution_contract,
+        "execution_validation": execution_validation,
         "handoff_readiness": facts.get("handoff_readiness", []),
         "inferences": facts.get("inferences", []),
     }
@@ -212,9 +271,41 @@ def render_markdown(plan: Dict[str, Any]) -> str:
             f"- Outputs: {summary['output_count']}",
             f"- Schedules: {summary['schedule_count']}",
             f"- Component kind: {summary.get('component_kind', 'standard_report')}",
+            f"- Ready for codegen: {summary.get('ready_for_codegen')}",
+            f"- Design contract ready: {summary.get('design_ready_for_codegen')}",
+            f"- Implementation ready: {summary.get('implementation_ready')}",
             "",
         ]
     )
+    if plan.get("execution_validation"):
+        validation = plan["execution_validation"]
+        lines.extend(
+            [
+                "## Execution Contract",
+                "",
+                f"- Status: {validation.get('status')}",
+                f"- Errors: {validation.get('error_count', 0)}",
+                *(
+                    [f"  - `{item.get('path', '')}`: {item.get('message', '')}" for item in validation.get("errors", [])]
+                    or ["  - None."]
+                ),
+                "",
+            ]
+        )
+    if plan.get("codegen_contract"):
+        contract = plan["codegen_contract"]
+        lines.extend(
+            [
+                "## Codegen Contract",
+                "",
+                f"- Project type: {contract.get('project_type', '')}",
+                f"- Component kind: {contract.get('component_kind', '')}",
+                f"- Ready for codegen: {contract.get('ready_for_codegen', False)}",
+                "- Blockers:",
+                *([f"  - {item}" for item in contract.get("blockers", [])] or ["  - None."]),
+                "",
+            ]
+        )
     if plan.get("component_hints"):
         lines.extend(
             [

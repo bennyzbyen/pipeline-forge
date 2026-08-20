@@ -68,7 +68,7 @@ Do not claim production equivalence until logs or fake-runtime tests prove:
 - selected periods and FS files
 - source row counts and missing-column fill behavior
 - detail/summary/ttl row counts
-- delete SQL for each ClickHouse table
+- delete target, predicate type, and affected rows for each ClickHouse table (inspect exact SQL in code review or a safe test harness, not INFO logs)
 - insert success for each table
 - R13P retention cleanup result
 

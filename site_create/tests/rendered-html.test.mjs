@@ -40,10 +40,12 @@ test("server-renders the complete PipelineForge product story", async () => {
   assert.match(html, /变更可审计/);
 
   for (const capability of [
+    "一条龙开发向导",
     "需求文档转开发说明",
     "数据任务日志诊断",
     "数据同步项目代码生成",
     "报表项目代码生成",
+    "Pipeline Export 工作簿生成",
     "多数据库 DDL 生成与转换",
   ]) {
     assert.match(html, new RegExp(capability));
@@ -55,7 +57,10 @@ test("server-renders the complete PipelineForge product story", async () => {
 
   assert.match(html, /plugin:\/\/pipeline-forge@personal/);
   assert.match(html, /在 Codex 中搜索 PipelineForge/);
-  assert.match(html, /0\.1\.0\+pf\.20260703075507/);
+  assert.match(html, /1 个向导 \+ 6 个专业模块/);
+  assert.match(html, /0\.1\.0\+codex\.20260820110400/);
+  assert.match(html, /逐表校验字段、调度形态、rowkey 与运行配置/);
+  assert.match(html, /通用项目使用受限执行契约并校验全部输出/);
   assert.match(html, /默认不连接数据库/);
   assert.match(html, /默认不执行 SQL/);
 });

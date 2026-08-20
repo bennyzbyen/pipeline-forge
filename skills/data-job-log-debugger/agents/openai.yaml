@@ -1,0 +1,6 @@
+interface:
+  display_name: "Data Job Log Debugger"
+  short_description: "Debug DataEngine job logs"
+  default_prompt: "Use $data-job-log-debugger to analyze this DataEngine job log and identify the root cause."
+policy:
+  allow_implicit_invocation: true

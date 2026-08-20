@@ -45,7 +45,11 @@ class CLickHouseOperation:
                 sql = f"DELETE FROM {database_prefix}{clickhouse_table} WHERE {key_column} IN ({id_sql})"
             else:
                 sql = f"DELETE FROM {database_prefix}{clickhouse_table} ON CLUSTER {cluster} WHERE {key_column} IN ({id_sql})"
-            logger.info("delete by id sql: {}", sql)
+            logger.info(
+                "target_replace target={} operation=delete_keys predicate=key_list batch_rows={}",
+                clickhouse_table,
+                len(current_ids),
+            )
             self.clickhouse_client.command(sql)
         return len(all_ids)
 
@@ -54,7 +58,7 @@ class CLickHouseOperation:
             sql = f"TRUNCATE TABLE {database_prefix}{clickhouse_table}"
         else:
             sql = f"TRUNCATE TABLE {database_prefix}{clickhouse_table} ON CLUSTER {cluster}"
-        logger.info("truncate sql: {}", sql)
+        logger.info("target_replace target={} operation=truncate", clickhouse_table)
         self.clickhouse_client.command(sql)
 
     def clickhouse_op(self, file_dir, clickhouse_table, last_update_time_column, last_timestamp, key_column):
@@ -62,7 +66,7 @@ class CLickHouseOperation:
         start_time = datetime.now()
         matching_files = glob.glob(f"{file_dir}/*.csv")
         if not matching_files:
-            logger.warning("no source files, skip ClickHouse write")
+            logger.warning("stage_skip stage=clickhouse_write target={} reason=no_source_files", clickhouse_table)
             size = 0
             delete_size = 0
         else:
@@ -76,7 +80,6 @@ class CLickHouseOperation:
                 f"SELECT COUNT() AS COUNT FROM {database_prefix}{clickhouse_table} "
                 f"WHERE `{last_update_time_column}` > '{last_timestamp}'"
             )
-            logger.info("count sql: {}", count_sql)
             size = self.clickhouse_client.query_df(count_sql)["COUNT"].iloc[0]
 
         end_time = datetime.now()

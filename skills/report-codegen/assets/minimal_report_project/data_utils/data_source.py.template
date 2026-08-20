@@ -2,6 +2,8 @@ from common_utils.all_modules import Dict, Tuple, logger, pd
 
 
 class DataSource:
+    """Resolve the report range and return named source DataFrames."""
+
     def __init__(self, params: dict):
         self.params = params
 
@@ -12,8 +14,12 @@ class DataSource:
         }
 
     def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
-        logger.info("Start DataSource")
         time_range = self._resolve_time_range()
+        logger.info(
+            "source_plan status=placeholder period={} current_date={}",
+            time_range.get("period"),
+            time_range.get("current_date"),
+        )
         raise NotImplementedError(
-            "Report scaffold only: implement confirmed source reads from dev_doc.md before deployment."
+            "Report scaffold only: implement confirmed source reads from technical_design.md before deployment."
         )

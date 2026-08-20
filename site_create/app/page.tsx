@@ -141,7 +141,7 @@ function HeroPipeline() {
         <span>✓</span> 语义验证通过
       </div>
       <div className="floating-chip chip-bottom glass-panel" aria-hidden="true">
-        <span>5</span> 类工程能力
+        <span>7</span> 类工程能力
       </div>
     </div>
   );
@@ -228,13 +228,13 @@ export default function Home() {
             <div className="eyebrow"><span /> DATA ENGINEERING TOOLKIT</div>
             <h1 id="hero-title">把数据工程，锻造成确定性。</h1>
             <p className="hero-lead">
-              从需求文档与任务日志，到可运行项目与可审计 DDL。PipelineForge
+              从需求文档与任务日志，到可运行项目、可导入工作簿与可审计 DDL。PipelineForge
               把复杂的数据开发链路，收拢成清晰、可靠的工程产物。
             </p>
             <EnableActions />
             <div className="hero-proof" aria-label="产品特性">
               <span><i /> Personal Plugin</span>
-              <span><i /> 5 个专业工作流</span>
+              <span><i /> 1 个向导 + 6 个专业模块</span>
               <span><i /> 默认离线生成</span>
             </div>
           </div>
@@ -258,9 +258,9 @@ export default function Home() {
           <div className="section-heading reveal">
             <div>
               <span className="section-kicker">CORE CAPABILITIES</span>
-              <h2 id="capabilities-title">五项能力，覆盖真实开发现场。</h2>
+              <h2 id="capabilities-title">一条龙向导，串起六项专业能力。</h2>
             </div>
-            <p>每项能力都从明确输入出发，交付可继续开发、核验与部署的工程产物。</p>
+            <p>新手从向导开始，熟悉后也可以直接调用任一专业模块。</p>
           </div>
 
           <div className="capability-grid">
@@ -288,8 +288,8 @@ export default function Home() {
           <div className="section-shell">
             <div className="section-heading centered reveal">
               <span className="section-kicker">ONE CONTINUOUS FLOW</span>
-              <h2 id="workflow-title">从模糊输入，到确定交付。</h2>
-              <p>不是一次性的代码补全，而是一条可追踪、可验证的工程链路。</p>
+              <h2 id="workflow-title">从模糊输入，到明确下一步。</h2>
+              <p>向导持续说明当前阶段、已确认事实、阻塞问题和交付状态。</p>
             </div>
 
             <div className="workflow-grid reveal">
@@ -309,7 +309,7 @@ export default function Home() {
             <div className="artifact-flow glass-panel reveal">
               <div className="artifact-group">
                 <span className="artifact-label">INPUT</span>
-                <div><b>DOCX</b><b>LOG</b><b>SCHEMA</b></div>
+                <div><b>DOCX</b><b>LOG</b><b>XLSX</b><b>SCHEMA</b></div>
               </div>
               <span className="artifact-arrow" aria-hidden="true">→</span>
               <div className="forge-core">
@@ -320,7 +320,7 @@ export default function Home() {
               <span className="artifact-arrow" aria-hidden="true">→</span>
               <div className="artifact-group output-group">
                 <span className="artifact-label">OUTPUT</span>
-                <div><b>MD</b><b>PY</b><b>SQL</b></div>
+                <div><b>MD</b><b>PY</b><b>XLSX</b><b>SQL</b></div>
               </div>
             </div>
           </div>
@@ -353,7 +353,7 @@ export default function Home() {
             <img src="/pipeline-forge-logo.png" alt="" width="68" height="68" />
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
-            <p>在 Codex 中启用 PipelineForge，把需求、诊断、代码与 DDL 汇入同一条可靠工作流。</p>
+            <p>在 Codex 中启用 PipelineForge，把需求、诊断、代码、工作簿与 DDL 汇入同一条可靠工作流。</p>
             <EnableActions compact />
           </div>
         </section>
