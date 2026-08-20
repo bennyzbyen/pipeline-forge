@@ -4,7 +4,7 @@
 This script intentionally uses only the Python standard library so it can run
 in restricted Windows environments without installing python-docx or openpyxl.
 It reads .docx/.xlsx files as ZIP packages and extracts enough structure for
-implementation-ready data development documentation.
+AI-readable data development documentation.
 """
 
 from __future__ import annotations
@@ -864,6 +864,7 @@ def build_structured_facts(sheet_summaries: list[SheetSummary], paragraphs: list
         "report_targets": [],
         "report_physical_targets": clickhouse_targets + hbase_targets,
         "report_clickhouse_targets": clickhouse_targets,
+        "report_catalog_basic_info": [],
         "report_schedules": [],
         "report_field_mappings": [],
         "report_business_rules": [],
@@ -1058,6 +1059,31 @@ def build_structured_facts(sheet_summaries: list[SheetSummary], paragraphs: list
                     facts["data_utilizations"].append(
                         add_provenance({"name": name, "description": cell_value(row, "Description")}, summary)
                     )
+            continue
+
+        if (
+            has_headers(headers, ["数据项", "Title"])
+            and has_header(headers, "IT Owner&Email", "IT Owner & Email")
+            and has_header(headers, "Biz Owner&Email", "Biz Owner & Email")
+        ):
+            for row in rows:
+                data_item = cell_value(row, "数据项")
+                if not data_item:
+                    continue
+                facts["report_catalog_basic_info"].append(
+                    add_provenance(
+                        {
+                            "data_item": data_item,
+                            "title": cell_value(row, "Title"),
+                            "it_owner": cell_value(row, "IT Owner&Email", "IT Owner & Email"),
+                            "business_owner": cell_value(row, "Biz Owner&Email", "Biz Owner & Email"),
+                            "fe": cell_value(row, "FE&Email", "FE & Email"),
+                            "it_bp": cell_value(row, "IT BP & Email", "IT BP&Email"),
+                            "data_engineer": cell_value(row, "Data Engineer & Email", "Data Engineer&Email"),
+                        },
+                        summary,
+                    )
+                )
             continue
 
         if has_headers(headers, ["Data Utilization Name", "catalog"]):
@@ -1445,7 +1471,26 @@ def infer_bysku_report_component_hint(facts: dict, paragraphs: list[Paragraph] |
     lower_blob = blob.lower()
     has_sample_alias = "执行为王" in blob or "execute_king" in lower_blob
     has_bysku = "bysku" in lower_blob or "zo_bysku_detail" in lower_blob
-    has_sku_family = any(marker in lower_blob for marker in ["npd", "b5", "sku"]) or "新品" in blob
+    # A normal COT table-sync matrix may contain zo_bysku_detail_p. Because "bysku"
+    # itself contains "sku", a generic "sku" marker would misroute the entire COT
+    # document to report-codegen. Require evidence of an actual SKU-family calculation
+    # pipeline beyond the source table name.
+    sku_family_markers = [
+        "npd",
+        "b5",
+        "新品",
+        "sku_map",
+        "sku_combo_map",
+        "sku_cal_range",
+        "sku_ttl_filter",
+        "sku_is_active",
+        "store_np_sku",
+        "store_b5_sku",
+        "r13p",
+        "prepare_data",
+        "cal_sku",
+    ]
+    has_sku_family = has_sample_alias or any(marker in lower_blob for marker in sku_family_markers)
     has_pipeline_storage = "clickhouse" in lower_blob and (
         "hbase" in lower_blob or "fs" in lower_blob or "数据源" in blob
     )
@@ -1630,102 +1675,6 @@ def infer_bysku_report_component_hint(facts: dict, paragraphs: list[Paragraph] |
             "checks": readiness_checks,
         }
     )
-
-
-def write_dev_doc(
-    path: Path,
-    docx_path: Path,
-    project_name: str,
-    paragraphs: list[Paragraph],
-    sheet_summaries: list[SheetSummary],
-) -> None:
-    title = paragraphs[0].text if paragraphs else project_name
-    source_hits = paragraphs_matching(paragraphs, ["数据源", "Source", "链接信息", "数据列表", "HBase", "MSSQL", "MySQL", "Blob"])
-    target_hits = paragraphs_matching(paragraphs, ["Data Target", "目标表", "目标表字典", "ClickHouse", "Data Storage"])
-    flow_hits = paragraphs_matching(paragraphs, ["数据流程", "写入流程", "同步逻辑", "Data Transformation", "Pipeline"])
-    schedule_hits = paragraphs_matching(paragraphs, ["调度", "定时", "运行时间", "频率", "重跑", "rerun", "Pipeline Planning"])
-    calc_hits = paragraphs_matching(paragraphs, ["计算逻辑", "KPI", "汇总逻辑", "字段逻辑", "过滤", "关联"])
-
-    table_lines = []
-    for summary in sheet_summaries[:40]:
-        headers = " | ".join(summary.headers)
-        table_lines.append(f"`{summary.csv_path.name}`: `{summary.sheet_name}`; headers: {headers}")
-
-    content = f"""# {project_name} Development Document
-
-## 1. Project Overview
-
-- Source document: `{docx_path.name}`
-- Original title: {title}
-- Project type: 待确认是 `data-sync` 还是 `report`
-
-## 2. Source Tables
-
-{markdown_list(source_hits)}
-## 3. Target Tables
-
-{markdown_list(target_hits)}
-## 4. Field Dictionary
-
-The extracted embedded tables below are the primary field-dictionary evidence:
-
-{markdown_list(table_lines)}
-## 5. Field Mapping
-
-- 待从字段字典、字段逻辑表、数据源字段 key、目标表字段 key 中整理。
-
-## 6. Data Processing Flow
-
-{markdown_list(flow_hits)}
-## 7. KPI / Calculation Logic
-
-{markdown_list(calc_hits)}
-## 8. Write Strategy
-
-- 待确认写入目标是 HBase、ClickHouse、FS 留痕，还是组合写入。
-- 待确认删除旧数据策略、全量/增量策略、分区或 period 清理策略。
-
-## 9. Scheduling And Rerun
-
-{markdown_list(schedule_hits)}
-## 10. Parameter Design
-
-- Credentials must use placeholders in generated code.
-- 待确认运行参数：period/current_date/sync_dates/receiver_emails/source table/target table/rowkey fields.
-
-## 11. Log Verification Plan
-
-- 部署后检查 DataSource 阶段：输入表、时间范围、导出行数。
-- 部署后检查 DataProcess 阶段：过滤前后行数、关键 join 行数、KPI 输出行数。
-- 部署后检查 DataStorage 阶段：目标表、删除条件、插入行数、耗时。
-
-## 12. Open Questions
-
-See `questions.md`.
-"""
-    path.write_text(content, encoding="utf-8")
-
-
-def write_questions(path: Path, paragraphs: list[Paragraph], sheet_summaries: list[SheetSummary]) -> None:
-    all_text = "\n".join(p.text for p in paragraphs).lower()
-    questions = [
-        "项目类型最终确认：数据同步还是报表开发？",
-        "生成代码时目标项目目录是哪一个？",
-        "配置文件中的 app_key/app_secret/token/IP 是否全部使用占位符？",
-    ]
-    if (has_hbase_target or facts.get("cot_report_tables")) and "rowkey" not in all_text:
-        questions.append("HBase rowkey 规则未明确：需要确认 rowkey 拼接字段、时间字段格式、是否需要首位散列前缀。")
-    if "重跑" not in all_text and "rerun" not in all_text:
-        questions.append("重跑机制未明确：需要确认按 period、日期、时间戳还是全量重跑。")
-    if "delete" not in all_text and "删除" not in all_text:
-        questions.append("写入前删除策略未明确：需要确认 ClickHouse/HBase 是否先删旧数据。")
-    if "调度" not in all_text and "定时" not in all_text and "频率" not in all_text:
-        questions.append("调度频率未明确：需要确认每日、每 P、15 分钟或手动触发。")
-    if not sheet_summaries:
-        questions.append("未提取到嵌入 Excel 表：需要确认字段字典是否在截图、外部 Excel 或其他文档中。")
-
-    content = "# Open Questions\n\n" + "".join(f"- {question}\n" for question in questions)
-    path.write_text(content, encoding="utf-8")
 
 
 def write_dev_doc_v2(
@@ -1956,6 +1905,22 @@ def write_dev_doc_v2(
         )
 
     source_documents_text = ", ".join(f"`{name}`" for name in source_document_names) or f"`{docx_path.name}`"
+    codegen_contract = facts.get("codegen_contract", {})
+    contract_project_type = codegen_contract.get("project_type", project_type)
+    component_kind = codegen_contract.get("component_kind", "unclassified")
+    ready_for_codegen = bool(codegen_contract.get("ready_for_codegen", False))
+    blockers = codegen_contract.get("blockers", [])
+    design_status = "review-ready" if ready_for_codegen else ("blocked" if blockers else "draft")
+    contract_components = markdown_table(
+        codegen_contract.get("components", []),
+        [
+            ("Component", "name"),
+            ("Kind", "kind"),
+            ("Role", "role"),
+            ("Status", "status"),
+        ],
+    )
+    blockers_section = markdown_list(blockers) if blockers else "- None.\n"
     kpi_logic_section = ""
     if business_rules:
         kpi_logic_section += "PRD abnormal/business rules:\n\n" + business_rules + "\n"
@@ -1963,78 +1928,154 @@ def write_dev_doc_v2(
         kpi_logic_section += "PRD KPI / aggregation rules:\n\n" + kpi_rules + "\n"
     kpi_logic_section += markdown_list(calc_hits)
 
-    content = f"""# {project_name} Development Document
+    content = f"""---
+document_type: technical-design
+design_scope: hld-with-component-lld
+project_type: {contract_project_type}
+component_kind: {component_kind}
+design_status: {design_status}
+ready_for_codegen: {str(ready_for_codegen).lower()}
+structured_facts: structured_facts.json
+questions: questions.md
+---
 
-## 1. Project Overview
+# {project_name} Technical Design
+
+## 1. Design Summary
 
 - Source document: {source_documents_text}
 - Original title: {title}
-- Project type: {project_type}
-{overview_facts}
-{("Component handoff hints:\n\n" + component_hints) if component_hints else ""}
+- Document type: Technical Design
+- Design coverage: HLD + component LLD
+- Design status: {design_status}
+- Project type: {contract_project_type}
+- Component kind: {component_kind}
+- Ready for codegen: {str(ready_for_codegen).lower()}
 
-## 2. Source Tables
+## 2. HLD — High-Level Design
+
+### 2.1 Data Architecture And Flow
+
+{markdown_list(flow_hits)}
+### 2.2 Source Systems And Tables
 
 {source_section}
-## 3. Target Tables
+### 2.3 Target Systems And Tables
 
 {target_section}
-## 4. Field Dictionary
+### 2.4 Components And Responsibilities
+
+{contract_components or "- No component contract detected.\n"}
+{("Additional component evidence:\n\n" + component_hints) if component_hints else ""}
+
+### 2.5 Scheduling And Rerun
+
+{schedule_section}
+### 2.6 Write, Recovery And Idempotency Strategy
+
+{write_strategy}
+### 2.7 Constraints And Risks
+
+{overview_facts}
+
+## 3. LLD — Component Implementation Contracts
+
+### 3.1 Data Contract And Field Dictionary
 
 The extracted embedded tables below are the primary field-dictionary evidence:
 
 {field_section}
-## 5. Field Mapping
+### 3.2 Field Mapping And Processing Rules
 
 {mapping_note}
-## 6. Data Processing Flow
-
-{markdown_list(flow_hits)}
-## 7. KPI / Calculation Logic
+### 3.3 KPI / Calculation Logic
 
 {kpi_logic_section}
-## 8. Write Strategy
-
-{write_strategy}
-## 9. Scheduling And Rerun
-
-{schedule_section}
-## 10. Parameter Design
+### 3.4 Parameter And Orchestration Contract
 
 {parameter_design}
 
-## 11. Log Verification Plan
+## 4. Verification And Acceptance
 
 - DataSource: check source table, selected sync mode, period/time range, exported row count, generated file count.
 - HBase: check rowkey columns, delete/truncate count, insert count, target table name.
 - ClickHouse: check delete/drop/truncate condition, inserted file count, target table name, final row count.
 - Final metrics: compare exported rows with HBase and ClickHouse inserted rows.
 
-## 12. Open Questions
+## 5. Codegen Readiness
+
+- Contract version: {codegen_contract.get("contract_version", 1)}
+- Ready for codegen: {str(ready_for_codegen).lower()}
+- Machine-readable contract: `structured_facts.json#codegen_contract`
+
+### Blocking Code Generation
+
+{blockers_section}
+### Open Questions
 
 See `questions.md`.
 """
     path.write_text(content, encoding="utf-8")
 
 
-def write_questions_v2(path: Path, paragraphs: list[Paragraph], sheet_summaries: list[SheetSummary], facts: dict) -> None:
+def detect_project_type(facts: dict) -> str:
+    if any(
+        item.get("component_kind") == "bysku_report_pipeline" or item.get("handoff_to") == "report-codegen"
+        for item in facts.get("component_hints", [])
+    ):
+        return "report"
+    if facts.get("cot_report_tables"):
+        return "data-sync"
+    if (
+        facts.get("report_sources")
+        or facts.get("report_targets")
+        or facts.get("report_clickhouse_targets")
+        or facts.get("report_field_mappings")
+    ):
+        return "report"
+    return "unknown"
+
+
+def detect_component_kind(facts: dict, project_type: str) -> str:
+    for hint in facts.get("component_hints", []):
+        component_kind = str(hint.get("component_kind", "")).strip()
+        if component_kind:
+            return component_kind
+    if project_type == "data-sync":
+        return "cot_table_sync"
+    if project_type == "report":
+        return "standard_report"
+    return "unclassified"
+
+
+def build_question_groups_v2(
+    paragraphs: list[Paragraph],
+    sheet_summaries: list[SheetSummary],
+    facts: dict,
+) -> dict[str, list[str]]:
     all_text = "\n".join(p.text for p in paragraphs).lower()
     physical_targets = facts.get("report_physical_targets") or facts.get("report_clickhouse_targets") or []
     target_storage = " ".join(str(item.get("storage", "")).lower() for item in physical_targets + facts.get("report_targets", []))
     has_clickhouse_target = bool(facts.get("report_clickhouse_targets")) or "clickhouse" in target_storage
     has_hbase_target = "hbase" in target_storage
+    report_source_text = json.dumps(facts.get("report_sources", []), ensure_ascii=False).lower()
+    has_fs_evidence = any(marker in all_text or marker in report_source_text for marker in ["gateway", "fs", "留痕", "文件目录"])
     component_kinds = {item.get("component_kind") for item in facts.get("component_hints", [])}
-    questions = ["生成代码时目标项目目录是哪一个？", "配置文件中的 app_key/app_secret/token/IP 是否全部使用占位符？"]
+    blocking: list[str] = []
+    deployment = ["生成代码时目标项目目录是哪一个？", "配置文件中的 app_key/app_secret/token/IP 是否全部使用占位符？"]
+    non_blocking: list[str] = []
     if "bysku_report_pipeline" in component_kinds:
-        questions.extend(
+        blocking.extend(
             [
                 "bySKU 中间 FS 目录、文件压缩格式、文件覆盖策略需要确认。",
                 "SKU 参数来源需要确认：sku_map、sku_cal_range、sku_ttl_filter、sku_is_active 是来自 XML、params JSON 还是外部配置。",
                 "ClickHouse 物理表名与删除条件需要确认：明细/汇总/TTL 是否按 period/week 删除，历史保留是否按文档阈值滚动删除。",
             ]
         )
-    if facts.get("cot_report_tables"):
-        questions.extend(
+    if "bysku_report_pipeline" in component_kinds:
+        pass
+    elif facts.get("cot_report_tables"):
+        blocking.extend(
             [
                 "COT 每张表的 rowkey_rule_columns 是否有单独清单？如果没有，需要按字段字典确认。",
                 "COT with_period_tables / without_period_tables 是否按当前生产分类沿用，还是需要按新文档调整？",
@@ -2043,38 +2084,115 @@ def write_questions_v2(path: Path, paragraphs: list[Paragraph], sheet_summaries:
         )
     elif facts.get("report_sources") or facts.get("report_targets") or facts.get("report_field_mappings"):
         if not physical_targets:
-            questions.append("报表物理目标表未识别：需要确认 database.table / hbase table 与逻辑 Target Name 的对应关系。")
+            blocking.append("报表物理目标表未识别：需要确认 database.table / hbase table 与逻辑 Target Name 的对应关系。")
         elif not has_clickhouse_target and has_hbase_target:
-            questions.append("HBase 目标表已识别：需要确认本项目是直接计算写入 HBase，还是先导出 FS 后触发下游 pipeline。")
+            blocking.append("HBase 目标表已识别：需要确认本项目是直接计算写入 HBase，还是先导出 FS 后触发下游 pipeline。")
         elif not has_clickhouse_target:
-            questions.append("报表物理 ClickHouse 表名未识别：需要确认 database.table 与逻辑 Target Name 的对应关系。")
+            blocking.append("报表物理 ClickHouse 表名未识别：需要确认 database.table 与逻辑 Target Name 的对应关系。")
         if not facts.get("report_sources"):
-            questions.append("报表数据源矩阵未识别：需要确认 HBase/FS/MSSQL 源表、取数范围和字段清单。")
+            blocking.append("报表数据源矩阵未识别：需要确认 HBase/FS/MSSQL 源表、取数范围和字段清单。")
         if not facts.get("report_field_mappings"):
-            questions.append("报表字段逻辑表未识别：需要确认输出字段顺序、计算逻辑和汇总口径。")
-        if has_clickhouse_target:
-            questions.append("ClickHouse 写入前删除条件需要确认：按 period 删除、按 date 删除、还是 batch/status 模式。")
+            blocking.append("报表字段逻辑表未识别：需要确认输出字段顺序、计算逻辑和汇总口径。")
+        if has_clickhouse_target and "delete" not in all_text and "删除" not in all_text:
+            blocking.append("ClickHouse 写入前删除条件需要确认：按 period 删除、按 date 删除、还是 batch/status 模式。")
         if has_hbase_target:
-            questions.append("HBase rowkey、写入模式、是否先删旧数据需要结合部署项目或下游 pipeline 确认。")
-        questions.append("如果文档提到 Gateway/FS 留痕或数据准备，需要确认 FS 目录、文件名和失败时是否阻断主流程。")
+            blocking.append("HBase rowkey、写入模式、是否先删旧数据需要结合部署项目或下游 pipeline 确认。")
+        if has_fs_evidence:
+            blocking.append("文档包含 Gateway/FS 留痕或数据准备：需要确认 FS 目录、文件名和失败时是否阻断主流程。")
     else:
-        questions.insert(0, "项目类型最终确认：数据同步还是报表开发？")
-    if (has_hbase_target or facts.get("cot_report_tables")) and "rowkey" not in all_text:
-        questions.append("HBase rowkey 规则未明确：需要确认 rowkey 拼接字段、时间字段格式、是否需要首位散列前缀。")
+        blocking.insert(0, "项目类型最终确认：数据同步还是报表开发？")
+    if (
+        has_hbase_target
+        or (facts.get("cot_report_tables") and "bysku_report_pipeline" not in component_kinds)
+    ) and "rowkey" not in all_text:
+        blocking.append("HBase rowkey 规则未明确：需要确认 rowkey 拼接字段、时间字段格式、是否需要首位散列前缀。")
     if "rerun" not in all_text and "重跑" not in all_text:
-        questions.append("重跑机制未明确：需要确认按 period、日期、时间戳还是全量重跑。")
-    if "delete" not in all_text and "删除" not in all_text:
+        blocking.append("重跑机制未明确：需要确认按 period、日期、时间戳还是全量重跑。")
+    if "delete" not in all_text and "删除" not in all_text and not has_clickhouse_target:
         if has_hbase_target and not has_clickhouse_target:
-            questions.append("HBase/FS prepare 项目的重跑覆盖策略未明确：需要确认 FS 文件是否覆盖、下游 HBase 是否先删旧数据。")
+            blocking.append("HBase/FS prepare 项目的重跑覆盖策略未明确：需要确认 FS 文件是否覆盖、下游 HBase 是否先删旧数据。")
         else:
-            questions.append("写入前删除策略未明确：需要确认 ClickHouse/HBase 是否先删旧数据。")
+            blocking.append("写入前删除策略未明确：需要确认 ClickHouse/HBase 是否先删旧数据。")
     if "调度" not in all_text and "定时" not in all_text and "频率" not in all_text:
-        questions.append("调度频率未明确：需要确认每日、每 P、15 分钟或手动触发。")
+        blocking.append("调度频率未明确：需要确认每日、每 P、15 分钟或手动触发。")
     if not sheet_summaries:
-        questions.append("未提取到嵌入 Excel 表：需要确认字段字典是否在截图、外部 Excel 或其他文档中。")
+        blocking.append("未提取到嵌入 Excel 表：需要确认字段字典是否在截图、外部 Excel 或其他文档中。")
 
-    content = "# Open Questions\n\n" + "".join(f"- {question}\n" for question in questions)
-    path.write_text(content, encoding="utf-8")
+    return {
+        "blocking_codegen": list(dict.fromkeys(blocking)),
+        "deployment_confirmation": list(dict.fromkeys(deployment)),
+        "non_blocking": list(dict.fromkeys(non_blocking)),
+    }
+
+
+def build_codegen_contract(facts: dict, question_groups: dict[str, list[str]]) -> dict:
+    project_type = detect_project_type(facts)
+    component_kind = detect_component_kind(facts, project_type)
+    blockers = list(question_groups.get("blocking_codegen", []))
+    readiness_items = facts.get("handoff_readiness", [])
+    for item in readiness_items:
+        if item.get("ready_for_full_codegen", False):
+            continue
+        for check in item.get("checks", []):
+            if check.get("status") in {"blocked", "needs_confirmation"}:
+                detail = str(check.get("detail", "")).strip()
+                if detail:
+                    blockers.append(detail)
+
+    components: list[dict] = []
+    for hint in facts.get("component_hints", []):
+        for component in hint.get("components", []):
+            components.append(
+                {
+                    "name": component.get("name", ""),
+                    "kind": component.get("kind") or component.get("name", ""),
+                    "role": component.get("role", ""),
+                    "status": "blocked" if blockers else "confirmed",
+                }
+            )
+    if not components:
+        default_name = "cot_sync" if project_type == "data-sync" else ("report_pipeline" if project_type == "report" else "unclassified")
+        components.append(
+            {
+                "name": default_name,
+                "kind": component_kind,
+                "role": "Primary code generation unit derived from the confirmed design package.",
+                "status": "blocked" if blockers else "confirmed",
+            }
+        )
+
+    blockers = list(dict.fromkeys(blockers))
+    ready_for_codegen = project_type != "unknown" and not blockers
+    return {
+        "contract_version": 1,
+        "design_document": "technical_design.md",
+        "facts_document": "structured_facts.json",
+        "questions_document": "questions.md",
+        "project_type": project_type,
+        "component_kind": component_kind,
+        "components": components,
+        "ready_for_codegen": ready_for_codegen,
+        "blockers": blockers,
+    }
+
+
+def write_questions_v2(path: Path, question_groups: dict[str, list[str]]) -> None:
+    headings = [
+        ("Blocking Code Generation", "blocking_codegen"),
+        ("Deployment Confirmation", "deployment_confirmation"),
+        ("Non-Blocking", "non_blocking"),
+    ]
+    lines = ["# Open Questions", ""]
+    for heading, key in headings:
+        lines.extend([f"## {heading}", ""])
+        questions = question_groups.get(key, [])
+        if questions:
+            lines.extend(f"- {question}" for question in questions)
+        else:
+            lines.append("- None.")
+        lines.append("")
+
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def docx_paths_from_args(raw_docx: list[list[str]] | list[str]) -> list[Path]:
@@ -2212,18 +2330,30 @@ def run(args: argparse.Namespace) -> int:
             "PRD facts supplement business goals, abnormal rules, KPI logic, and UI aggregation logic. "
             "Conflicts are recorded in conflicts/questions instead of silently overwriting evidence."
         )
+    question_groups = build_question_groups_v2(all_paragraphs, all_table_summaries, structured_facts)
+    structured_facts["codegen_contract"] = build_codegen_contract(structured_facts, question_groups)
     (dev_doc_dir / "structured_facts.json").write_text(
         json.dumps(structured_facts, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    write_dev_doc_v2(dev_doc_dir / "dev_doc.md", docx_path, project_name, all_paragraphs, all_table_summaries, structured_facts)
-    write_questions_v2(dev_doc_dir / "questions.md", all_paragraphs, all_table_summaries, structured_facts)
+    write_dev_doc_v2(
+        dev_doc_dir / "technical_design.md",
+        docx_path,
+        project_name,
+        all_paragraphs,
+        all_table_summaries,
+        structured_facts,
+    )
+    write_questions_v2(dev_doc_dir / "questions.md", question_groups)
 
     if len(docx_paths) == 1:
         print(f"extracted: {extracted_dir / 'extracted_document.md'}")
     else:
         print(f"extracted: {extracted_dir}")
-    print(f"dev_doc: {dev_doc_dir / 'dev_doc.md'}")
+    print(f"technical_design: {dev_doc_dir / 'technical_design.md'}")
+    legacy_dev_doc_path = dev_doc_dir / "dev_doc.md"
+    if legacy_dev_doc_path.exists():
+        print(f"warning: legacy handoff retained at {legacy_dev_doc_path}; use technical_design.md for this run")
     print(f"questions: {dev_doc_dir / 'questions.md'}")
     print(f"structured_facts: {dev_doc_dir / 'structured_facts.json'}")
     print(f"documents: {len(docx_paths)}")

@@ -4,7 +4,7 @@
 
 # PipelineForge
 
-PipelineForge is a modular toolkit for data pipeline development: requirement document extraction, job log diagnosis, synchronization project generation, report pipeline generation, and database DDL generation.
+PipelineForge is a guided, modular toolkit for data pipeline development: one-stop beginner routing, requirement document extraction, job log diagnosis, synchronization project generation, report pipeline generation, Pipeline Export workbook generation, and database DDL generation.
 
 ## Languages
 
@@ -15,10 +15,12 @@ PipelineForge is a modular toolkit for data pipeline development: requirement do
 
 | Module | Purpose |
 | --- | --- |
+| `pipeline-forge-guide` | Guide beginners from source files through routing, blocker handling, generation, and verification. |
 | `data-doc-to-dev-md` | Convert requirement documents into implementation-ready development notes. |
 | `data-job-log-debugger` | Diagnose DataEngine/DataHub job logs and failure evidence. |
-| `data-sync-codegen` | Generate and review portable synchronization project code. |
-| `report-codegen` | Generate and review report pipeline project code. |
+| `data-sync-codegen` | Generate portable synchronization projects with all-table contract verification and runtime guards. |
+| `report-codegen` | Generate specialized or contract-driven report projects with output/write verification. |
+| `pipeline-excel-builder` | Generate, fill, and validate DataHub/DataEngine Pipeline Export workbooks. |
 | `db-ddl-generator-skill` | Generate, parse, convert, and review database DDL. |
 
 ## Quick Start
@@ -28,6 +30,8 @@ git clone https://github.com/bennyzbyen/pipeline-forge.git "$env:USERPROFILE\plu
 ```
 
 Then install or enable the local plugin from your desktop host.
+
+For a guided workflow, invoke `$pipeline-forge-guide` or start with: `Guide me from these source files to a verified deliverable.`
 
 ## Quality Checks
 

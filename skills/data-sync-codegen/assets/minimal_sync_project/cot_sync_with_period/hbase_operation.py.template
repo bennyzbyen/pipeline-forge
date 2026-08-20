@@ -17,6 +17,7 @@ hbase_client = clients.hbase_client
 
 
 def process_rowkeys(df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowkey_key):
+    # Requirement: column order and the final-character prefix are the HBase rowkey contract.
     temp_rowkey = ""
     for column in rowkey_rule_columns:
         temp_rowkey += df_data[column].astype(str)
@@ -28,7 +29,7 @@ def process_rowkeys(df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowke
 def transfer_csv_file(matching_files, rowkey_rule_columns):
     df_size = 0
     hbase_columns = None
-    logger.info("start processing HBase rowkeys")
+    logger.info("stage_start stage=hbase_rowkey_build files={} rowkey_columns={}", len(matching_files), len(rowkey_rule_columns))
     for file_path in matching_files:
         df = pd.read_csv(file_path, dtype=str)
         df["cl_last_update_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -38,7 +39,7 @@ def transfer_csv_file(matching_files, rowkey_rule_columns):
         df = process_rowkeys(df, rowkey_rule_columns, default_rowkey_key)
         df.to_csv(f"{file_path}.gz", index=False, header=False, sep=default_insert_sep, compression="gzip")
         os.remove(file_path)
-    logger.info("finished processing HBase rowkeys")
+    logger.info("stage_complete stage=hbase_rowkey_build rows={}", df_size)
     return df_size, hbase_columns
 
 
@@ -51,7 +52,7 @@ def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
         row_prefixs=[str(item) for item in range(10)],
     )
     if old_rowkeys is None or old_rowkeys.empty:
-        logger.info("no existing HBase rows for {}, skip delete", hbase_table_name)
+        logger.info("stage_skip stage=hbase_delete target={} reason=no_existing_rows", hbase_table_name)
         return 0
     old_rowkeys = old_rowkeys[[default_rowkey_key]]
 
@@ -64,10 +65,10 @@ def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
     new_rowkeys = pd.concat(new_rowkey_frames, ignore_index=True)
     delete_rowkeys = old_rowkeys[~old_rowkeys[default_rowkey_key].isin(new_rowkeys[0])]
     if len(delete_rowkeys) == 0:
-        logger.info("no stale HBase rowkeys for {}", hbase_table_name)
+        logger.info("stage_skip stage=hbase_delete target={} reason=no_stale_rows", hbase_table_name)
         return 0
 
-    logger.info("delete stale HBase rows table={}, size={}", hbase_table_name, len(delete_rowkeys))
+    logger.info("target_replace target={} operation=delete_stale_rowkeys rows={}", hbase_table_name, len(delete_rowkeys))
     hbase_client.delete_df(df=delete_rowkeys[[default_rowkey_key]], hbase_table_name=hbase_table_name)
     return len(delete_rowkeys)
 
@@ -90,7 +91,7 @@ def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns):
         source_pattern = f"{file_dir}/{period}*.csv"
         source_files = glob.glob(source_pattern)
         if not source_files:
-            logger.warning("no source files for period={}, skip HBase write", period)
+            logger.warning("stage_skip stage=hbase_write target={} period={} reason=no_source_files", hbase_table, period)
             continue
 
         size, hbase_columns = transfer_csv_file(source_files, rowkey_rule_columns)

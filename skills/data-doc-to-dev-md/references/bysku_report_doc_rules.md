@@ -10,6 +10,8 @@ Treat this document shape as a multi-component report pipeline, not as a COT dat
 - DataEngine design supplies source tables, target-management rows, field dictionaries, and pipeline schedules.
 - The common implementation split is `prepare_data` plus calculation components such as NPD/B5/SKU calculation jobs. Do not hardcode those component names for unrelated projects.
 
+Do not activate this route from the word `bySKU` or a `zo_bysku_detail_p` COT sync row alone. Require independent evidence of downstream SKU-family calculation, such as NPD/B5/新品 output families, `sku_map`/`sku_cal_range`/TTL parameters, prepare/calculation components, explicit detail-summary-TTL targets, or rolling R13P retention.
+
 ## Required Structured Facts
 
 When evidence exists, `structured_facts.json` should expose:

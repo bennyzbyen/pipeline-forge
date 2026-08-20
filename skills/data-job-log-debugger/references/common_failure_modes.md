@@ -1,73 +1,40 @@
-# Common Data Job Failure Modes
+# DataEngine/DataHub Failure Modes
 
-Use this order before proposing code changes.
+Use this reference after basic traceback analysis when platform-specific behavior affects the diagnosis.
 
-## 1. Command And Environment
+## Runtime Parameter Contracts
 
-- Wrong working directory.
-- Windows path quoting issue.
-- `python -c` quoting or encoding problem.
-- Missing package in deployment image.
-- Different Python version between local and platform.
-- `running_env` missing or unexpected.
+- DataEngine may wrap params under `algorithm_io_mode == "SINGLE"`; `body.params` may itself be a JSON string that requires parsing.
+- COT sync params commonly group `source_informations`, `hbase_informations`, and `clickhouse_information`.
+- Check required period/date, source table, target table, rowkey fields, batch size, and receiver values against the active component rather than assuming one universal shape.
+- Runtime ClickHouse table params normally use bare table names; configured exceptions may supply legacy database prefixes.
+- Placeholder credentials deployed unchanged are configuration failures, not values to replace from logs.
 
-## 2. Parameter Problems
+## Data And Incremental State
 
-- DataEngine wrapped `algorithm_io_mode == "SINGLE"` params not unwrapped.
-- JSON string inside `body.params` not parsed.
-- Missing `period`, `current_date`, `source_informations`, target table, rowkey fields, or receiver emails.
-- Empty credentials placeholders deployed by mistake.
-- COT sync params should use grouped `source_informations`, `hbase_informations`, and `clickhouse_information`.
-- Runtime ClickHouse table params should normally be bare table names; historical database prefixes should be handled by config exceptions.
+- A zero-row source can be valid for the selected period, calendar range, timestamp, HBase row range/prefix, or upstream state.
+- An FS directory containing only `_SUCCESS`, or files whose period naming does not match params, is not usable report input.
+- `no_changed_rows` and `no_changed_periods` are data/timestamp outcomes first, not code defects.
+- Manual period reruns must not advance the stored incremental timestamp. Automatic runs update it only after all required writes succeed.
 
-## 3. Path And Encoding
+## Gateway, HBase, And ClickHouse
 
-- Local temp file not removed or reused by concurrent runs.
-- FS path exists check uses parent path but reads child path.
-- Chinese file names or CSV encoding mismatch.
-- CSV separator mismatch: comma, tab, or `\x1D`.
-- Gzip file read without compression setting.
+- Gateway authorization, HBase async export/import completion, FS file availability, and ClickHouse mutation completion are separate stages; determine which one actually failed.
+- HBase writes require a non-empty unique rowkey. Missing `period`, `code`, `store_code`, `id`, `inksaa_id`, or `salesman_code` commonly surfaces as a rowkey/header failure.
+- ClickHouse insert failures often reflect target column order/type mismatch or an incorrect PROD cluster clause.
+- With-period full refresh may drop a ClickHouse partition and delete stale HBase rowkeys before insert.
+- Without-period sync normally deletes changed ClickHouse keys before insert; only configured exceptions may truncate a table.
+- Truncate, partition drop, and broad delete are destructive. Verify the configured table and rerun mode before recommending execution.
 
-## 4. Data Absence
+## Required Stage Evidence
 
-- Source table returns zero rows for the selected period/date.
-- Calendar lacks current date or target period.
-- HBase row range or row prefix excludes expected rows.
-- FS directory exists but contains only `_SUCCESS` or no data files.
-- Upstream table changed field names.
-- COT "无更新数据", `no_changed_rows`, and `no_changed_periods` are usually data/timestamp conditions first, not code defects.
-- Manual period reruns should not advance stored timestamp; automatic incremental runs should update timestamp only after successful writes.
+Report whether the available log proves each applicable stage ran:
 
-## 5. Gateway / HBase / ClickHouse
+- source query and selected period/time range
+- FS upload/download or HBase async task completion
+- HBase delete/insert
+- ClickHouse delete/drop/truncate and insert
+- timestamp update
+- final DataEngine metrics
 
-- Gateway auth failed.
-- HBase export async task not complete.
-- HBase insert file missing `rowkey`.
-- Duplicate or empty rowkeys.
-- ClickHouse mutation still running.
-- ClickHouse insert column order/type mismatch.
-- Cluster clause missing or wrong for PROD.
-- HBase rowkey failures often appear as missing `period`, `code`, `store_code`, `id`, `inksaa_id`, or `salesman_code` in CSV headers.
-- COT with-period full refresh should drop CK partition and delete stale HBase rowkeys before insert.
-- COT without-period should delete CK rows by key, except configured truncate tables such as `wechat_authorization_info`.
-- CK/HBase truncate is destructive; confirm the table is in the configured truncate list before recommending a rerun.
-
-## 6. Business Logic
-
-- Join key mismatch after rename.
-- Numeric conversion fails because of blanks or Chinese text.
-- Grouping keys produce unexpected duplicates.
-- Filter removes all rows.
-- KPI denominator is zero or null.
-- Expected full-coverage rows are dropped by an inner join or `dropna`.
-
-## Output Format
-
-Always report:
-
-- confirmed issue
-- high-confidence assumptions
-- uncertain points
-- recommended next steps
-- verification command or deployment log line to check
-- whether HBase, ClickHouse, FS, and timestamp update steps ran before failure
+When a plan or diagnostic manifest exists, compare observed targets, predicates, row counts, and stage order against it.

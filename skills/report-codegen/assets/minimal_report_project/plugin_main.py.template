@@ -10,7 +10,14 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main(params: dict):
-    logger.info("---------params---------{}", params)
+    # Security: expose only operational routing fields, never the raw payload.
+    logger.info(
+        "dispatch component={} period={} current_date={} activation_enabled={}",
+        params.get("component") or params.get("project_type") or "report",
+        params.get("period"),
+        params.get("current_date"),
+        bool(params.get("is_run_pipeline", False)),
+    )
     return ReportPipeline(params).execute()
 
 

@@ -20,7 +20,7 @@ class HBaseOperation:
         self.hbase_client = self.clients.hbase_client
 
     def truncate_hbase(self, hbase_table_name):
-        logger.info("truncate HBase table: {}", hbase_table_name)
+        logger.info("target_replace target={} operation=truncate", hbase_table_name)
         self.hbase_client.truncate(hbase_table_name)
 
     def insert_hbase(self, file_list, hbase_table, hbase_columns):
@@ -33,6 +33,7 @@ class HBaseOperation:
             )
 
     def process_rowkeys(self, df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowkey_key):
+        # Requirement: column order and the final-character prefix are the HBase rowkey contract.
         temp_rowkey = ""
         for column in rowkey_rule_columns:
             temp_rowkey += df_data[column].astype(str)
@@ -43,7 +44,7 @@ class HBaseOperation:
     def transfer_csv_file(self, matching_files, rowkey_rule_columns):
         df_size = 0
         hbase_columns = None
-        logger.info("start processing HBase rowkeys")
+        logger.info("stage_start stage=hbase_rowkey_build files={} rowkey_columns={}", len(matching_files), len(rowkey_rule_columns))
         for file_path in matching_files:
             df = pd.read_csv(file_path, dtype=str)
             df["cl_last_update_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -53,14 +54,14 @@ class HBaseOperation:
             df = self.process_rowkeys(df, rowkey_rule_columns, default_rowkey_key)
             df.to_csv(f"{file_path}.gz", index=False, header=False, sep=default_insert_sep, compression="gzip")
             os.remove(file_path)
-        logger.info("finished processing HBase rowkeys")
+        logger.info("stage_complete stage=hbase_rowkey_build rows={}", df_size)
         return df_size, hbase_columns
 
     def hbase_op(self, hbase_table, file_dir, rowkey_rule_columns):
         start_time = datetime.datetime.now()
         matching_files = glob.glob(f"{file_dir}/*.csv")
         if not matching_files:
-            logger.warning("no source files, skip HBase write")
+            logger.warning("stage_skip stage=hbase_write target={} reason=no_source_files", hbase_table)
             hbase_size = 0
         else:
             hbase_size, hbase_columns = self.transfer_csv_file(matching_files, rowkey_rule_columns)

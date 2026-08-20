@@ -1,0 +1,6 @@
+interface:
+  display_name: "PipelineForge 一条龙向导"
+  short_description: "Guide beginners from source files to verified deliverables"
+  default_prompt: "Use $pipeline-forge-guide to guide me from these source files to a verified, safe deliverable."
+policy:
+  allow_implicit_invocation: true

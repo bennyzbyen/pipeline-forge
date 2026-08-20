@@ -1,15 +1,15 @@
 {
   "name": "pipeline-forge",
-  "version": "0.1.0+pf.20260703075507",
-  "description": "Use for data requirement documents, job logs, pipeline code, and database DDL tasks.",
+  "version": "0.1.0+codex.20260820110400",
+  "description": "Use a guided workflow for data requirement documents, job logs, Pipeline Export workbooks, pipeline code, and database DDL tasks.",
   "author": {
     "name": "bennyzbyen"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "PipelineForge",
-    "shortDescription": "Data pipeline development toolkit.",
-    "longDescription": "Use PipelineForge for data requirement documents, deployed job logs, synchronization or report code, and database DDL artifacts.",
+    "shortDescription": "Guided data pipeline development toolkit.",
+    "longDescription": "Use PipelineForge's beginner-friendly guide or its specialist modules for data requirement documents, deployed job logs, Pipeline Export workbooks, synchronization or report code, and database DDL artifacts.",
     "developerName": "bennyzbyen",
     "category": "Productivity",
     "capabilities": [
@@ -18,9 +18,9 @@
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/logo.png",
     "defaultPrompt": [
-      "Convert this data requirement doc.",
-      "Diagnose this data job log.",
-      "Generate DDL from this schema."
+      "Guide me from these source files to a verified deliverable.",
+      "Build this Pipeline Export workbook.",
+      "Diagnose this job log or generate the required code/DDL."
     ]
   }
 }

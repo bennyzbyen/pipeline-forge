@@ -1,0 +1,4 @@
+interface:
+  display_name: "DB DDL Generator"
+  short_description: "Generate, convert, and validate database DDL"
+  default_prompt: "Use $db-ddl-generator-skill to generate or convert CREATE TABLE DDL from schema files or existing SQL."

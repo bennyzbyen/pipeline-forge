@@ -52,9 +52,8 @@ def now_text() -> str:
 
 
 def format_exception() -> str:
-    error_detail = traceback.format_exc()
-    logger.error(error_detail)
-    return error_detail
+    """Return the active traceback; the orchestration boundary logs it once."""
+    return traceback.format_exc()
 
 
 class ClientWrapper:
@@ -134,7 +133,7 @@ class TimeStamp_Update:
             else:
                 df = pd.DataFrame({"date": ["1970-01-01 00:00:00"]})
             last_timestamp = str(df["date"].iloc[0])
-            logger.info("last timestamp for {} is {}", mysql_table, last_timestamp)
+            logger.info("stage_complete stage=timestamp_read table={} timestamp={}", mysql_table, last_timestamp)
             return last_timestamp
         finally:
             if local_path.exists():
@@ -146,7 +145,7 @@ class TimeStamp_Update:
         try:
             local_path.write_text(f"date\n{last_update_timestamp}", encoding="utf-8")
             self.fs_client.copy_from_local(str(local_path), full_update_time_path, overwrite=True)
-            logger.info("updated last timestamp for {} to {}", mysql_table, last_update_timestamp)
+            logger.info("stage_complete stage=timestamp_update table={} timestamp={}", mysql_table, last_update_timestamp)
         finally:
             if local_path.exists():
                 local_path.unlink()

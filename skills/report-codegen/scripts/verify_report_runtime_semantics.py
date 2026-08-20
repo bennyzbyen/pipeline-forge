@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import sys
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List
@@ -59,6 +60,80 @@ def import_from_project(module_name: str, project_dir: Path):
 def require(condition: bool, message: str, details: Any = None) -> None:
     if not condition:
         raise AssertionError(f"{message}: {details!r}")
+
+
+def verify_hbase_prepare(project_dir: Path) -> Dict[str, Any]:
+    with project_import_context(project_dir):
+        source_module = import_from_project("data_utils.data_source", project_dir)
+        process_module = import_from_project("data_utils.data_process", project_dir)
+        storage_module = import_from_project("data_utils.data_storage", project_dir)
+        pd = sys.modules["common_utils.all_modules"].pd
+
+        periods = [f"2026P{index:02d}" for index in range(1, 16)]
+        calendar = pd.DataFrame(
+            [
+                {"Period": period, "NatureDate": f"2026-{min(index, 12):02d}-01"}
+                for index, period in enumerate(periods, start=1)
+            ]
+        )
+        sellout = pd.DataFrame(
+            [
+                {"StoreID": "S1", "SubSegmentID": "1", "P": "2026P14", "SelloutAmount": "10.5"},
+                {"StoreID": "S1", "SubSegmentID": "2", "P": "2026P14", "SelloutAmount": "4.5"},
+                {"StoreID": "S2", "SubSegmentID": "7", "P": "2026P14", "SelloutAmount": "7"},
+                {"StoreID": "S3", "SubSegmentID": "9", "P": "2026P14", "SelloutAmount": "999"},
+            ]
+        )
+
+        class FakePipelineClient:
+            def __init__(self):
+                self.process_uids = []
+
+            def run(self, process_uid):
+                self.process_uids.append(process_uid)
+                return {"successful": True, "process_uid": process_uid}
+
+        with tempfile.TemporaryDirectory(prefix="hbase_prepare_semantics_") as local_dir:
+            params = {
+                "current_date": "2026-12-31",
+                "export_mode": "daily",
+                "hbase_data": {
+                    "l0_cmt.date": calendar,
+                    "l0_cmt.sellout": sellout,
+                },
+                "skip_fs_upload": True,
+                "local_output_dir": local_dir,
+                "is_run_pipeline": True,
+                "pipeline_process_uids": ["fixture-process"],
+                "pipeline_client": FakePipelineClient(),
+            }
+            source_data, time_range = source_module.DataSource(params).run()
+            metrics = source_data["export_metrics"]
+            require(time_range["period"] == ["2026P14"], "daily completed period mismatch", time_range)
+            require(len(metrics) == 1, "daily export should emit one metric", metrics)
+            require(int(metrics.iloc[0]["rows"]) == 2, "subsegment filter/store aggregation mismatch", metrics)
+            outputs = process_module.DataProcess(source_data, time_range, params).run()
+            require(params["pipeline_client"].process_uids == ["fixture-process"], "pipeline activation mismatch")
+            require(len(outputs["pipeline_metrics"]) == 1, "pipeline metric mismatch", outputs)
+            storage_metrics = storage_module.DataStorage(outputs, time_range, params).run()
+            require(len(storage_metrics) == 2, "prepare no-op storage metric mismatch", storage_metrics)
+
+            init_params = dict(params)
+            init_params.update({"export_mode": "init", "is_run_pipeline": False})
+            init_source, init_range = source_module.DataSource(init_params).run()
+            require(len(init_range["r13p"]) == 13, "R13P window size mismatch", init_range)
+            require(len(init_source["export_metrics"]) == 13, "init export count mismatch", init_source["export_metrics"])
+            require(not list(Path(local_dir).glob("*.csv.gz")), "temporary export files were not cleaned")
+
+        return {
+            "status": "ok",
+            "project_type": "hbase_prepare",
+            "daily_export_count": 1,
+            "init_export_count": 13,
+            "aggregated_daily_rows": 2,
+            "pipeline_activation_count": 1,
+            "storage_metric_count": len(storage_metrics),
+        }
 
 
 def fake_supervisor_source_data(pd):
@@ -749,7 +824,11 @@ def verify_vehicle_verification(project_dir: Path) -> Dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", type=Path, required=True, help="Generated report project directory.")
-    parser.add_argument("--project-type", choices=["supervisor_portal", "vehicle_verification"], default="supervisor_portal")
+    parser.add_argument(
+        "--project-type",
+        choices=["supervisor_portal", "vehicle_verification", "hbase_prepare"],
+        default="supervisor_portal",
+    )
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -760,6 +839,8 @@ def main() -> None:
         result = verify_supervisor_portal(args.project_dir.resolve())
     elif args.project_type == "vehicle_verification":
         result = verify_vehicle_verification(args.project_dir.resolve())
+    elif args.project_type == "hbase_prepare":
+        result = verify_hbase_prepare(args.project_dir.resolve())
     else:
         raise ValueError(f"unsupported project type: {args.project_type}")
     text = json.dumps(result, ensure_ascii=False, indent=2)

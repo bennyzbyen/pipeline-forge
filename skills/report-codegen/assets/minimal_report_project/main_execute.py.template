@@ -1,4 +1,4 @@
-from common_utils.all_modules import datetime, logger, traceback
+from common_utils.all_modules import datetime, logger
 from common_utils.common import return_pipeline_result
 from data_utils.data_source import DataSource
 from data_utils.data_process import DataProcess
@@ -6,33 +6,82 @@ from data_utils.data_storage import DataStorage
 
 
 class ReportPipeline:
+    """Orchestrate report reads, transformations, and configured target writes."""
+
     def __init__(self, params: dict):
         self.params = params
 
     def execute(self):
+        """Run each stage once and return durations aligned with completion logs."""
+        pipeline_start = datetime.datetime.now()
+        stage = "initialization"
+        component = self.params.get("component") or self.params.get("project_type") or "report"
+        logger.info(
+            "pipeline_start component={} period={} current_date={}",
+            component,
+            self.params.get("period"),
+            self.params.get("current_date"),
+        )
         try:
+            stage = "data_source"
             start = datetime.datetime.now()
+            logger.info("stage_start stage={} component={}", stage, component)
             source = DataSource(self.params)
             source_data, time_range = source.run()
             data_source_time = datetime.datetime.now() - start
+            logger.info(
+                "stage_complete stage={} component={} datasets={} rows={} duration={}",
+                stage,
+                component,
+                len(source_data),
+                sum(len(df) for df in source_data.values() if hasattr(df, "__len__")),
+                data_source_time,
+            )
 
+            stage = "data_process"
             start = datetime.datetime.now()
+            logger.info("stage_start stage={} component={}", stage, component)
             processed_outputs = DataProcess(source_data, time_range, self.params).run()
             data_process_time = datetime.datetime.now() - start
+            logger.info(
+                "stage_complete stage={} component={} outputs={} rows={} duration={}",
+                stage,
+                component,
+                len(processed_outputs),
+                sum(len(df) for df in processed_outputs.values() if hasattr(df, "__len__")),
+                data_process_time,
+            )
 
+            stage = "data_storage"
             start = datetime.datetime.now()
+            logger.info("stage_start stage={} component={} targets={}", stage, component, len(processed_outputs))
             DataStorage(processed_outputs, time_range, self.params).run()
             data_storage_time = datetime.datetime.now() - start
+            logger.info("stage_complete stage={} component={} targets={} duration={}", stage, component, len(processed_outputs), data_storage_time)
+
+            total_used_time = datetime.datetime.now() - pipeline_start
+            logger.info(
+                "pipeline_complete component={} status=success outputs={} rows={} duration={}",
+                component,
+                len(processed_outputs),
+                sum(len(df) for df in processed_outputs.values() if hasattr(df, "__len__")),
+                total_used_time,
+            )
 
             return return_pipeline_result([
                 {
                     "data_source_time": str(data_source_time),
                     "data_process_time": str(data_process_time),
                     "data_storage_time": str(data_storage_time),
-                    "total_used_time": str(data_source_time + data_process_time + data_storage_time),
+                    "total_used_time": str(total_used_time),
                 }
             ])
         except Exception as exc:
-            error_detail = traceback.format_exc()
-            logger.error(error_detail)
+            logger.exception(
+                "pipeline_failed component={} stage={} period={} current_date={}",
+                component,
+                stage,
+                self.params.get("period"),
+                self.params.get("current_date"),
+            )
             raise RuntimeError(f"report pipeline failed: {exc}") from exc

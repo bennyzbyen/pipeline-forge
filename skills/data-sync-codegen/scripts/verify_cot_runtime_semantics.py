@@ -42,6 +42,9 @@ class NoopLogger:
     def error(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    def exception(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
 
 def make_loguru() -> types.ModuleType:
     module = types.ModuleType("loguru")

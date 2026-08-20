@@ -245,6 +245,54 @@ def build_cot_context_fixture(tmp: Path) -> Path:
     return docx_path
 
 
+def build_cot_bysku_sync_fixture(tmp: Path) -> Path:
+    report_matrix = make_xlsx(
+        tmp / "cot_bysku_report_matrix.xlsx",
+        [
+            ["序号", "业务描述", "hbase 表", "Hbase数据范围", "clickhouse表"],
+            [
+                "1",
+                "bySKU截P报表2026",
+                "l2_cot_perfect_store.zo_bysku_detail_2026_p",
+                "2026P3~2027P3",
+                "cot_report_2026.zo_bysku_detail_p",
+            ],
+        ],
+    )
+    data_utilization = make_xlsx(
+        tmp / "cot_bysku_data_utilization.xlsx",
+        [["Name", "Description"], ["zo_bysku_detail_p", "Bysku截P"]],
+    )
+    field_dictionary = make_xlsx(
+        tmp / "cot_bysku_fields.xlsx",
+        [
+            ["字段", "字段描述", "字段类型", "字段类型(mysql)"],
+            ["inksaa_id", "主键", "", "bigint(20) unsigned"],
+            ["period", "P", "", "varchar(10)"],
+            ["store_code", "门店编码", "", "varchar(50)"],
+        ],
+    )
+    docx_path = tmp / "synthetic_cot_bysku_sync.docx"
+    make_docx(
+        docx_path,
+        "Synthetic COT HBase ClickHouse Data Source Sync",
+        [report_matrix, data_utilization, field_dictionary],
+        [],
+    )
+    return docx_path
+
+
+def build_bysku_report_fixture(tmp: Path) -> Path:
+    docx_path = tmp / "synthetic_bysku_report.docx"
+    make_docx(
+        docx_path,
+        "Synthetic bySKU NPD B5 prepare_data cal_sku sku_map R13P HBase FS ClickHouse report",
+        [],
+        [],
+    )
+    return docx_path
+
+
 def main() -> int:
     script = Path(__file__).with_name("extract_docx_bundle.py").resolve()
     with tempfile.TemporaryDirectory(prefix="docx-bundle-multidoc-") as tmp_name:
@@ -265,7 +313,14 @@ def main() -> int:
             ]
         )
         assert_true((single_out / "extracted" / "extracted_document.md").exists(), "single-doc extracted document missing")
-        assert_true((single_out / "dev_doc" / "dev_doc.md").exists(), "single-doc dev_doc missing")
+        assert_true(
+            (single_out / "dev_doc" / "technical_design.md").exists(),
+            "single-doc technical design missing",
+        )
+        assert_true(
+            not (single_out / "dev_doc" / "dev_doc.md").exists(),
+            "new extraction should not create a duplicate legacy dev_doc.md",
+        )
 
         multi_out = tmp / "multi"
         run_command(
@@ -294,6 +349,12 @@ def main() -> int:
         assert_true(len(facts.get("report_field_mappings", [])) >= 2, "delayed-header field dictionaries were not extracted")
         assert_true(len(facts.get("report_business_rules", [])) >= 1, "PRD abnormal rules were not extracted")
         assert_true(len(facts.get("report_kpi_rules", [])) >= 1, "PRD KPI rules were not extracted")
+        contract = facts.get("codegen_contract", {})
+        assert_true(contract.get("project_type") == "report", "codegen contract project type mismatch")
+        assert_true(contract.get("component_kind") == "standard_report", "codegen contract component kind mismatch")
+        assert_true(isinstance(contract.get("components"), list), "codegen contract components missing")
+        assert_true(contract.get("ready_for_codegen") is False, "unconfirmed write rules should block full codegen")
+        assert_true(bool(contract.get("blockers")), "codegen contract blockers missing")
 
         physical_tables = {item.get("table") for item in facts.get("report_physical_targets", [])}
         assert_true(
@@ -305,13 +366,29 @@ def main() -> int:
             "physical ClickHouse target qas_feedback_detail missing",
         )
 
-        dev_doc = (multi_out / "dev_doc" / "dev_doc.md").read_text(encoding="utf-8")
-        assert_true("abnormal_monitor.qas_mw_visit_abnormal_store_daily" in dev_doc, "dev_doc missing physical target")
-        assert_true("qas_feedback_detail" in dev_doc, "dev_doc missing delayed-header feedback dictionary")
-        assert_true("在店时间异常" in dev_doc, "dev_doc missing PRD abnormal/KPI rule")
+        technical_design = (multi_out / "dev_doc" / "technical_design.md").read_text(encoding="utf-8")
+        assert_true(
+            "abnormal_monitor.qas_mw_visit_abnormal_store_daily" in technical_design,
+            "technical design missing physical target",
+        )
+        assert_true(
+            "qas_feedback_detail" in technical_design,
+            "technical design missing delayed-header feedback dictionary",
+        )
+        assert_true("在店时间异常" in technical_design, "technical design missing PRD abnormal/KPI rule")
+        assert_true("# Synthetic QAS Technical Design" in technical_design, "technical design title missing")
+        assert_true(
+            "Design coverage: HLD + component LLD" in technical_design,
+            "technical design coverage missing",
+        )
+        assert_true("## 2. HLD — High-Level Design" in technical_design, "HLD section missing")
+        assert_true("## 3. LLD — Component Implementation Contracts" in technical_design, "LLD section missing")
+        assert_true("structured_facts.json#codegen_contract" in technical_design, "codegen contract link missing")
 
         questions = (multi_out / "dev_doc" / "questions.md").read_text(encoding="utf-8")
         assert_true("报表物理目标表未识别" not in questions, "questions should not report missing physical targets")
+        assert_true("## Blocking Code Generation" in questions, "blocking question category missing")
+        assert_true("## Deployment Confirmation" in questions, "deployment question category missing")
 
         cot_docx = build_cot_context_fixture(tmp)
         cot_out = tmp / "cot_context"
@@ -344,6 +421,65 @@ def main() -> int:
         assert_true(
             sixzhen_mapping.get("inference_method") == "embedding_context",
             "sixzhen_gps_distance should be matched by embedding context, not order fallback",
+        )
+
+        cot_bysku_docx = build_cot_bysku_sync_fixture(tmp)
+        cot_bysku_out = tmp / "cot_bysku_sync"
+        run_command(
+            [
+                sys.executable,
+                str(script),
+                "--docx",
+                str(cot_bysku_docx),
+                "--out",
+                str(cot_bysku_out),
+                "--project-name",
+                "Synthetic COT bySKU Sync",
+            ]
+        )
+        cot_bysku_facts = json.loads(
+            (cot_bysku_out / "dev_doc" / "structured_facts.json").read_text(encoding="utf-8")
+        )
+        cot_bysku_contract = cot_bysku_facts.get("codegen_contract", {})
+        assert_true(cot_bysku_facts.get("cot_report_tables"), "COT bySKU sync matrix was not extracted")
+        assert_true(
+            cot_bysku_contract.get("project_type") == "data-sync",
+            f"plain COT bySKU table was misrouted: {cot_bysku_contract}",
+        )
+        assert_true(
+            cot_bysku_contract.get("component_kind") == "cot_table_sync",
+            "plain COT bySKU table should remain a COT table-sync component",
+        )
+        assert_true(
+            not cot_bysku_facts.get("component_hints"),
+            "plain COT bySKU table should not create a bySKU report component hint",
+        )
+
+        bysku_report_docx = build_bysku_report_fixture(tmp)
+        bysku_report_out = tmp / "bysku_report"
+        run_command(
+            [
+                sys.executable,
+                str(script),
+                "--docx",
+                str(bysku_report_docx),
+                "--out",
+                str(bysku_report_out),
+                "--project-name",
+                "Synthetic bySKU Report",
+            ]
+        )
+        bysku_report_facts = json.loads(
+            (bysku_report_out / "dev_doc" / "structured_facts.json").read_text(encoding="utf-8")
+        )
+        bysku_report_contract = bysku_report_facts.get("codegen_contract", {})
+        assert_true(
+            bysku_report_contract.get("project_type") == "report",
+            "strong bySKU calculation evidence should route to report codegen",
+        )
+        assert_true(
+            bysku_report_contract.get("component_kind") == "bysku_report_pipeline",
+            "strong bySKU calculation evidence should keep the bySKU component hint",
         )
 
     print("multi-DOCX extraction regression passed")

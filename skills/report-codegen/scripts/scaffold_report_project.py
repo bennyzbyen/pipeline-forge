@@ -11,6 +11,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List
 
+from report_contract import validate_execution_contract
+
 
 TABLE_NAME_RE = re.compile(r"(?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+|/[^\s,;]+")
 
@@ -386,6 +388,16 @@ def plan_is_hbase_prepare_pipeline(plan: Dict[str, Any]) -> bool:
     )
 
 
+def plan_has_specialized_implementation(plan: Dict[str, Any]) -> bool:
+    return plan_is_vehicle(plan) or plan_is_supervisor_portal(plan) or plan_is_hbase_prepare_pipeline(plan)
+
+
+def execution_contract_validation(plan: Dict[str, Any]) -> Dict[str, Any]:
+    if plan_has_specialized_implementation(plan):
+        return {"status": "specialized", "error_count": 0, "warning_count": 0, "errors": [], "warnings": []}
+    return validate_execution_contract(plan.get("execution_contract"), plan.get("outputs", []))
+
+
 def split_table_names(value: Any) -> List[str]:
     names: List[str] = []
     for part in re.split(r"[\r\n]+", str(value or "")):
@@ -566,6 +578,16 @@ def write_col_config(target: Path, plan: Dict[str, Any]) -> None:
     (target / "params_configs" / "col_config.py").write_text(content, encoding="utf-8")
 
 
+def write_execution_contract_config(target: Path, plan: Dict[str, Any]) -> None:
+    contract_literal = pprint.pformat(plan.get("execution_contract") or {}, width=120, sort_dicts=False)
+    content = (
+        "# coding: utf-8\n"
+        '"""Normalized report execution contract; contains data only, never executable expressions."""\n\n'
+        f"execution_contract = {contract_literal}\n"
+    )
+    (target / "params_configs" / "execution_contract.py").write_text(content, encoding="utf-8")
+
+
 def infer_rowkey_rule(target_name: str, final_columns: List[str]) -> Dict[str, Any]:
     columns = set(final_columns)
     if "period" in columns and "code" in columns:
@@ -721,6 +743,8 @@ def _ensure_columns(df: pd.DataFrame, columns: list) -> pd.DataFrame:
 
 
 class DataProcess:
+    """Build vehicle-verification outputs using requirement-defined joins and KPIs."""
+
     def __init__(self, source_data: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         logger.info("Initializing vehicle verification DataProcess")
         self.source_data = source_data
@@ -776,10 +800,12 @@ class DataProcess:
         return self._data.get("product_md", pd.DataFrame())
 
     def data_clean(self):
-        logger.info("Start vehicle source cleaning")
+        logger.info("transform_start step=vehicle_source_clean")
         eo_line = self._source("l0_dtr_order.t5_eo_erp_sales_order_line_p")
+        eo_input_rows = len(eo_line)
         if not eo_line.empty:
             if {"order_status", "bmp_eo_order_category"}.issubset(eo_line.columns):
+                # Requirement: only delivered/received NDT orders enter vehicle reconciliation.
                 eo_line = eo_line[
                     eo_line["order_status"].astype(str).isin(["4516", "4508"])
                     & (eo_line["bmp_eo_order_category"].astype(str) == "NDT")
@@ -792,6 +818,7 @@ class DataProcess:
                     "prod_code",
                 ].dropna().astype(str).unique()
                 if len(exclude_skus) and {"order_source", "mars_sku_no", "bmp_mars_sku_no"}.issubset(eo_line.columns):
+                    # Requirement: EO and ERP orders identify the comparable SKU in different columns.
                     match_sku = np.where(
                         eo_line["order_source"].astype(str) == "EO订单",
                         eo_line["mars_sku_no"].astype(str),
@@ -806,14 +833,26 @@ class DataProcess:
         else:
             self._data["product_md"] = self._source("l0_product_center.locust_product_md")
         self._data["eo_line"] = eo_line
+        logger.info(
+            "transform_complete step=vehicle_eo_filter input_rows={} output_rows={}",
+            eo_input_rows,
+            len(eo_line),
+        )
 
         store_detail = self._source("l0_store_center.store_details_p")
+        store_input_rows = len(store_detail)
         if not store_detail.empty:
+            # Requirement: the report population is traditional-channel presale or current-sale stores.
             if "digital" in store_detail.columns:
                 store_detail = store_detail[store_detail["digital"].isin(["预售", "现售"])].copy()
             if "channel_name" in store_detail.columns:
                 store_detail = store_detail[store_detail["channel_name"] == "传统渠道"].copy()
         self._data["store_detail"] = store_detail
+        logger.info(
+            "transform_complete step=vehicle_store_scope input_rows={} output_rows={}",
+            store_input_rows,
+            len(store_detail),
+        )
 
         self._data["sales_assess_channel"] = self._source("l2_cot_exe_report.rpt_exe_sales_assess_channel")
         self._data["vehicle_info"] = self._clean_vehicle_info(self._source("l1_mdp.vehicle_info_p"))
@@ -977,7 +1016,14 @@ class DataProcess:
         base = self.store_detail.copy()
         if base.empty:
             base = pd.DataFrame(columns=["code"])
+        # Requirement: store scope owns output coverage, including stores with no matching order.
         self.df_details = pd.merge(base, all_orders, on="code", how="left")
+        logger.info(
+            "transform_complete step=vehicle_order_join stores={} orders={} output_rows={}",
+            len(base),
+            len(all_orders),
+            len(self.df_details),
+        )
         period_value = self.P or self.period
         self.df_details["period"] = period_value
         self.df_details["year"] = str(period_value)[:4]
@@ -1255,6 +1301,8 @@ def _ensure_columns(df: pd.DataFrame, columns: list) -> pd.DataFrame:
 
 
 class DataProcess:
+    """Build supervisor-portal outputs while preserving report grain and defaults."""
+
     def __init__(self, source_data: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.source_data = source_data
         self.time_range = time_range
@@ -1285,6 +1333,7 @@ class DataProcess:
         return pd.DataFrame(columns=columns)
 
     def _safe_divide(self, numerator, denominator):
+        # Requirement: zero or missing denominators yield 0 and KPI values use four decimals.
         denominator = _to_number(denominator)
         numerator = _to_number(numerator)
         return (numerator / denominator.replace(0, np.nan)).fillna(0).round(4)
@@ -1296,6 +1345,7 @@ class DataProcess:
         if "code" in df.columns and "store_code" not in df.columns:
             df = df.rename(columns={"code": "store_code"})
         if "cover_mode" in df.columns:
+            # Requirement: only the three documented sugar-and-chocolate coverage modes are in scope.
             cover = df["cover_mode"].astype(str)
             df = df[
                 cover.str.contains("糖巧固定覆盖", na=False)
@@ -1303,6 +1353,7 @@ class DataProcess:
                 | cover.str.contains("糖巧线路外覆盖", na=False)
             ].copy()
         if {"state", "closed_date"}.issubset(df.columns):
+            # Requirement: closed stores remain visible only when closure is after the R2P boundary.
             r2p = str(self.time_range.get("r2p") or "")
             state_text = df["state"].astype(str)
             df = df[(state_text == "1") | ((state_text == "0") & (df["closed_date"].astype(str) > r2p))].copy()
@@ -1627,7 +1678,7 @@ class DataProcess:
         return final
 
     def run(self) -> Dict[str, pd.DataFrame]:
-        logger.info("Start supervisor_portal DataProcess")
+        logger.info("component_start component=supervisor_portal layer=data_process")
         store = self._build_store()
         store_sales = self._build_store_sales()
         outputs = {
@@ -1680,6 +1731,8 @@ except Exception:
 
 
 class DataProcess:
+    """Optionally activate downstream pipelines after HBase data is prepared."""
+
     def __init__(self, source_data: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.source_data = source_data
         self.time_range = time_range
@@ -1718,7 +1771,13 @@ class DataProcess:
                     break
                 except Exception as exc:
                     last_error = exc
-                    logger.error("pipeline activation failed uid={} attempt={} error={}", process_uid, attempt, exc)
+                    logger.warning(
+                        "stage_retry stage=pipeline_activation uid={} attempt={} max_attempts=6 delay_seconds={} error_type={}",
+                        process_uid,
+                        attempt,
+                        10 if attempt < 6 else 0,
+                        type(exc).__name__,
+                    )
                     if attempt < 6:
                         time.sleep(10)
             else:
@@ -1726,11 +1785,33 @@ class DataProcess:
         return metrics
 
     def run(self) -> Dict[str, pd.DataFrame]:
-        logger.info("Start HBase prepare DataProcess")
+        logger.info("component_start component=hbase_prepare layer=data_process")
         if self.params.get("is_run_pipeline", False):
             metrics = self._activate_pipelines()
             self.source_data["pipeline_metrics"] = pd.DataFrame(metrics)
         return self.source_data
+'''
+    (target / "data_utils" / "data_process.py").write_text(content, encoding="utf-8")
+
+
+def write_contract_data_process(target: Path) -> None:
+    content = '''# coding: utf-8
+from common_utils.all_modules import Dict, logger, pd
+from data_utils.contract_runtime import execute_contract
+from params_configs.execution_contract import execution_contract
+
+
+class DataProcess:
+    """Execute a validated, normalized report transformation contract."""
+
+    def __init__(self, source_data: Dict[str, pd.DataFrame], time_range: dict, params: dict):
+        self.source_data = source_data
+        self.time_range = time_range
+        self.params = params
+
+    def run(self) -> Dict[str, pd.DataFrame]:
+        logger.info("component_start component=contract_report layer=data_process")
+        return execute_contract(self.source_data, self.time_range, self.params, execution_contract)
 '''
     (target / "data_utils" / "data_process.py").write_text(content, encoding="utf-8")
 
@@ -1745,6 +1826,9 @@ def write_data_process(target: Path, plan: Dict[str, Any]) -> None:
     if plan_is_hbase_prepare_pipeline(plan):
         write_hbase_prepare_data_process(target)
         return
+    if execution_contract_validation(plan).get("status") == "passed":
+        write_contract_data_process(target)
+        return
 
     outputs = [item["target_name"] for item in plan.get("outputs", [])]
     content = f'''# coding: utf-8
@@ -1753,13 +1837,15 @@ from params_configs.col_config import field_rules, target_table_columns
 
 
 class DataProcess:
+    """Placeholder transformation contract for plan-driven report outputs."""
+
     def __init__(self, source_data: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.source_data = source_data
         self.time_range = time_range
         self.params = params
 
     def run(self) -> Dict[str, pd.DataFrame]:
-        logger.info("Start DataProcess")
+        logger.info("component_start component=report layer=data_process")
         for target_name in {outputs!r}:
             logger.info("planned output {{}} fields={{}}", target_name, len(field_rules.get(target_name, [])))
         raise NotImplementedError(
@@ -1785,6 +1871,8 @@ from params_configs.db_config import app_key, app_secret, env, fs_root_dir
 
 
 class DataSource:
+    """Read vehicle-verification sources for the resolved reporting range."""
+
     def __init__(self, params: dict):
         self.params = params
         self.period = params.get("period")
@@ -1885,7 +1973,13 @@ class DataSource:
             "p_start_date": period_rows["dataid"].min(),
             "p_end_date": period_rows["dataid"].max(),
         }
-        logger.info("Resolved time_range: {}", time_range)
+        logger.info(
+            "time_range_resolved component=vehicle period={} P={} start={} end={}",
+            time_range.get("period"),
+            time_range.get("P"),
+            time_range.get("p_start_date"),
+            time_range.get("p_end_date"),
+        )
         return time_range
 
     def _read_calendar(self) -> Tuple[pd.DataFrame, dict]:
@@ -1910,12 +2004,12 @@ class DataSource:
         if row_start is not None and row_stop is not None:
             row_stop = f"{row_stop}Z"
         logger.info(
-            "Reading HBase table={} columns={} row_start={} row_stop={} row_prefixs={}",
+            "source_read_start storage=hbase table={} selected_columns={} range_start={} range_end={} row_prefix_mode={}",
             table_name,
             len(columns),
             row_start,
             row_stop,
-            row_prefixs,
+            bool(row_prefixs),
         )
         return self.read_hbase_2_df(table_name, columns, row_start=row_start, row_stop=row_stop, row_prefixs=row_prefixs)
 
@@ -1990,7 +2084,7 @@ class DataSource:
         return df_fs_map
 
     def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
-        logger.info("Start vehicle DataSource")
+        logger.info("component_start component=vehicle layer=data_source")
         calendar_df, time_range = self._read_calendar()
         source_data: Dict[str, pd.DataFrame] = {}
         source_data.update(self.fetch_hbase_tables(time_range, calendar_df))
@@ -2019,6 +2113,8 @@ from params_configs.db_config import app_key, app_secret, fs_root_dir, mssql_tok
 
 
 class DataSource:
+    """Read supervisor-portal sources for the resolved reporting range."""
+
     def __init__(self, params: dict):
         self.params = params
 
@@ -2043,7 +2139,13 @@ class DataSource:
             "p_end_time": str(self.params.get("p_end_time") or current_dt.strftime("%Y-%m-%d")),
             "r2p": str(self.params.get("r2p") or p_start or currentday),
         }
-        logger.info("Resolved supervisor_portal time_range: {}", time_range)
+        logger.info(
+            "time_range_resolved component=supervisor_portal period={} current_date={} start={} end={}",
+            time_range.get("period"),
+            time_range.get("current_date"),
+            time_range.get("p_start_time"),
+            time_range.get("p_end_time"),
+        )
         return time_range
 
     def _gateway_client(self):
@@ -2094,12 +2196,12 @@ class DataSource:
         if row_start is not None and row_stop is not None:
             row_stop = f"{row_stop}Z"
         logger.info(
-            "Reading HBase table={} columns={} row_start={} row_stop={} row_prefixs={}",
+            "source_read_start storage=hbase table={} selected_columns={} range_start={} range_end={} row_prefix_mode={}",
             table_name,
             len(columns),
             row_start,
             row_stop,
-            row_prefixs,
+            bool(row_prefixs),
         )
         return self.read_hbase_2_df(table_name, columns, row_start=row_start, row_stop=row_stop, row_prefixs=row_prefixs)
 
@@ -2152,7 +2254,12 @@ class DataSource:
         else:
             client = self._mssql_client()
             sql = self._mssql_sql(table_name, columns, fetch_range, time_range)
-            logger.info("Reading MSSQL table={} sql={}", table_name, sql)
+            logger.info(
+                "source_query storage=mssql table={} selected_columns={} predicate={}",
+                table_name,
+                len(columns),
+                "time_range" if fetch_range.get("time_col") else "coverage_and_state",
+            )
             if hasattr(client, "read_sql"):
                 df = client.read_sql(sql)
             elif hasattr(client, "query_df"):
@@ -2190,7 +2297,7 @@ class DataSource:
         return df_map
 
     def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
-        logger.info("Start supervisor_portal DataSource")
+        logger.info("component_start component=supervisor_portal layer=data_source")
         time_range = self._resolve_time_range()
         source_data: Dict[str, pd.DataFrame] = {}
         source_data.update(self.fetch_hbase_tables(time_range))
@@ -2221,6 +2328,8 @@ except Exception:
 
 
 class DataSource:
+    """Export confirmed HBase source rows to FS for downstream report components."""
+
     def __init__(self, params: dict):
         self.params = params
         self.current_date = params.get("current_date")
@@ -2288,6 +2397,7 @@ class DataSource:
         calendar = df_calendar[df_calendar["NatureDate"] <= str(current_date)]
         calendar = calendar.drop_duplicates(subset="Period")
         periods = [str(value) for value in calendar["Period"].dropna().tolist()]
+        # Requirement: initialization exports the 13 completed periods before the current period.
         r13p = periods[-14:-1]
         return {
             "r13p": r13p,
@@ -2300,6 +2410,7 @@ class DataSource:
         if specific_range:
             return [str(value) for value in specific_range]
         export_mode = self.params.get("export_mode", "daily")
+        # Requirement: init backfills R13P; daily mode exports only the latest completed period.
         if export_mode == "init":
             return [str(value) for value in time_range.get("r13p", []) if str(value)]
         return [str(value) for value in time_range.get("period", []) if str(value)]
@@ -2310,12 +2421,20 @@ class DataSource:
         if not table_name or not columns:
             raise RuntimeError("Missing hbase prepare table or export columns.")
         df = self._read_hbase_df(table_name, list(columns), row_start=period, row_stop=f"{period}Z")
+        input_rows = len(df)
+        # Requirement: the downstream calculation consumes only configured subsegments aggregated by store.
         if "SubSegmentID" in df.columns:
             df = df[df["SubSegmentID"].astype(str).isin(hbase_prepare_subsegment_filter)]
         if "SelloutAmount" in df.columns:
             df["SelloutAmount"] = pd.to_numeric(df["SelloutAmount"], errors="coerce").fillna(0.0)
         if {"StoreID", "SelloutAmount"}.issubset(df.columns):
             df = df.groupby(["StoreID"], as_index=False).agg({"SelloutAmount": "sum"})
+        logger.info(
+            "transform_complete step=hbase_prepare_filter_aggregate period={} input_rows={} output_rows={}",
+            period,
+            input_rows,
+            len(df),
+        )
 
         file_name = f"cmt_sellout_{period}.csv.gz"
         local_dir = self.params.get("local_output_dir") or "."
@@ -2336,10 +2455,172 @@ class DataSource:
         return {"period": period, "source_table": table_name, "rows": len(df), "fs_path": fs_path}
 
     def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
-        logger.info("Start HBase prepare DataSource")
+        logger.info("component_start component=hbase_prepare layer=data_source")
         time_range = self._calendar_periods()
         metrics = [self._export_period(period) for period in self._period_list(time_range)]
         return {"export_metrics": pd.DataFrame(metrics)}, time_range
+'''
+    (target / "data_utils" / "data_source.py").write_text(content, encoding="utf-8")
+
+
+def write_contract_data_source(target: Path) -> None:
+    content = '''# coding: utf-8
+import datetime
+import os
+import tempfile
+
+from common_utils.all_modules import Dict, List, Tuple, logger, pd
+from gateway.client import GateWayClient
+from params_configs.db_config import app_key, app_secret, env, fs_root_dir
+from params_configs.execution_contract import execution_contract
+
+
+class DataSource:
+    """Load normalized contract sources through explicit adapters or injected fixtures."""
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def _resolve_time_range(self) -> dict:
+        current_date = str(self.params.get("current_date") or datetime.datetime.now().strftime("%Y-%m-%d"))
+        period = str(self.params.get("period") or self.params.get("P") or "")
+        values = {"current_date": current_date, "period": period, "P": str(self.params.get("P") or period)}
+        values.update(self.params.get("time_range") or {})
+        return values
+
+    def _gateway_client(self):
+        if self.params.get("gateway_client") is not None:
+            return self.params["gateway_client"]
+        return GateWayClient(app_key, app_secret, env=env)
+
+    def _hbase_client(self):
+        if self.params.get("hbase_client") is not None:
+            return self.params["hbase_client"]
+        client = self._gateway_client()
+        try:
+            return client.getHbaseClient(fs_root_dir=fs_root_dir)
+        except TypeError:
+            return client.getHbaseClient()
+
+    def _fs_client(self):
+        if self.params.get("fs_client") is not None:
+            return self.params["fs_client"]
+        return self._gateway_client().getFsClient()
+
+    def _injected(self, source_name: str, config: dict):
+        location = str(config.get("location") or source_name)
+        for container_name in ["source_data", f"{config.get('kind')}_data"]:
+            container = self.params.get(container_name) or {}
+            if source_name in container:
+                return container[source_name].copy()
+            if location in container:
+                return container[location].copy()
+        return None
+
+    def _normalize(self, source_name: str, config: dict, df: pd.DataFrame) -> pd.DataFrame:
+        columns = list(config.get("columns") or [])
+        if df is None:
+            return pd.DataFrame(columns=columns)
+        missing = [column for column in columns if column not in df.columns]
+        if missing:
+            raise ValueError(f"source {source_name} missing configured columns: {missing}")
+        return df.loc[:, columns].copy()
+
+    def _range_value(self, value, time_range: dict):
+        if value is None:
+            return None
+        text = str(value)
+        if text.startswith("time_range."):
+            key = text.split(".", 1)[1]
+            if key not in time_range:
+                raise ValueError(f"source range key is missing: {text}")
+            return time_range[key]
+        if text.startswith("params."):
+            key = text.split(".", 1)[1]
+            if key not in self.params:
+                raise ValueError(f"source range key is missing: {text}")
+            return self.params[key]
+        return value
+
+    def _read_hbase(self, source_name: str, config: dict, time_range: dict) -> pd.DataFrame:
+        injected = self._injected(source_name, config)
+        if injected is not None:
+            return self._normalize(source_name, config, injected)
+        fetch_range = config.get("range") or {}
+        row_start = self._range_value(fetch_range.get("start"), time_range)
+        row_stop = self._range_value(fetch_range.get("stop"), time_range)
+        row_prefixs = fetch_range.get("row_prefixs")
+        logger.info("source_read_start storage=hbase source={} columns={} ranged={}", source_name, len(config.get("columns") or []), bool(row_start or row_stop))
+        df = self._hbase_client().query_df(
+            hbase_table_name=config["location"],
+            columns=list(config.get("columns") or []),
+            row_start=row_start,
+            row_stop=row_stop,
+            row_prefixs=row_prefixs,
+        )
+        return self._normalize(source_name, config, df)
+
+    def _render_path(self, path: str, time_range: dict) -> str:
+        result = str(path or "")
+        for key, value in time_range.items():
+            result = result.replace("{" + str(key) + "}", str(value))
+        return result
+
+    def _read_fs(self, source_name: str, config: dict, time_range: dict) -> pd.DataFrame:
+        injected = self._injected(source_name, config)
+        if injected is not None:
+            return self._normalize(source_name, config, injected)
+        fs_client = self._fs_client()
+        fs_path = self._render_path(config["location"], time_range)
+        file_format = str(config.get("format") or "csv").lower()
+        separator = str(config.get("separator") or ("\\t" if file_format in {"tsv", "txt"} else ","))
+        remote_files = fs_client.listdir(fs_path) if hasattr(fs_client, "listdir") else [fs_path]
+        frames = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for remote_name in remote_files:
+                remote_name = str(remote_name)
+                remote_path = remote_name if remote_name.startswith("/") else f"{fs_path.rstrip('/')}/{remote_name}"
+                local_path = os.path.join(temp_dir, os.path.basename(remote_path))
+                fs_client.copy_to_local(remote_path, local_path)
+                if file_format == "parquet":
+                    frame = pd.read_parquet(local_path, columns=list(config.get("columns") or []))
+                else:
+                    frame = pd.read_csv(local_path, sep=separator, usecols=list(config.get("columns") or []), low_memory=False)
+                frames.append(frame)
+        df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=config.get("columns") or [])
+        return self._normalize(source_name, config, df)
+
+    def _read_callable(self, source_name: str, config: dict, time_range: dict) -> pd.DataFrame:
+        injected = self._injected(source_name, config)
+        if injected is not None:
+            return self._normalize(source_name, config, injected)
+        reader_name = f"{config.get('kind')}_reader"
+        reader = self.params.get(reader_name)
+        if not callable(reader):
+            raise RuntimeError(f"source {source_name} requires callable params[{reader_name!r}] or injected data")
+        return self._normalize(source_name, config, reader(config, time_range))
+
+    def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
+        logger.info("component_start component=contract_report layer=data_source")
+        time_range = self._resolve_time_range()
+        source_data: Dict[str, pd.DataFrame] = {}
+        for source_name, config in (execution_contract.get("sources") or {}).items():
+            kind = config.get("kind")
+            if kind == "injected":
+                df = self._injected(source_name, config)
+                if df is None:
+                    raise RuntimeError(f"injected source is required: {source_name}")
+                source_data[source_name] = self._normalize(source_name, config, df)
+            elif kind == "hbase":
+                source_data[source_name] = self._read_hbase(source_name, config, time_range)
+            elif kind == "fs":
+                source_data[source_name] = self._read_fs(source_name, config, time_range)
+            elif kind in {"mssql", "mysql"}:
+                source_data[source_name] = self._read_callable(source_name, config, time_range)
+            else:
+                raise ValueError(f"unsupported source kind: {kind}")
+            logger.info("source_read_complete source={} rows={} columns={}", source_name, len(source_data[source_name]), len(source_data[source_name].columns))
+        return source_data, time_range
 '''
     (target / "data_utils" / "data_source.py").write_text(content, encoding="utf-8")
 
@@ -2354,6 +2635,9 @@ def write_data_source(target: Path, plan: Dict[str, Any]) -> None:
     if plan_is_hbase_prepare_pipeline(plan):
         write_hbase_prepare_data_source(target)
         return
+    if execution_contract_validation(plan).get("status") == "passed":
+        write_contract_data_source(target)
+        return
 
     content = '''# coding: utf-8
 from common_utils.all_modules import Dict, List, Optional, Tuple, logger, pd
@@ -2361,6 +2645,8 @@ from params_configs.col_config import fs_source_config, hbase_export_cols, hbase
 
 
 class DataSource:
+    """Placeholder source contract for a plan-driven report component."""
+
     def __init__(self, params: dict):
         self.params = params
 
@@ -2380,7 +2666,7 @@ class DataSource:
         return pd.DataFrame(columns=config.get("fields", []))
 
     def run(self) -> Tuple[Dict[str, pd.DataFrame], dict]:
-        logger.info("Start DataSource")
+        logger.info("component_start component=report layer=data_source")
         time_range = self._resolve_time_range()
         source_data: Dict[str, pd.DataFrame] = {}
         for table_name, columns in hbase_export_cols.items():
@@ -2403,6 +2689,8 @@ from params_configs.col_config import target_table_map, target_table_columns
 
 
 class DataStorage:
+    """Replace supervisor-portal ClickHouse outputs using confirmed predicates."""
+
     def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.outputs = outputs
         self.time_range = time_range
@@ -2419,7 +2707,8 @@ class DataStorage:
         return hashlib.md5(str(time.time()).encode("utf-8")).hexdigest()
 
     def _command(self, client, sql: str):
-        logger.info(sql)
+        operation = sql.strip().split(maxsplit=1)[0].upper() if sql.strip() else "UNKNOWN"
+        logger.info("target_command storage=clickhouse operation={} statement_length={}", operation, len(sql))
         if hasattr(client, "command"):
             return client.command(sql)
         if hasattr(client, "execute"):
@@ -2477,7 +2766,7 @@ class DataStorage:
         clickhouse_table = physical_table.split(".")[-1]
         final_columns = target_table_columns.get(target_name, [])
         if df is None or df.empty:
-            logger.info("Output {} is empty, skip ClickHouse write", target_name)
+            logger.info("stage_skip stage=data_storage output={} reason=empty_output", target_name)
             return {"target": physical_table, "rows": 0, "status": "skipped_empty"}
         df = df.copy()
         batch_id = self._generate_batch_id()
@@ -2510,7 +2799,7 @@ class DataStorage:
         return {"target": physical_table, "rows": len(df), "status": "inserted", "batch_id": batch_id}
 
     def run(self):
-        logger.info("Start supervisor_portal DataStorage")
+        logger.info("component_start component=supervisor_portal layer=data_storage")
         client = self._get_clickhouse_client()
         metrics = []
         for target_name, df in self.outputs.items():
@@ -2526,19 +2815,110 @@ from common_utils.all_modules import Dict, logger, pd
 
 
 class DataStorage:
+    """Report HBase-prepare outputs without adding an unsupported target writer."""
+
     def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.outputs = outputs
         self.time_range = time_range
         self.params = params
 
     def run(self):
-        logger.info("Start HBase prepare DataStorage")
+        logger.info("component_start component=hbase_prepare layer=data_storage")
         metrics = []
         for name, df in self.outputs.items():
             rows = 0 if df is None else len(df)
             logger.info("prepared output={} rows={}", name, rows)
             metrics.append({"output": name, "rows": rows, "status": "prepared"})
         return metrics
+'''
+    (target / "data_utils" / "data_storage.py").write_text(content, encoding="utf-8")
+
+
+def write_contract_data_storage(target: Path) -> None:
+    content = '''# coding: utf-8
+import re
+
+from common_utils.all_modules import Dict, logger, pd
+from params_configs.execution_contract import execution_contract
+
+
+IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+class DataStorage:
+    """Write contract outputs with explicit append or replace predicates."""
+
+    def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
+        self.outputs = outputs
+        self.time_range = time_range
+        self.params = params
+
+    def _client(self):
+        client = self.params.get("clickhouse_client")
+        if client is None:
+            raise RuntimeError("A clickhouse_client must be supplied for contract report writes.")
+        return client
+
+    def _identifier(self, value: str) -> str:
+        value = str(value or "")
+        if not IDENTIFIER_RE.fullmatch(value):
+            raise ValueError(f"unsafe SQL identifier in execution contract: {value!r}")
+        return value
+
+    def _value_from(self, value_from: str):
+        root, _, key = str(value_from or "").partition(".")
+        values = self.time_range if root == "time_range" else self.params if root == "params" else None
+        if values is None or not key or key not in values:
+            raise ValueError(f"write predicate value is missing: {value_from!r}")
+        return values[key]
+
+    def _literal(self, value) -> str:
+        if value is None:
+            raise ValueError("replace predicate value cannot be null")
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
+    def _command(self, client, sql: str):
+        logger.info("target_command storage=clickhouse operation={} statement_length={}", sql.split(maxsplit=1)[0], len(sql))
+        if hasattr(client, "command"):
+            return client.command(sql)
+        if hasattr(client, "execute"):
+            return client.execute(sql)
+        raise RuntimeError("clickhouse_client must provide command(sql) or execute(sql)")
+
+    def _insert(self, client, table: str, df: pd.DataFrame):
+        if hasattr(client, "insert_df"):
+            return client.insert_df(table, df)
+        if hasattr(client, "insert_dataframe"):
+            return client.insert_dataframe(table, df)
+        raise RuntimeError("clickhouse_client must provide insert_df(table, df) or insert_dataframe(table, df)")
+
+    def _write_one(self, client, output_name: str, df: pd.DataFrame, write: dict):
+        table = self._identifier(write.get("table"))
+        if df is None or df.empty:
+            logger.info("stage_skip stage=data_storage output={} reason=empty_output", output_name)
+            return {"output": output_name, "target": table, "rows": 0, "status": "skipped_empty"}
+        mode = write.get("mode")
+        if mode == "replace_where":
+            predicate = write.get("predicate") or {}
+            column = self._identifier(predicate.get("column"))
+            value = self._value_from(predicate.get("value_from"))
+            sql = f"ALTER TABLE {table} DELETE WHERE {column} = {self._literal(value)}"
+            self._command(client, sql)
+        elif mode != "append":
+            raise ValueError(f"unsupported write mode: {mode}")
+        logger.info("target_insert storage=clickhouse output={} target={} rows={}", output_name, table, len(df))
+        self._insert(client, table, df)
+        return {"output": output_name, "target": table, "rows": len(df), "status": "inserted", "mode": mode}
+
+    def run(self):
+        logger.info("component_start component=contract_report layer=data_storage")
+        client = self._client()
+        writes = execution_contract.get("writes") or {}
+        return [self._write_one(client, name, self.outputs[name], writes[name]) for name in writes]
 '''
     (target / "data_utils" / "data_storage.py").write_text(content, encoding="utf-8")
 
@@ -2553,6 +2933,9 @@ def write_data_storage(target: Path, plan: Dict[str, Any]) -> None:
     if plan_is_hbase_prepare_pipeline(plan):
         write_hbase_prepare_data_storage(target)
         return
+    if execution_contract_validation(plan).get("status") == "passed":
+        write_contract_data_storage(target)
+        return
 
     content = '''# coding: utf-8
 from common_utils.all_modules import Dict, logger, pd
@@ -2560,13 +2943,15 @@ from params_configs.col_config import target_table_map
 
 
 class DataStorage:
+    """Placeholder storage contract for plan-driven report outputs."""
+
     def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.outputs = outputs
         self.time_range = time_range
         self.params = params
 
     def run(self):
-        logger.info("Start DataStorage")
+        logger.info("component_start component=report layer=data_storage")
         for target_name, df in self.outputs.items():
             physical_table = target_table_map.get(target_name, target_name)
             logger.info("planned ClickHouse write target={} physical={} rows={}", target_name, physical_table, len(df))
@@ -2593,6 +2978,8 @@ except ImportError:
 
 
 class DataStorage:
+    """Replace vehicle-verification ClickHouse outputs by reporting period."""
+
     def __init__(self, outputs: Dict[str, pd.DataFrame], time_range: dict, params: dict):
         self.outputs = outputs
         self.time_range = time_range
@@ -2618,8 +3005,9 @@ class DataStorage:
     def _delete_period(self, client, table_name: str):
         if not self.period:
             raise ValueError("time_range must provide P or period before writing ClickHouse targets.")
+        # Safety: period replacement deletes stale rows before inserting the complete non-empty output.
         delete_sql = f"ALTER TABLE {table_name} {cluster} DELETE WHERE period = '{self.period}'"
-        logger.info("Deleting old data: {}", delete_sql)
+        logger.info("target_replace storage=clickhouse target={} predicate=period period={}", table_name, self.period)
         client.command(delete_sql)
 
     def _insert_dataframe(self, client, table_name: str, df: pd.DataFrame):
@@ -2635,14 +3023,14 @@ class DataStorage:
     def _replace_period(self, client, target_name: str, df: pd.DataFrame):
         table_name = target_table_map.get(target_name, target_name)
         if df is None or df.empty:
-            logger.info("Output {} is empty, skip delete and insert for {}", target_name, table_name)
+            logger.info("stage_skip stage=data_storage output={} target={} reason=empty_output", target_name, table_name)
             return {"target": table_name, "rows": 0, "status": "skipped_empty"}
         self._delete_period(client, table_name)
         self._insert_dataframe(client, table_name, df)
         return {"target": table_name, "rows": len(df), "status": "inserted"}
 
     def run(self):
-        logger.info("Start vehicle DataStorage")
+        logger.info("component_start component=vehicle layer=data_storage")
         client = self._get_clickhouse_client()
         metrics = []
         for target_name, df in self.outputs.items():
@@ -2656,6 +3044,7 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
     vehicle_plan = plan_is_vehicle(plan)
     supervisor_plan = plan_is_supervisor_portal(plan)
     hbase_prepare_plan = plan_is_hbase_prepare_pipeline(plan)
+    contract_plan = execution_contract_validation(plan).get("status") == "passed"
     if vehicle_plan:
         source_item = "- [x] Vehicle DataSource implements calendar period derivation, HBase range reads, and FS period-path reads; fill gateway credentials or inject clients before deployment."
         process_item = "- [x] Vehicle DataProcess implements EO/DMS detail, store joins, vehicle/customer mapping, KPI fields, and summaries."
@@ -2674,6 +3063,12 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
         storage_item = "- [x] DataStorage is intentionally no-op because this component prepares FS source files and triggers downstream pipeline rather than writing ClickHouse."
         filter_item = "- [x] HBase prepare source filter keeps configured SubSegmentID values and aggregates SelloutAmount by StoreID when those fields exist."
         columns_item = "- [x] Final source export columns are controlled by `hbase_prepare_default_export_cols` and runtime `hbase_export_cols` params."
+    elif contract_plan:
+        source_item = "- [x] DataSource implements normalized HBase/FS adapters, explicit MSSQL/MySQL reader injection, and fixture injection."
+        process_item = "- [x] DataProcess executes the validated non-eval transformation DSL in `params_configs/execution_contract.py`."
+        storage_item = "- [x] DataStorage implements explicit ClickHouse append/replace_where writes and skips destructive replacement for empty outputs."
+        filter_item = "- [x] Filters, joins, derivations, aggregations, deduplication, and projections are defined by the normalized execution contract."
+        columns_item = "- [x] Contract outputs must exactly match every `target_table_columns` final column list."
     else:
         source_item = "- [ ] Implement real HBase/FS/DataEngine source reads in `data_utils/data_source.py`."
         process_item = "- [ ] Implement field rules from `field_rules` for every target output."
@@ -2710,7 +3105,7 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
             columns_item,
             storage_item,
             *extra_items,
-            "- [ ] Validate deployed logs: source row counts, filtered row counts, output row counts, delete SQL, insert target, and final metrics.",
+            "- [ ] Validate deployed logs: source row counts, filtered row counts, output row counts, delete target/predicate summary, insert target, and final metrics.",
             "",
         ]
     )
@@ -2718,27 +3113,61 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
 
 
 def write_params_example(target: Path, plan: Dict[str, Any]) -> None:
-    if not plan_is_hbase_prepare_pipeline(plan):
+    if plan_is_hbase_prepare_pipeline(plan):
+        params = {
+            "current_date": "",
+            "period": "",
+            "running_env": "uat",
+            "receiver_emails": [],
+            "export_mode": "daily",
+            "specific_range": None,
+            "is_run_pipeline": False,
+            "hbase_export_cols": ["StoreID", "SubSegmentID", "SelloutAmount"],
+            "skip_fs_upload": False,
+        }
+    elif execution_contract_validation(plan).get("status") == "passed":
+        params = {
+            "current_date": "",
+            "period": "",
+            "time_range": {},
+            "source_data": {
+                name: f"<inject pandas.DataFrame with columns: {', '.join(config.get('columns') or [])}>"
+                for name, config in (plan.get("execution_contract", {}).get("sources") or {}).items()
+            },
+            "clickhouse_client": "<inject client object at runtime; not JSON-serializable>",
+        }
+    else:
         return
-    params = {
-        "current_date": "",
-        "period": "",
-        "running_env": "uat",
-        "receiver_emails": [],
-        "export_mode": "daily",
-        "specific_range": None,
-        "is_run_pipeline": False,
-        "hbase_export_cols": ["StoreID", "SubSegmentID", "SelloutAmount"],
-        "skip_fs_upload": False,
-    }
     (target / "params.example.json").write_text(json.dumps(params, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def scaffold(plan_path: Path, target: Path) -> None:
+def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False) -> None:
     plan = load_json(plan_path)
+    codegen_contract = plan.get("codegen_contract", {})
+    if codegen_contract and codegen_contract.get("project_type") != "report":
+        raise ValueError(
+            "codegen_contract routes this design package to data-sync-codegen, not report-codegen."
+        )
+    if codegen_contract and not codegen_contract.get("ready_for_codegen", False) and not allow_blocked_scaffold:
+        blockers = "; ".join(str(item) for item in codegen_contract.get("blockers", [])) or "unresolved design blockers"
+        raise ValueError(
+            "codegen_contract blocks full scaffolding: "
+            f"{blockers}. Re-run with --allow-blocked-scaffold only for an explicitly requested safe scaffold."
+        )
+    execution_validation = execution_contract_validation(plan)
+    if execution_validation.get("status") == "failed" and not allow_blocked_scaffold:
+        details = "; ".join(
+            f"{item.get('path')}: {item.get('message')}"
+            for item in execution_validation.get("errors", [])[:8]
+        )
+        raise ValueError(
+            "generic report full scaffolding requires a valid normalized execution_contract: "
+            f"{details}. Re-run with --allow-blocked-scaffold only for a non-runnable review scaffold."
+        )
     clean_target(target)
     copy_minimal_project(target)
     write_col_config(target, plan)
+    write_execution_contract_config(target, plan)
     write_rowkey_config(target, plan)
     write_db_config(target, plan)
     write_data_source(target, plan)
@@ -2753,8 +3182,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Scaffold a report project from report_codegen_plan.json.")
     parser.add_argument("--plan", required=True, help="Path to report_codegen_plan.json.")
     parser.add_argument("--target", required=True, help="Target project directory.")
+    parser.add_argument(
+        "--allow-blocked-scaffold",
+        action="store_true",
+        help="Generate a safe placeholder scaffold even when codegen_contract is blocked.",
+    )
     args = parser.parse_args()
-    scaffold(Path(args.plan).expanduser().resolve(), Path(args.target).expanduser().resolve())
+    scaffold(
+        Path(args.plan).expanduser().resolve(),
+        Path(args.target).expanduser().resolve(),
+        allow_blocked_scaffold=args.allow_blocked_scaffold,
+    )
     print(f"project: {Path(args.target).expanduser().resolve()}")
     return 0
 

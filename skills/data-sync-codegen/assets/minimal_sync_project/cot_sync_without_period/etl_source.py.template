@@ -52,7 +52,11 @@ class ETLSource:
 
     def fetch_sync_mode(self, mysql_table, last_update_time_column, last_timestamp):
         query_changed = f"SELECT count(1) FROM {mysql_table} WHERE `{last_update_time_column}` > '{last_timestamp}'"
-        logger.info("detect changed rows sql: {}", query_changed)
+        logger.info(
+            "source_query operation=detect_changed_rows table={} predicate=updated_after column={}",
+            mysql_table,
+            last_update_time_column,
+        )
         changed_df = pd.read_sql(query_changed, self.engine)
         sync_size = changed_df["count(1)"].iloc[0]
         if sync_size == 0:
@@ -62,17 +66,17 @@ class ETLSource:
             f"SELECT max(`{last_update_time_column}`) AS last_update_timestamp "
             f"FROM {self.mysql_params['db']}.{mysql_table}"
         )
-        logger.info("detect max timestamp sql: {}", query_timestamp)
+        logger.info("source_query operation=max_timestamp table={}", mysql_table)
         timestamp_df = pd.read_sql(query_timestamp, self.engine)
         last_update_timestamp = timestamp_df["last_update_timestamp"].iloc[0]
-        logger.info("mysql max timestamp: {}", last_update_timestamp)
+        logger.info("stage_complete stage=max_timestamp table={} timestamp={}", mysql_table, last_update_timestamp)
         return True, last_update_timestamp, sync_size
 
     def create_file_and_header(self, mysql_table, cols, file_dir):
         now = datetime.now()
         file_name = f"{mysql_table}_{now.strftime('%Y%m%d%H%M%S%f')}.csv"
         file_path = f"{file_dir}/{file_name}"
-        logger.info("file_name: {}", file_name)
+        logger.info("source_file_created table={} file={}", mysql_table, file_name)
         with open(file_path, "a", newline="", encoding="utf-8") as output_file:
             output_file.write(",".join(cols) + "\n")
         return file_path
@@ -87,7 +91,11 @@ class ETLSource:
         columns_df = pd.read_sql(f"SHOW COLUMNS FROM {mysql_table}", self.engine)
         cols = columns_df["Field"].to_list()
         sql = f"SELECT {','.join(cols)} FROM {mysql_table} WHERE `{last_update_time_column}` > '{last_timestamp}'"
-        logger.info("execute sql: {}", sql)
+        logger.info(
+            "source_query operation=export_rows table={} predicate=updated_after selected_columns={}",
+            mysql_table,
+            len(cols),
+        )
         with pymysql.connect(cursorclass=pymysql.cursors.SSCursor, **self.mysql_params) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
@@ -105,10 +113,10 @@ class ETLSource:
                 add_size += len(rows)
                 if add_size >= file_size:
                     add_size = 0
-                logger.info("execute sql finished. count: {}", df_size)
+                logger.info("stage_progress stage=source_export table={} rows={}", mysql_table, df_size)
 
         end_time = datetime.now()
-        logger.info("end query table and write file, duration: {}", end_time - start_time)
+        logger.info("stage_complete stage=source_export table={} rows={} duration={}", mysql_table, df_size, end_time - start_time)
         return {
             "operation": "fetch_mysql_data",
             "output": f"{mysql_table} files",
