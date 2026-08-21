@@ -1,5 +1,15 @@
 # Install PipelineForge
 
+## GitHub marketplace setup
+
+Add the public PipelineForge marketplace source:
+
+```powershell
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref main
+```
+
+Restart the ChatGPT desktop app, open **Plugins > Personal**, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.
+
 ## Windows quick setup
 
 1. Extract the downloaded `pipeline-forge.zip` archive.

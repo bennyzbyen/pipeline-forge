@@ -6,6 +6,8 @@
 - Adopted Semantic Versioning: PATCH for fixes, MINOR for backward-compatible features, and MAJOR for incompatible changes.
 - Removed timestamp build metadata from the public release number and synchronized the plugin manifest, website, and download package version.
 - Added automated validation for SemVer syntax and cross-file version consistency.
+- Published the GitHub marketplace installation command in the repository and product site.
+- Excluded Python caches and compiled bytecode from downloadable archives, with regression validation.
 
 ## 0.1.0+codex.20260821151410
 
