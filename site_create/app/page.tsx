@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  ENABLE_URI,
+  OFFICIAL_PLUGIN_GUIDE_URL,
   PLUGIN_VERSION,
   capabilities,
   reliabilityPoints,
@@ -49,7 +49,7 @@ function SiteHeader() {
               {item.label}
             </a>
           ))}
-          <a className="nav-cta" href={ENABLE_URI} onClick={() => setOpen(false)}>
+          <a className="nav-cta" href="#enable" onClick={() => setOpen(false)}>
             启用插件
           </a>
         </div>
@@ -163,21 +163,33 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`enable-actions ${compact ? "is-compact" : ""}`}>
       <div className="button-row">
-        <a className="primary-button" href={ENABLE_URI}>
-          在 Codex 中启用
-          <span aria-hidden="true">↗</span>
+        <a
+          className="primary-button"
+          href={compact ? OFFICIAL_PLUGIN_GUIDE_URL : "#enable"}
+          target={compact ? "_blank" : undefined}
+          rel={compact ? "noreferrer" : undefined}
+        >
+          {compact ? "打开官方插件指南" : "查看启用步骤"}
+          <span aria-hidden="true">{compact ? "↗" : "↓"}</span>
         </a>
-        {!compact && (
+        {compact ? (
+          <button className="secondary-button" type="button" onClick={copyPluginName}>
+            复制插件名
+            <span aria-hidden="true">⌘</span>
+          </button>
+        ) : (
           <a className="secondary-button" href="#capabilities">
             探索能力
             <span aria-hidden="true">↓</span>
           </a>
         )}
       </div>
-      <div className="manual-fallback">
-        <span>若未自动打开，请在 Codex 中搜索 PipelineForge。</span>
-        <button type="button" onClick={copyPluginName}>复制名称</button>
-      </div>
+      {!compact && (
+        <div className="manual-fallback">
+          <span>网页不能直接打开 Personal 插件目录，请按下方官方流程安装。</span>
+          <button type="button" onClick={copyPluginName}>复制名称</button>
+        </div>
+      )}
       <span className="copy-status" aria-live="polite">{copyStatus}</span>
     </div>
   );
@@ -353,7 +365,32 @@ export default function Home() {
             <img src="/pipeline-forge-logo.png" alt="" width="68" height="68" />
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
-            <p>在 Codex 中启用 PipelineForge，把需求、诊断、代码、工作簿与 DDL 汇入同一条可靠工作流。</p>
+            <p>
+              PipelineForge 是 Personal marketplace 插件。网站不能替你直接安装，
+              请在 ChatGPT 桌面端或 Codex CLI 的插件目录中完成启用。
+            </p>
+            <div className="install-guide" aria-label="PipelineForge 启用步骤">
+              <article className="install-card glass-panel">
+                <span className="install-label">CHATGPT DESKTOP</span>
+                <h3>桌面端安装</h3>
+                <ol>
+                  <li>打开 Plugins 标签页。</li>
+                  <li>进入 <b>Personal</b> → <b>Created by me</b>，搜索 PipelineForge。</li>
+                  <li>打开插件详情，点击加号安装。</li>
+                  <li>安装后新建一个 Codex 任务，再通过 <b>@PipelineForge</b> 调用。</li>
+                </ol>
+              </article>
+              <article className="install-card glass-panel">
+                <span className="install-label">CODEX CLI</span>
+                <h3>命令行安装</h3>
+                <ol>
+                  <li>在 Codex CLI 输入 <code>/plugins</code>。</li>
+                  <li>切换到 Personal marketplace，找到 PipelineForge。</li>
+                  <li>打开插件并安装；已安装时可按 <b>Space</b> 启用或停用。</li>
+                  <li>完成后开启新的 Codex 会话。</li>
+                </ol>
+              </article>
+            </div>
             <EnableActions compact />
           </div>
         </section>

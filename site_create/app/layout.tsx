@@ -15,11 +15,13 @@ export const metadata: Metadata = {
     description: "从需求文档与任务日志，到可运行项目、可导入工作簿与可审计 DDL。",
     type: "website",
     locale: "zh_CN",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "PipelineForge" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "PipelineForge — 把数据工程锻造成确定性",
     description: "从需求文档与任务日志，到可运行项目、可导入工作簿与可审计 DDL。",
+    images: ["/og.png"],
   },
 };
 

@@ -22,7 +22,7 @@ export type ReliabilityPoint = Readonly<{
 }>;
 
 export const PLUGIN_VERSION = "0.1.0+codex.20260820110400";
-export const ENABLE_URI = "plugin://pipeline-forge@personal";
+export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 
 export const capabilities: readonly Capability[] = [
   {

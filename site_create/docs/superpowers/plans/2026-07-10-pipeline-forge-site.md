@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build and publish a polished Chinese-language PipelineForge product site that explains its five current capabilities and converts visitors toward enabling the personal plugin in Codex.
+**Goal:** Build and publish a polished Chinese-language PipelineForge product site that explains its guided workflow and six specialist modules, and converts visitors toward enabling the personal plugin in Codex.
 
 **Architecture:** A static vinext single-page site will keep all product facts in a typed content module, render semantic sections through small focused React components, and isolate optional pointer/copy interactions in client components. CSS supplies the Liquid Glass visual system, responsive layout, and reduced-motion fallbacks; no login, persistence, external API, database, upload, or online execution is introduced.
 
@@ -13,9 +13,9 @@
 - Formal working directory: the repository-local `site_create/` directory.
 - Use the existing `..\assets\logo.png` and `..\assets\icon.png`; do not redraw or alter the brand mark.
 - Chinese is the primary language; English is limited to short labels and technical terms.
-- Present exactly five current capabilities: requirement-doc conversion, job-log diagnosis, synchronization code generation, report code generation, and multi-database DDL generation/conversion.
-- The plugin version displayed by the site is `0.1.0+pf.20260703075507`.
-- The primary enable target is `plugin://pipeline-forge@personal`, with a persistent manual fallback telling users to search for `PipelineForge` in Codex.
+- Present the beginner guide plus six specialist modules: requirement-doc conversion, job-log diagnosis, synchronization code generation, report code generation, Pipeline Export workbook generation, and multi-database DDL generation/conversion.
+- The plugin version displayed by the site is `0.1.0+codex.20260820110400`.
+- The primary enable target is the page's documented install flow, with the official plugin guide and copyable `PipelineForge` name as fallbacks; do not use an unsupported custom browser protocol.
 - Do not add login, persistence, external APIs, server databases, uploads, online task execution, analytics, or user-data collection.
 - Meet WCAG AA text contrast, visible keyboard focus, 44×44 px minimum touch targets, semantic headings, and no horizontal overflow at 320 px.
 - Respect `prefers-reduced-motion` by removing tilt, float, reveal, and continuous glow animation without hiding content.
@@ -30,14 +30,14 @@
 - `app/globals.css`: Design tokens, Liquid Glass surfaces, responsive layout, focus states, animations, and reduced-motion fallbacks.
 - `components/site-header.tsx`: Glass navigation and accessible mobile menu.
 - `components/hero-pipeline.tsx`: Optional client-side pointer tilt and decorative pipeline visualization.
-- `components/capability-grid.tsx`: Five capability cards from typed data.
+- `components/capability-grid.tsx`: Seven capability cards from typed data.
 - `components/workflow.tsx`: Input-to-output process with progressive visual highlighting.
-- `components/enable-cta.tsx`: Custom-protocol enable action, manual fallback, and copy feedback.
+- `components/enable-cta.tsx`: Official desktop/CLI install steps, documentation link, and copy feedback.
 - `components/reveal.tsx`: Progressive enhancement for viewport reveals; content remains visible without JavaScript.
 - `lib/site-content.ts`: Typed source of truth for version, navigation, capability, workflow, reliability, and enable-copy data.
 - `public/pipeline-forge-logo.png`: Copied existing logo.
 - `public/pipeline-forge-icon.png`: Copied existing icon.
-- `public/og-pipeline-forge.png`: Share card only if text and branding pass visual review.
+- `public/og.png`: 1200×630 share card with reviewed text and branding.
 - `tests/site-content.test.ts`: Exact product-fact and safe-boundary regression tests.
 - `tests/site-structure.test.tsx`: Heading, landmarks, anchors, CTA, and fallback-content tests.
 
@@ -55,7 +55,7 @@
 
 **Interfaces:**
 - Consumes: Existing plugin manifest at `..\.codex-plugin\plugin.json` and approved design spec.
-- Produces: `PLUGIN_VERSION: string`, `ENABLE_URI: string`, `capabilities: readonly Capability[]`, `workflowSteps: readonly WorkflowStep[]`, and `reliabilityPoints: readonly ReliabilityPoint[]`.
+- Produces: `PLUGIN_VERSION: string`, `OFFICIAL_PLUGIN_GUIDE_URL: string`, `capabilities: readonly Capability[]`, `workflowSteps: readonly WorkflowStep[]`, and `reliabilityPoints: readonly ReliabilityPoint[]`.
 
 - [ ] **Step 1: Use Sites building to scaffold a minimal vinext project in the formal working directory**
 
@@ -77,7 +77,7 @@
   ```ts
   import { describe, expect, it } from "vitest";
   import {
-    ENABLE_URI,
+    OFFICIAL_PLUGIN_GUIDE_URL,
     PLUGIN_VERSION,
     capabilities,
     reliabilityPoints,
@@ -85,13 +85,15 @@
 
   describe("PipelineForge product facts", () => {
     it("publishes the exact current plugin identity and capability set", () => {
-      expect(PLUGIN_VERSION).toBe("0.1.0+pf.20260703075507");
-      expect(ENABLE_URI).toBe("plugin://pipeline-forge@personal");
+      expect(PLUGIN_VERSION).toBe("0.1.0+codex.20260820110400");
+      expect(OFFICIAL_PLUGIN_GUIDE_URL).toBe("https://learn.chatgpt.com/docs/plugins");
       expect(capabilities.map((item) => item.title)).toEqual([
+        "一条龙开发向导",
         "需求文档转开发说明",
         "数据任务日志诊断",
         "数据同步项目代码生成",
         "报表项目代码生成",
+        "Pipeline Export 工作簿生成",
         "多数据库 DDL 生成与转换",
       ]);
       expect(reliabilityPoints.some((item) => item.title === "默认不执行")).toBe(true);
@@ -131,8 +133,8 @@
     description: string;
   }>;
 
-  export const PLUGIN_VERSION = "0.1.0+pf.20260703075507";
-  export const ENABLE_URI = "plugin://pipeline-forge@personal";
+  export const PLUGIN_VERSION = "0.1.0+codex.20260820110400";
+  export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
   ```
 
   Populate the arrays with concrete Chinese copy derived only from the approved spec and plugin manifest. Include the titles asserted by the test and describe the no-database/no-SQL boundary under `默认不执行`.
@@ -184,19 +186,19 @@
 
 - [ ] **Step 2: Run the structure test and verify the missing sections fail**
 
-  Expected: FAIL because the placeholder page has neither five capability headings nor required anchors.
+  Expected: FAIL because the placeholder page has neither seven capability headings nor required anchors.
 
 - [ ] **Step 3: Implement the header and full semantic section order**
 
   Build this order in `app/page.tsx`: `SiteHeader`, hero, value strip, `CapabilityGrid`, `Workflow`, reliability, final `EnableCta`, footer. Use `header`, `nav`, `main`, `section`, and `footer`; keep only one `h1`, give each major section an `h2`, and each capability an `h3`.
 
-- [ ] **Step 4: Implement the five capability cards from data**
+- [ ] **Step 4: Implement the seven capability cards from data**
 
-  `CapabilityGrid` maps `capabilities` once and exposes input/output facts as visible text, not tooltips. Use stable `item.id` keys and no hardcoded sixth card.
+  `CapabilityGrid` maps `capabilities` once and exposes input/output facts as visible text, not tooltips. Use stable `item.id` keys and no hardcoded extra card.
 
 - [ ] **Step 5: Implement workflow, reliability, and CTA copy**
 
-  Render the workflow as `输入 → 理解 → 生成 → 验证`. The CTA anchor uses `href={ENABLE_URI}` and visible text `在 Codex 中启用`. Keep this fallback visible beside it: `若未自动打开 Codex，请在插件目录中搜索 PipelineForge 并启用。`
+  Render the workflow as `输入 → 理解 → 生成 → 验证`. The hero CTA points to `#enable`; the final section shows the documented ChatGPT desktop and Codex CLI plugin-install flow, plus the official guide and copy feedback.
 
 - [ ] **Step 6: Run structure tests and production build**
 
@@ -263,7 +265,7 @@
 - Modify: `tests/site-structure.test.tsx`
 
 **Interfaces:**
-- Consumes: static semantic page and `ENABLE_URI`.
+- Consumes: static semantic page and `OFFICIAL_PLUGIN_GUIDE_URL`.
 - Produces: keyboard-operable mobile navigation, optional pointer tilt CSS variables `--tilt-x`, `--tilt-y`, copy feedback with an `aria-live="polite"` region, and `Reveal({ children, className? })` progressive enhancement.
 
 - [ ] **Step 1: Add failing tests for menu and fallback controls**
@@ -305,7 +307,7 @@
 
 **Files:**
 - Modify: `app/layout.tsx`
-- Create conditionally: `public/og-pipeline-forge.png`
+- Create: `public/og.png`
 - Modify if generated by Sites: `.openai/hosting.json`
 
 **Interfaces:**
@@ -324,7 +326,7 @@
 
 - [ ] **Step 3: Perform final browser QA**
 
-  Check all four target viewports, every navigation anchor, primary and secondary CTA, mobile menu, copy feedback, keyboard focus, reduced-motion, and JavaScript-disabled content. Confirm exactly five capabilities and version `0.1.0+pf.20260703075507` appear.
+  Check all four target viewports, every navigation anchor, primary and secondary CTA, mobile menu, copy feedback, keyboard focus, reduced-motion, and JavaScript-disabled content. Confirm all seven capabilities and version `0.1.0+codex.20260820110400` appear.
 
 - [ ] **Step 4: Confirm scope and security boundaries**
 
@@ -343,7 +345,7 @@
 
 - [ ] **Step 7: Verify the hosted page**
 
-  Open the returned URL and confirm the title, logo, first-screen CTA, all five capability cards, and final activation fallback render from the hosted artifact.
+  Open the returned URL and confirm the title, logo, first-screen CTA, all seven capability cards, and final desktop/CLI activation steps render from the hosted artifact.
 
 - [ ] **Step 8: Deliver the result**
 
@@ -353,4 +355,4 @@
 
 - Spec coverage: all ten design-spec sections map to Tasks 1–5, including exact capability scope, interactions, reduced motion, no-JavaScript fallback, safety boundaries, metadata gating, responsive QA, build, and private publication.
 - Placeholder scan: no deferred requirements, unspecified error handling, or incomplete test directions remain.
-- Type consistency: `Capability`, `WorkflowStep`, `ReliabilityPoint`, `PLUGIN_VERSION`, and `ENABLE_URI` are defined once in Task 1 and consumed with matching names thereafter.
+- Type consistency: `Capability`, `WorkflowStep`, `ReliabilityPoint`, `PLUGIN_VERSION`, and `OFFICIAL_PLUGIN_GUIDE_URL` are defined once in Task 1 and consumed with matching names thereafter.

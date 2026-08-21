@@ -286,6 +286,7 @@ img {
   border-radius: 15px;
   font-size: 15px;
   font-weight: 670;
+  cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
@@ -1117,6 +1118,57 @@ img {
   line-height: 1.75;
 }
 
+.install-guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: min(820px, 100%);
+  margin: 4px auto 30px;
+  text-align: left;
+}
+
+.install-card {
+  padding: 26px 28px;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.install-label {
+  color: var(--blue-deep);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.14em;
+}
+
+.install-card h3 {
+  margin: 10px 0 14px;
+  font-size: 18px;
+}
+
+.install-card ol {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.install-card b,
+.install-card code {
+  color: var(--ink);
+  font-weight: 690;
+}
+
+.install-card code {
+  padding: 2px 6px;
+  border: 1px solid rgba(65, 86, 146, 0.12);
+  border-radius: 6px;
+  background: rgba(236, 241, 255, 0.9);
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
 .final-cta .manual-fallback {
   justify-content: center;
 }
@@ -1279,6 +1331,7 @@ img {
   .artifact-flow { padding: 28px 15px; }
   .reliability { padding-block: 110px; }
   .final-cta { min-height: auto; padding: 74px 20px; border-radius: 30px; }
+  .install-guide { grid-template-columns: 1fr; }
   .site-footer { flex-direction: column; justify-content: center; gap: 24px; padding-block: 45px; }
   .footer-meta { flex-wrap: wrap; justify-content: center; gap: 12px 18px; }
 }
