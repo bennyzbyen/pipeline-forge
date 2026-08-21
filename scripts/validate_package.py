@@ -10,6 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge"
+REPOSITORY_GIT_URL = f"{REPOSITORY_URL}.git"
 REQUIRED_SKILLS = {
     "data-doc-to-dev-md",
     "data-job-log-debugger",
@@ -69,6 +71,28 @@ def validate_metadata() -> None:
     require(manifest.get("name") == "pipeline-forge", "manifest name must be pipeline-forge")
     require(manifest.get("interface", {}).get("displayName") == "PipelineForge", "display name mismatch")
     require(manifest.get("skills") == "./skills/", "manifest skills path mismatch")
+    require(manifest.get("repository") == REPOSITORY_URL, "manifest repository URL mismatch")
+    require(manifest.get("license") == "MIT", "manifest license mismatch")
+    require(manifest.get("interface", {}).get("websiteURL", "").startswith("https://"), "website URL must use HTTPS")
+
+
+def validate_marketplace() -> None:
+    marketplace_path = ROOT / ".agents" / "plugins" / "marketplace.json"
+    require(marketplace_path.is_file(), "missing repo marketplace manifest")
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    require(marketplace.get("name") == "pipeline-forge", "marketplace name mismatch")
+    require(marketplace.get("interface", {}).get("displayName") == "PipelineForge", "marketplace display name mismatch")
+    plugins = marketplace.get("plugins")
+    require(isinstance(plugins, list) and len(plugins) == 1, "marketplace must expose exactly one plugin")
+    entry = plugins[0]
+    require(entry.get("name") == "pipeline-forge", "marketplace plugin name mismatch")
+    source = entry.get("source", {})
+    require(source.get("source") == "url", "root-hosted Git plugin must use url source")
+    require(source.get("url") == REPOSITORY_GIT_URL, "marketplace repository URL mismatch")
+    require(source.get("ref") == "main", "marketplace must track main")
+    require(entry.get("policy", {}).get("installation") == "AVAILABLE", "marketplace installation policy mismatch")
+    require(entry.get("policy", {}).get("authentication") == "ON_INSTALL", "marketplace authentication policy mismatch")
+    require(entry.get("category") == "Productivity", "marketplace category mismatch")
 
 
 def validate_assets() -> None:
@@ -142,6 +166,7 @@ def validate_python_helpers() -> None:
 
 def main() -> int:
     validate_metadata()
+    validate_marketplace()
     validate_assets()
     validate_skills()
     validate_source_sync()

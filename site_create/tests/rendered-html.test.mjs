@@ -56,17 +56,17 @@ test("server-renders the complete PipelineForge product story", async () => {
   }
 
   assert.doesNotMatch(html, /plugin:\/\//);
-  assert.match(html, /打开 Plugins 标签页/);
-  assert.match(html, /Personal/);
-  assert.match(html, /Created by me/);
-  assert.match(html, /点击加号安装/);
+  assert.match(html, /GitHub marketplace/);
+  assert.match(html, /codex plugin marketplace add bennyzbyen\/pipeline-forge --ref main/);
+  assert.match(html, /github\.com\/bennyzbyen\/pipeline-forge/);
+  assert.match(html, /重启 ChatGPT 桌面端/);
   assert.match(html, /\/plugins/);
   assert.match(html, /新建一个 Codex 任务/);
   assert.match(html, /https:\/\/learn\.chatgpt\.com\/docs\/plugins/);
   assert.match(html, /og\.png/);
   await access(new URL("../public/og.png", import.meta.url));
   assert.match(html, /1 个向导 \+ 6 个专业模块/);
-  assert.match(html, /0\.1\.0\+codex\.20260820110400/);
+  assert.match(html, /0\.1\.0\+codex\.20260821151410/);
   assert.match(html, /逐表校验字段、调度形态、rowkey 与运行配置/);
   assert.match(html, /通用项目使用受限执行契约并校验全部输出/);
   assert.match(html, /默认不连接数据库/);

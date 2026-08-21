@@ -1,0 +1,21 @@
+{
+  "name": "pipeline-forge",
+  "interface": {
+    "displayName": "PipelineForge"
+  },
+  "plugins": [
+    {
+      "name": "pipeline-forge",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/bennyzbyen/pipeline-forge.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -14,8 +14,8 @@
 - Use the existing `..\assets\logo.png` and `..\assets\icon.png`; do not redraw or alter the brand mark.
 - Chinese is the primary language; English is limited to short labels and technical terms.
 - Present the beginner guide plus six specialist modules: requirement-doc conversion, job-log diagnosis, synchronization code generation, report code generation, Pipeline Export workbook generation, and multi-database DDL generation/conversion.
-- The plugin version displayed by the site is `0.1.0+codex.20260820110400`.
-- The primary enable target is the page's documented install flow, with the official plugin guide and copyable `PipelineForge` name as fallbacks; do not use an unsupported custom browser protocol.
+- The plugin version displayed by the site is `0.1.0+codex.20260821151410`.
+- The primary enable target is the page's GitHub-backed marketplace flow, with a copyable `codex plugin marketplace add bennyzbyen/pipeline-forge --ref main` command, repository link, and official plugin guide; do not use an unsupported custom browser protocol.
 - Do not add login, persistence, external APIs, server databases, uploads, online task execution, analytics, or user-data collection.
 - Meet WCAG AA text contrast, visible keyboard focus, 44×44 px minimum touch targets, semantic headings, and no horizontal overflow at 320 px.
 - Respect `prefers-reduced-motion` by removing tilt, float, reveal, and continuous glow animation without hiding content.
@@ -85,7 +85,7 @@
 
   describe("PipelineForge product facts", () => {
     it("publishes the exact current plugin identity and capability set", () => {
-      expect(PLUGIN_VERSION).toBe("0.1.0+codex.20260820110400");
+      expect(PLUGIN_VERSION).toBe("0.1.0+codex.20260821151410");
       expect(OFFICIAL_PLUGIN_GUIDE_URL).toBe("https://learn.chatgpt.com/docs/plugins");
       expect(capabilities.map((item) => item.title)).toEqual([
         "一条龙开发向导",
@@ -133,7 +133,7 @@
     description: string;
   }>;
 
-  export const PLUGIN_VERSION = "0.1.0+codex.20260820110400";
+  export const PLUGIN_VERSION = "0.1.0+codex.20260821151410";
   export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
   ```
 
@@ -326,7 +326,7 @@
 
 - [ ] **Step 3: Perform final browser QA**
 
-  Check all four target viewports, every navigation anchor, primary and secondary CTA, mobile menu, copy feedback, keyboard focus, reduced-motion, and JavaScript-disabled content. Confirm all seven capabilities and version `0.1.0+codex.20260820110400` appear.
+  Check all four target viewports, every navigation anchor, primary and secondary CTA, mobile menu, copy feedback, keyboard focus, reduced-motion, and JavaScript-disabled content. Confirm all seven capabilities and version `0.1.0+codex.20260821151410` appear.
 
 - [ ] **Step 4: Confirm scope and security boundaries**
 

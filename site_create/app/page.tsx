@@ -7,6 +7,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  GITHUB_REPOSITORY_URL,
+  MARKETPLACE_INSTALL_COMMAND,
   OFFICIAL_PLUGIN_GUIDE_URL,
   PLUGIN_VERSION,
   capabilities,
@@ -150,13 +152,13 @@ function HeroPipeline() {
 function EnableActions({ compact = false }: { compact?: boolean }) {
   const [copyStatus, setCopyStatus] = useState("");
 
-  async function copyPluginName() {
+  async function copyInstallCommand() {
     try {
       if (!navigator.clipboard) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText("PipelineForge");
-      setCopyStatus("已复制 PipelineForge");
+      await navigator.clipboard.writeText(MARKETPLACE_INSTALL_COMMAND);
+      setCopyStatus("已复制 GitHub 安装命令");
     } catch {
-      setCopyStatus("请手动复制 PipelineForge");
+      setCopyStatus("请手动复制页面中的安装命令");
     }
   }
 
@@ -165,16 +167,16 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
       <div className="button-row">
         <a
           className="primary-button"
-          href={compact ? OFFICIAL_PLUGIN_GUIDE_URL : "#enable"}
+          href={compact ? GITHUB_REPOSITORY_URL : "#enable"}
           target={compact ? "_blank" : undefined}
           rel={compact ? "noreferrer" : undefined}
         >
-          {compact ? "打开官方插件指南" : "查看启用步骤"}
+          {compact ? "查看 GitHub 仓库" : "查看启用步骤"}
           <span aria-hidden="true">{compact ? "↗" : "↓"}</span>
         </a>
         {compact ? (
-          <button className="secondary-button" type="button" onClick={copyPluginName}>
-            复制插件名
+          <button className="secondary-button" type="button" onClick={copyInstallCommand}>
+            复制安装命令
             <span aria-hidden="true">⌘</span>
           </button>
         ) : (
@@ -186,8 +188,8 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
       </div>
       {!compact && (
         <div className="manual-fallback">
-          <span>网页不能直接打开 Personal 插件目录，请按下方官方流程安装。</span>
-          <button type="button" onClick={copyPluginName}>复制名称</button>
+          <span>通过公开 GitHub marketplace 安装，其他 Codex 用户也可以使用。</span>
+          <button type="button" onClick={copyInstallCommand}>复制安装命令</button>
         </div>
       )}
       <span className="copy-status" aria-live="polite">{copyStatus}</span>
@@ -366,32 +368,39 @@ export default function Home() {
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
             <p>
-              PipelineForge 是 Personal marketplace 插件。网站不能替你直接安装，
-              请在 ChatGPT 桌面端或 Codex CLI 的插件目录中完成启用。
+              PipelineForge 已通过公开 GitHub 仓库分发。先将仓库添加为 Codex marketplace，
+              再从桌面端或 Codex CLI 的 Plugins 目录安装。
             </p>
+            <div className="install-command" aria-label="GitHub marketplace 安装命令">
+              <span>POWERSHELL / TERMINAL</span>
+              <code>{MARKETPLACE_INSTALL_COMMAND}</code>
+            </div>
             <div className="install-guide" aria-label="PipelineForge 启用步骤">
               <article className="install-card glass-panel">
                 <span className="install-label">CHATGPT DESKTOP</span>
                 <h3>桌面端安装</h3>
                 <ol>
-                  <li>打开 Plugins 标签页。</li>
-                  <li>进入 <b>Personal</b> → <b>Created by me</b>，搜索 PipelineForge。</li>
-                  <li>打开插件详情，点击加号安装。</li>
-                  <li>安装后新建一个 Codex 任务，再通过 <b>@PipelineForge</b> 调用。</li>
+                  <li>先在终端执行上面的 marketplace 命令。</li>
+                  <li>重启 ChatGPT 桌面端，打开 <b>Plugins</b>。</li>
+                  <li>选择 <b>PipelineForge</b> 来源，打开插件并安装。</li>
+                  <li>新建一个 Codex 任务，再通过 <b>@PipelineForge</b> 调用。</li>
                 </ol>
               </article>
               <article className="install-card glass-panel">
                 <span className="install-label">CODEX CLI</span>
                 <h3>命令行安装</h3>
                 <ol>
-                  <li>在 Codex CLI 输入 <code>/plugins</code>。</li>
-                  <li>切换到 Personal marketplace，找到 PipelineForge。</li>
-                  <li>打开插件并安装；已安装时可按 <b>Space</b> 启用或停用。</li>
-                  <li>完成后开启新的 Codex 会话。</li>
+                  <li>在终端执行上面的 marketplace 命令。</li>
+                  <li>进入 Codex CLI，然后输入 <code>/plugins</code>。</li>
+                  <li>切换到 <b>PipelineForge</b> marketplace，打开插件并安装。</li>
+                  <li>安装后开启新的 Codex 会话。</li>
                 </ol>
               </article>
             </div>
             <EnableActions compact />
+            <a className="official-guide-link" href={OFFICIAL_PLUGIN_GUIDE_URL} target="_blank" rel="noreferrer">
+              查看 OpenAI 官方插件说明 ↗
+            </a>
           </div>
         </section>
       </main>

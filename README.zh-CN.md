@@ -18,13 +18,22 @@ PipelineForge 是一套带新手统一入口的数据管线开发工具集合。
 
 ## 安装
 
-将仓库克隆到本地插件目录：
+先把公开 GitHub 仓库添加为 Codex marketplace：
 
 ```powershell
-git clone https://github.com/bennyzbyen/pipeline-forge.git "$env:USERPROFILE\plugins\pipeline-forge"
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref main
 ```
 
-然后在你的桌面宿主程序中启用这个本地插件。如果宿主程序使用 marketplace 文件，请让条目指向克隆后的 `pipeline-forge` 目录。
+然后选择一种方式安装：
+
+- Codex CLI：进入 Codex 后输入 `/plugins`，切换到 `PipelineForge` marketplace，打开并安装 `pipeline-forge`。
+- ChatGPT 桌面端：重启应用，打开 Plugins，选择 `PipelineForge` 来源并安装。
+
+安装后新建一个 Codex 任务或 CLI 会话，插件技能才会进入新会话。获取后续版本时运行：
+
+```powershell
+codex plugin marketplace upgrade pipeline-forge
+```
 
 ## 仓库结构
 

@@ -1,10 +1,20 @@
 {
   "name": "pipeline-forge",
-  "version": "0.1.0+codex.20260820110400",
+  "version": "0.1.0+codex.20260821151410",
   "description": "Use a guided workflow for data requirement documents, job logs, Pipeline Export workbooks, pipeline code, and database DDL tasks.",
   "author": {
-    "name": "bennyzbyen"
+    "name": "bennyzbyen",
+    "url": "https://github.com/bennyzbyen"
   },
+  "homepage": "https://pipeline-forge.bennyzby.chatgpt.site",
+  "repository": "https://github.com/bennyzbyen/pipeline-forge",
+  "license": "MIT",
+  "keywords": [
+    "data-engineering",
+    "pipeline",
+    "code-generation",
+    "ddl"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "PipelineForge",
@@ -15,6 +25,8 @@
     "capabilities": [
       "Write"
     ],
+    "websiteURL": "https://pipeline-forge.bennyzby.chatgpt.site",
+    "brandColor": "#6477E8",
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/logo.png",
     "defaultPrompt": [
