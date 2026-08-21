@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$pluginRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$expectedManifestPath = Join-Path $pluginRoot '.codex-plugin\plugin.json'
+$expectedManifest = Get-Content -LiteralPath $expectedManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $archivePathResolved = (Resolve-Path -LiteralPath $ArchivePath).Path
 $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $testRoot = [System.IO.Path]::GetFullPath(
@@ -38,6 +41,14 @@ try {
         throw 'The installer did not create the personal marketplace file.'
     }
 
+    $installedPlugin = Get-Content -LiteralPath $installedManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($installedPlugin.name -ne $expectedManifest.name) {
+        throw "Installed plugin name '$($installedPlugin.name)' does not match '$($expectedManifest.name)'."
+    }
+    if ($installedPlugin.version -ne $expectedManifest.version) {
+        throw "Installed plugin version '$($installedPlugin.version)' does not match '$($expectedManifest.version)'."
+    }
+
     $marketplace = Get-Content -LiteralPath $marketplacePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $entry = $marketplace.plugins | Where-Object {
         $_.name -eq 'pipeline-forge' -and $_.source.path -eq './.codex/plugins/pipeline-forge'
@@ -46,7 +57,7 @@ try {
         throw 'The installer did not create the expected PipelineForge marketplace entry.'
     }
 
-    Write-Output 'PipelineForge download archive and Windows setup helper validation passed'
+    Write-Output "PipelineForge $($installedPlugin.version) download archive and Windows setup helper validation passed"
 }
 finally {
     if (Test-Path -LiteralPath $testRoot) {
