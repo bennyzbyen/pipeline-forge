@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0+codex.20260821151410
+
+- Added a GitHub-backed Codex marketplace manifest for public repository distribution.
+- Added repository, website, license, publisher, keyword, and brand metadata to the plugin manifest.
+- Replaced manual clone guidance with the supported `codex plugin marketplace add` installation flow.
+- Updated the companion site with copyable GitHub marketplace installation steps for Codex CLI and the ChatGPT desktop app.
+
 ## 0.1.0+codex.20260820110400
 
 - Added all-table COT manifest/runtime/field/rowkey verification and per-table runtime guards for unresolved sync contracts.
