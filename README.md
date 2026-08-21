@@ -43,6 +43,8 @@ python .\scripts\validate_package.py
 
 The validator checks package metadata, distribution files, required modules, logo assets, and Python helper syntax.
 
+PipelineForge follows [Semantic Versioning](VERSIONING.md), starting from the stable `1.0.2` baseline.
+
 ## License
 
 Released under the [MIT License](LICENSE).

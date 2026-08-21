@@ -32,6 +32,8 @@ try {
         'install-pipeline-forge.ps1',
         'INSTALL.md',
         'LICENSE',
+        'CHANGELOG.md',
+        'VERSIONING.md',
         'README.md',
         'README.en.md',
         'README.zh-CN.md'

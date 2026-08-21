@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 - 2026-08-21
+
+- Established `1.0.2` as the stable PipelineForge version baseline.
+- Adopted Semantic Versioning: PATCH for fixes, MINOR for backward-compatible features, and MAJOR for incompatible changes.
+- Removed timestamp build metadata from the public release number and synchronized the plugin manifest, website, and download package version.
+- Added automated validation for SemVer syntax and cross-file version consistency.
+
 ## 0.1.0+codex.20260821151410
 
 - Added a complete downloadable plugin archive, SHA-256 checksum, and repeatable package builder for website distribution.
