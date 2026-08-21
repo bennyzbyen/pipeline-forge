@@ -71,4 +71,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 从稳定基线 `1.0.2` 开始遵循[语义化版本规则](VERSIONING.md)。发布记录见 [CHANGELOG.md](CHANGELOG.md)。

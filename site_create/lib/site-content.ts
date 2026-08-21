@@ -21,7 +21,7 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "0.1.0+codex.20260821151410";
+export const PLUGIN_VERSION = "1.0.2";
 export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 export const GITHUB_REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge";
 export const PLUGIN_DOWNLOAD_URL = "/downloads/pipeline-forge.zip";

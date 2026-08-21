@@ -1,0 +1,21 @@
+# Versioning
+
+PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The stable version baseline is `1.0.2`.
+
+## Increment Rules
+
+- Increment PATCH for backward-compatible fixes, documentation updates, prompt refinements, and internal maintenance: `1.0.2` to `1.0.3`.
+- Increment MINOR for backward-compatible features, new skills, or newly supported workflows: `1.0.3` to `1.1.0`.
+- Increment MAJOR for incompatible changes to plugin structure, configuration, public workflows, or supported contracts: `1.8.4` to `2.0.0`.
+- Use prerelease identifiers for test releases: `1.1.0-beta.1`.
+
+Version components do not use decimal carrying. For example, the patch release after `1.0.9` is `1.0.10`, not `1.1.0`.
+
+## Release Checklist
+
+1. Classify the release by compatibility and choose the next version.
+2. Update `.codex-plugin/plugin.json`, `site_create/package.json`, the root entries in `site_create/package-lock.json`, `site_create/lib/site-content.ts`, and the website version assertion.
+3. Add the release at the top of `CHANGELOG.md`.
+4. Run `python .\scripts\validate_package.py`.
+5. Rebuild and validate the downloadable archive with `scripts/build_download_package.ps1` and `scripts/validate_download_package.ps1`.
+6. Run the website tests before publishing.

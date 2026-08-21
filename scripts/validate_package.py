@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import py_compile
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge"
 REPOSITORY_GIT_URL = f"{REPOSITORY_URL}.git"
+SEMVER_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\."
+    r"(0|[1-9]\d*)\."
+    r"(0|[1-9]\d*)"
+    r"(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 REQUIRED_SKILLS = {
     "data-doc-to-dev-md",
     "data-job-log-debugger",
@@ -65,7 +74,7 @@ def find_metadata_dir() -> Path:
     return candidates[0]
 
 
-def validate_metadata() -> None:
+def validate_metadata() -> str:
     metadata_dir = find_metadata_dir()
     manifest = json.loads((metadata_dir / "plugin.json").read_text(encoding="utf-8"))
     require(manifest.get("name") == "pipeline-forge", "manifest name must be pipeline-forge")
@@ -74,6 +83,30 @@ def validate_metadata() -> None:
     require(manifest.get("repository") == REPOSITORY_URL, "manifest repository URL mismatch")
     require(manifest.get("license") == "MIT", "manifest license mismatch")
     require(manifest.get("interface", {}).get("websiteURL", "").startswith("https://"), "website URL must use HTTPS")
+    version = manifest.get("version")
+    require(isinstance(version, str) and SEMVER_PATTERN.fullmatch(version) is not None, "manifest version must be valid SemVer")
+    return version
+
+
+def validate_version_consistency(version: str) -> None:
+    site_root = ROOT / "site_create"
+    site_package = json.loads((site_root / "package.json").read_text(encoding="utf-8"))
+    site_lock = json.loads((site_root / "package-lock.json").read_text(encoding="utf-8"))
+    site_content = (site_root / "lib" / "site-content.ts").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    require(site_package.get("version") == version, "website package version must match plugin manifest")
+    require(site_lock.get("version") == version, "website lockfile version must match plugin manifest")
+    require(
+        site_lock.get("packages", {}).get("", {}).get("version") == version,
+        "website lockfile root package version must match plugin manifest",
+    )
+    require(
+        f'export const PLUGIN_VERSION = "{version}";' in site_content,
+        "website displayed version must match plugin manifest",
+    )
+    release_headings = re.findall(r"^## ([^\s]+)(?:\s+-\s+\d{4}-\d{2}-\d{2})?$", changelog, flags=re.MULTILINE)
+    require(bool(release_headings) and release_headings[0] == version, "latest changelog version must match plugin manifest")
 
 
 def validate_marketplace() -> None:
@@ -103,6 +136,8 @@ def validate_assets() -> None:
 def validate_distribution_files() -> None:
     for relative in [
         "INSTALL.md",
+        "CHANGELOG.md",
+        "VERSIONING.md",
         "install-pipeline-forge.ps1",
         "scripts/build_download_package.ps1",
         "scripts/validate_download_package.ps1",
@@ -178,7 +213,8 @@ def validate_python_helpers() -> None:
 
 
 def main() -> int:
-    validate_metadata()
+    version = validate_metadata()
+    validate_version_consistency(version)
     validate_marketplace()
     validate_assets()
     validate_distribution_files()
