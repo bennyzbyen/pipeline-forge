@@ -25,11 +25,13 @@ PipelineForge is a guided, modular toolkit for data pipeline development: one-st
 
 ## Quick Start
 
+Download the current plugin package directly from the [PipelineForge website](https://pipeline-forge.bennyzby.chatgpt.site/downloads/pipeline-forge.zip), extract it, and run the included setup helper:
+
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref main
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-pipeline-forge.ps1
 ```
 
-Then enter `/plugins` in Codex CLI, choose the `PipelineForge` marketplace, and install `pipeline-forge`. In the ChatGPT desktop app, restart after adding the marketplace, open Plugins, choose `PipelineForge`, and install it.
+Then restart the ChatGPT desktop app, open **Plugins > Personal**, and install PipelineForge. Codex CLI users can enter `/plugins` after restarting the session. See [INSTALL.md](INSTALL.md) for the manual path.
 
 For a guided workflow, invoke `$pipeline-forge-guide` or start with: `Guide me from these source files to a verified deliverable.`
 
@@ -39,7 +41,7 @@ For a guided workflow, invoke `$pipeline-forge-guide` or start with: `Guide me f
 python .\scripts\validate_package.py
 ```
 
-The validator checks package metadata, required modules, logo assets, and Python helper syntax.
+The validator checks package metadata, distribution files, required modules, logo assets, and Python helper syntax.
 
 ## License
 

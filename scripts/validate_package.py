@@ -100,6 +100,19 @@ def validate_assets() -> None:
         require((ROOT / relative).is_file(), f"missing asset: {relative}")
 
 
+def validate_distribution_files() -> None:
+    for relative in [
+        "INSTALL.md",
+        "install-pipeline-forge.ps1",
+        "scripts/build_download_package.ps1",
+        "scripts/validate_download_package.ps1",
+    ]:
+        require((ROOT / relative).is_file(), f"missing distribution file: {relative}")
+    install_text = (ROOT / "install-pipeline-forge.ps1").read_text(encoding="utf-8")
+    require("./.codex/plugins/pipeline-forge" in install_text, "installer personal plugin path mismatch")
+    require("Where-Object { $_.name -ne 'pipeline-forge' }" in install_text, "installer must preserve other plugin entries")
+
+
 def validate_skills() -> None:
     skills_root = ROOT / "skills"
     actual = {path.name for path in skills_root.iterdir() if path.is_dir()}
@@ -168,6 +181,7 @@ def main() -> int:
     validate_metadata()
     validate_marketplace()
     validate_assets()
+    validate_distribution_files()
     validate_skills()
     validate_source_sync()
     validate_guide_contract()

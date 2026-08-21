@@ -8,8 +8,9 @@ import {
 } from "react";
 import {
   GITHUB_REPOSITORY_URL,
-  MARKETPLACE_INSTALL_COMMAND,
   OFFICIAL_PLUGIN_GUIDE_URL,
+  PLUGIN_CHECKSUM_URL,
+  PLUGIN_DOWNLOAD_URL,
   PLUGIN_VERSION,
   capabilities,
   reliabilityPoints,
@@ -51,8 +52,8 @@ function SiteHeader() {
               {item.label}
             </a>
           ))}
-          <a className="nav-cta" href="#enable" onClick={() => setOpen(false)}>
-            启用插件
+          <a className="nav-cta" href={PLUGIN_DOWNLOAD_URL} download onClick={() => setOpen(false)}>
+            下载插件
           </a>
         </div>
       </nav>
@@ -150,35 +151,22 @@ function HeroPipeline() {
 }
 
 function EnableActions({ compact = false }: { compact?: boolean }) {
-  const [copyStatus, setCopyStatus] = useState("");
-
-  async function copyInstallCommand() {
-    try {
-      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(MARKETPLACE_INSTALL_COMMAND);
-      setCopyStatus("已复制 GitHub 安装命令");
-    } catch {
-      setCopyStatus("请手动复制页面中的安装命令");
-    }
-  }
-
   return (
     <div className={`enable-actions ${compact ? "is-compact" : ""}`}>
       <div className="button-row">
         <a
           className="primary-button"
-          href={compact ? GITHUB_REPOSITORY_URL : "#enable"}
-          target={compact ? "_blank" : undefined}
-          rel={compact ? "noreferrer" : undefined}
+          href={PLUGIN_DOWNLOAD_URL}
+          download
         >
-          {compact ? "查看 GitHub 仓库" : "查看启用步骤"}
-          <span aria-hidden="true">{compact ? "↗" : "↓"}</span>
+          下载 PipelineForge
+          <span aria-hidden="true">↓</span>
         </a>
         {compact ? (
-          <button className="secondary-button" type="button" onClick={copyInstallCommand}>
-            复制安装命令
-            <span aria-hidden="true">⌘</span>
-          </button>
+          <a className="secondary-button" href={GITHUB_REPOSITORY_URL} target="_blank" rel="noreferrer">
+            查看 GitHub 源码
+            <span aria-hidden="true">↗</span>
+          </a>
         ) : (
           <a className="secondary-button" href="#capabilities">
             探索能力
@@ -188,11 +176,9 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
       </div>
       {!compact && (
         <div className="manual-fallback">
-          <span>通过公开 GitHub marketplace 安装，其他 Codex 用户也可以使用。</span>
-          <button type="button" onClick={copyInstallCommand}>复制安装命令</button>
+          <span>完整插件 ZIP · v{PLUGIN_VERSION} · 无需登录即可下载</span>
         </div>
       )}
-      <span className="copy-status" aria-live="polite">{copyStatus}</span>
     </div>
   );
 }
@@ -368,32 +354,43 @@ export default function Home() {
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
             <p>
-              PipelineForge 已通过公开 GitHub 仓库分发。先将仓库添加为 Codex marketplace，
-              再从桌面端或 Codex CLI 的 Plugins 目录安装。
+              点击即可从本站下载完整插件包，不需要 GitHub 账号，也不会跳转到无响应的伪安装链接。
+              包内附带 Windows 安装助手；源码仍在 GitHub 公开可查。
             </p>
-            <div className="install-command" aria-label="GitHub marketplace 安装命令">
-              <span>POWERSHELL / TERMINAL</span>
-              <code>{MARKETPLACE_INSTALL_COMMAND}</code>
+            <div className="download-package glass-panel" aria-label="PipelineForge 插件下载">
+              <div className="package-copy">
+                <span>DIRECT DOWNLOAD</span>
+                <strong>pipeline-forge.zip</strong>
+                <small>完整插件包 · v{PLUGIN_VERSION} · ZIP</small>
+              </div>
+              <div className="package-actions">
+                <a className="primary-button" href={PLUGIN_DOWNLOAD_URL} download>
+                  直接下载 ZIP <span aria-hidden="true">↓</span>
+                </a>
+                <a className="checksum-link" href={PLUGIN_CHECKSUM_URL} download>
+                  SHA-256 校验值
+                </a>
+              </div>
             </div>
-            <div className="install-guide" aria-label="PipelineForge 启用步骤">
+            <div className="install-guide" aria-label="PipelineForge 下载与安装步骤">
               <article className="install-card glass-panel">
-                <span className="install-label">CHATGPT DESKTOP</span>
-                <h3>桌面端安装</h3>
+                <span className="install-label">DOWNLOAD</span>
+                <h3>下载完整插件包</h3>
                 <ol>
-                  <li>先在终端执行上面的 marketplace 命令。</li>
-                  <li>重启 ChatGPT 桌面端，打开 <b>Plugins</b>。</li>
-                  <li>选择 <b>PipelineForge</b> 来源，打开插件并安装。</li>
-                  <li>新建一个 Codex 任务，再通过 <b>@PipelineForge</b> 调用。</li>
+                  <li>点击上方 <b>直接下载 ZIP</b>。</li>
+                  <li>解压后打开其中的 <code>pipeline-forge</code> 文件夹。</li>
+                  <li>可先对照本站公布的 SHA-256 校验下载完整性。</li>
+                  <li>包内含插件清单、全部技能、脚本、参考资料和图标。</li>
                 </ol>
               </article>
               <article className="install-card glass-panel">
-                <span className="install-label">CODEX CLI</span>
-                <h3>命令行安装</h3>
+                <span className="install-label">INSTALL ON WINDOWS</span>
+                <h3>安装到 Codex</h3>
                 <ol>
-                  <li>在终端执行上面的 marketplace 命令。</li>
-                  <li>进入 Codex CLI，然后输入 <code>/plugins</code>。</li>
-                  <li>切换到 <b>PipelineForge</b> marketplace，打开插件并安装。</li>
-                  <li>安装后开启新的 Codex 会话。</li>
+                  <li>在解压目录中运行 <code>install-pipeline-forge.ps1</code>。</li>
+                  <li>脚本只写入个人 Codex 插件目录，并保留已有插件条目。</li>
+                  <li>重启 ChatGPT 桌面端，打开 <b>Plugins → Personal</b> 安装。</li>
+                  <li>Codex CLI 用户重启会话后输入 <code>/plugins</code>。</li>
                 </ol>
               </article>
             </div>

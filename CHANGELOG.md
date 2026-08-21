@@ -2,10 +2,11 @@
 
 ## 0.1.0+codex.20260821151410
 
-- Added a GitHub-backed Codex marketplace manifest for public repository distribution.
+- Added a complete downloadable plugin archive, SHA-256 checksum, and repeatable package builder for website distribution.
+- Added a Windows setup helper that registers the extracted plugin in the user's Personal plugin source without removing existing entries.
+- Kept a GitHub-backed Codex marketplace manifest as an alternate repository distribution path.
 - Added repository, website, license, publisher, keyword, and brand metadata to the plugin manifest.
-- Replaced manual clone guidance with the supported `codex plugin marketplace add` installation flow.
-- Updated the companion site with copyable GitHub marketplace installation steps for Codex CLI and the ChatGPT desktop app.
+- Updated the companion site so its primary actions download the real plugin ZIP instead of linking to an inert enable action.
 
 ## 0.1.0+codex.20260820110400
 

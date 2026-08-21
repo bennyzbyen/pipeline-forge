@@ -1127,32 +1127,56 @@ img {
   text-align: left;
 }
 
-.install-command {
-  display: grid;
-  gap: 10px;
+.download-package {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
   width: min(820px, 100%);
   margin: 0 auto 18px;
-  padding: 18px 22px;
-  border: 1px solid rgba(58, 76, 132, 0.14);
-  border-radius: 18px;
-  background: rgba(20, 24, 34, 0.94);
-  box-shadow: 0 18px 45px rgba(33, 40, 64, 0.18), inset 0 1px rgba(255, 255, 255, 0.08);
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 18px 45px rgba(54, 68, 112, 0.11), inset 0 1px white;
   text-align: left;
 }
 
-.install-command span {
-  color: #aeb8dc;
+.package-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.package-copy span {
+  color: var(--blue-deep);
   font-size: 9px;
   font-weight: 760;
   letter-spacing: 0.14em;
 }
 
-.install-command code {
-  overflow-wrap: anywhere;
-  color: #f7f8ff;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: clamp(11px, 1.4vw, 14px);
-  line-height: 1.6;
+.package-copy strong {
+  color: var(--ink);
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+.package-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.package-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.checksum-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--blue-deep);
+  font-size: 11px;
+  font-weight: 680;
 }
 
 .install-card {
@@ -1369,6 +1393,8 @@ img {
   .artifact-flow { padding: 28px 15px; }
   .reliability { padding-block: 110px; }
   .final-cta { min-height: auto; padding: 74px 20px; border-radius: 30px; }
+  .download-package { align-items: stretch; flex-direction: column; }
+  .package-actions { justify-content: space-between; }
   .install-guide { grid-template-columns: 1fr; }
   .site-footer { flex-direction: column; justify-content: center; gap: 24px; padding-block: 45px; }
   .footer-meta { flex-wrap: wrap; justify-content: center; gap: 12px 18px; }
@@ -1377,6 +1403,8 @@ img {
 @media (max-width: 430px) {
   .button-row { flex-direction: column; align-items: stretch; }
   .primary-button, .secondary-button { width: 100%; }
+  .package-actions { align-items: stretch; flex-direction: column; gap: 6px; }
+  .checksum-link { justify-content: center; }
   .manual-fallback { flex-wrap: wrap; line-height: 1.5; }
   .hero-proof { gap: 10px 16px; }
   .pipeline-stage { min-height: 455px; margin-top: 18px; }

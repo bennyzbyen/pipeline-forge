@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 const projectRoot = new URL("../", import.meta.url);
@@ -56,15 +56,21 @@ test("server-renders the complete PipelineForge product story", async () => {
   }
 
   assert.doesNotMatch(html, /plugin:\/\//);
-  assert.match(html, /GitHub marketplace/);
-  assert.match(html, /codex plugin marketplace add bennyzbyen\/pipeline-forge --ref main/);
+  assert.doesNotMatch(html, /codex plugin marketplace add/);
+  assert.match(html, /下载 PipelineForge/);
+  assert.match(html, /href="\/downloads\/pipeline-forge\.zip"[^>]*download/);
+  assert.match(html, /完整插件包/);
+  assert.match(html, /install-pipeline-forge\.ps1/);
+  assert.match(html, /Plugins → Personal/);
   assert.match(html, /github\.com\/bennyzbyen\/pipeline-forge/);
-  assert.match(html, /重启 ChatGPT 桌面端/);
   assert.match(html, /\/plugins/);
-  assert.match(html, /新建一个 Codex 任务/);
   assert.match(html, /https:\/\/learn\.chatgpt\.com\/docs\/plugins/);
   assert.match(html, /og\.png/);
   await access(new URL("../public/og.png", import.meta.url));
+  const archive = new URL("../public/downloads/pipeline-forge.zip", import.meta.url);
+  const checksum = await readFile(new URL("../public/downloads/pipeline-forge.zip.sha256", import.meta.url), "utf8");
+  assert.ok((await stat(archive)).size > 100_000);
+  assert.match(checksum, /^[a-f0-9]{64}\s+pipeline-forge\.zip\s*$/i);
   assert.match(html, /1 个向导 \+ 6 个专业模块/);
   assert.match(html, /0\.1\.0\+codex\.20260821151410/);
   assert.match(html, /逐表校验字段、调度形态、rowkey 与运行配置/);
@@ -88,7 +94,7 @@ test("removes starter-only UI and preserves resilient product content", async ()
   assert.match(css, /:focus-visible/);
   assert.match(css, /min-height:\s*44px/);
   assert.match(css, /overflow-x:\s*(clip|hidden)/);
-  assert.match(page, /aria-live="polite"/);
+  assert.match(page, /download/);
 
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
   await assert.rejects(access(new URL("app/chatgpt-auth.ts", projectRoot)));
