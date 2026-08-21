@@ -30,6 +30,17 @@ try {
         throw 'The download archive is missing install-pipeline-forge.ps1.'
     }
 
+    $forbiddenPackageEntries = Get-ChildItem -LiteralPath $packageRoot -Recurse -Force | Where-Object {
+        $_.Name -in @('__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.venv', 'venv', 'env') -or
+        (-not $_.PSIsContainer -and $_.Extension.ToLowerInvariant() -in @('.pyc', '.pyo', '.pyd'))
+    }
+    if ($forbiddenPackageEntries) {
+        $forbiddenPaths = ($forbiddenPackageEntries | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($packageRoot, $_.FullName)
+        }) -join ', '
+        throw "The download archive contains generated runtime files: $forbiddenPaths"
+    }
+
     & $installerPath -HomeDirectory $homeRoot
 
     $installedManifest = Join-Path $homeRoot '.codex\plugins\pipeline-forge\.codex-plugin\plugin.json'

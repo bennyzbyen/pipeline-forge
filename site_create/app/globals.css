@@ -1127,6 +1127,36 @@ img {
   text-align: left;
 }
 
+.marketplace-package {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.28fr);
+  align-items: center;
+  gap: 24px;
+  width: min(820px, 100%);
+  margin: 0 auto 18px;
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: rgba(239, 244, 255, 0.78);
+  box-shadow: 0 18px 45px rgba(54, 68, 112, 0.11), inset 0 1px white;
+  text-align: left;
+}
+
+.marketplace-package pre {
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  padding: 16px 18px;
+  border: 1px solid rgba(65, 86, 146, 0.13);
+  border-radius: 14px;
+  color: #eef3ff;
+  background: #20283a;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .download-package {
   display: flex;
   align-items: center;
@@ -1394,6 +1424,7 @@ img {
   .reliability { padding-block: 110px; }
   .final-cta { min-height: auto; padding: 74px 20px; border-radius: 30px; }
   .download-package { align-items: stretch; flex-direction: column; }
+  .marketplace-package { grid-template-columns: 1fr; }
   .package-actions { justify-content: space-between; }
   .install-guide { grid-template-columns: 1fr; }
   .site-footer { flex-direction: column; justify-content: center; gap: 24px; padding-block: 45px; }

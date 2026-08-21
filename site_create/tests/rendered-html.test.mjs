@@ -56,7 +56,7 @@ test("server-renders the complete PipelineForge product story", async () => {
   }
 
   assert.doesNotMatch(html, /plugin:\/\//);
-  assert.doesNotMatch(html, /codex plugin marketplace add/);
+  assert.match(html, /codex plugin marketplace add bennyzbyen\/pipeline-forge --ref main/);
   assert.match(html, /下载 PipelineForge/);
   assert.match(html, /href="\/downloads\/pipeline-forge\.zip"[^>]*download/);
   assert.match(html, /完整插件包/);

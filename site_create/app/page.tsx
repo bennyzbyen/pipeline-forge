@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   GITHUB_REPOSITORY_URL,
+  MARKETPLACE_ADD_COMMAND,
   OFFICIAL_PLUGIN_GUIDE_URL,
   PLUGIN_CHECKSUM_URL,
   PLUGIN_DOWNLOAD_URL,
@@ -354,9 +355,17 @@ export default function Home() {
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
             <p>
-              点击即可从本站下载完整插件包，不需要 GitHub 账号，也不会跳转到无响应的伪安装链接。
-              包内附带 Windows 安装助手；源码仍在 GitHub 公开可查。
+              推荐直接添加公开的 GitHub Marketplace 源；也可以从本站下载完整插件包。
+              两条路线都无需进入 OpenAI 官方目录，源码在 GitHub 公开可查。
             </p>
+            <div className="marketplace-package glass-panel" aria-label="通过 GitHub Marketplace 安装 PipelineForge">
+              <div className="package-copy">
+                <span>RECOMMENDED</span>
+                <strong>添加公开 Marketplace 源</strong>
+                <small>运行命令后，从 Plugins 或 /plugins 安装</small>
+              </div>
+              <pre><code>{MARKETPLACE_ADD_COMMAND}</code></pre>
+            </div>
             <div className="download-package glass-panel" aria-label="PipelineForge 插件下载">
               <div className="package-copy">
                 <span>DIRECT DOWNLOAD</span>
