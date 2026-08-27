@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import py_compile
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -178,11 +180,25 @@ def relevant_files(root: Path) -> dict[Path, bytes]:
     }
 
 
-def validate_source_sync() -> None:
-    repository_root = ROOT.parents[1]
-    source_root = repository_root / "skills"
-    if not (repository_root / "AGENTS.md").is_file() or not source_root.is_dir():
+def discover_source_repository(explicit_root: Optional[Path]) -> Optional[Path]:
+    if explicit_root is not None:
+        repository_root = explicit_root.expanduser().resolve()
+        require((repository_root / "AGENTS.md").is_file(), f"source repository is missing AGENTS.md: {repository_root}")
+        require((repository_root / "skills").is_dir(), f"source repository is missing skills/: {repository_root}")
+        return repository_root
+
+    candidates = [ROOT.parent / "skill_lab", ROOT.parents[1]]
+    for repository_root in candidates:
+        if (repository_root / "AGENTS.md").is_file() and (repository_root / "skills").is_dir():
+            return repository_root.resolve()
+    return None
+
+
+def validate_source_sync(explicit_root: Optional[Path]) -> None:
+    repository_root = discover_source_repository(explicit_root)
+    if repository_root is None:
         return
+    source_root = repository_root / "skills"
 
     for skill in sorted(SOURCE_SKILLS):
         source_files = relevant_files(source_root / skill)
@@ -223,13 +239,20 @@ def validate_python_helpers() -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="Optional skill_lab repository path for byte-level source/package parity validation.",
+    )
+    args = parser.parse_args()
     version = validate_metadata()
     validate_version_consistency(version)
     validate_marketplace()
     validate_assets()
     validate_distribution_files()
     validate_skills()
-    validate_source_sync()
+    validate_source_sync(args.source_root)
     validate_guide_contract()
     validate_codegen_contract_tools()
     validate_python_helpers()
