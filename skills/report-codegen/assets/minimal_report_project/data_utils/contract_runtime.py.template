@@ -211,4 +211,3 @@ def execute_contract(
         outputs[output_name] = df.loc[:, columns].copy()
         logger.info("contract_output_ready output={} rows={} columns={}", output_name, len(df), len(columns))
     return outputs
-
