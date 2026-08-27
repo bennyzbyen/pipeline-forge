@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pipeline-forge-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tagged package
+        uses: actions/checkout@v4
+        with:
+          path: pipeline-forge
+
+      - name: Read pinned source revision
+        id: source-revision
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $revision = (Get-Content -LiteralPath 'SOURCE_REVISION' -Raw -Encoding UTF8).Trim()
+          "sha=$revision" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout pinned skill source
+        uses: actions/checkout@v4
+        with:
+          repository: bennyzbyen/data_pipeline_develop_skills
+          ref: ${{ steps.source-revision.outputs.sha }}
+          path: skill_lab
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: pipeline-forge/site_create/package-lock.json
+
+      - name: Enforce release identity and pinned source
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          python scripts/bump_version.py --check
+          python scripts/test_bump_version.py
+          python scripts/test_reproducible_package.py
+          python scripts/test_validate_package.py
+          python scripts/validate_package.py --source-root ../skill_lab --require-source-sync --release-tag $env:GITHUB_REF_NAME
+
+      - name: Install website dependencies
+        working-directory: pipeline-forge/site_create
+        run: npm ci
+
+      - name: Test website
+        working-directory: pipeline-forge/site_create
+        run: npm test
+
+      - name: Lint website
+        working-directory: pipeline-forge/site_create
+        run: npm run lint
+
+      - name: Build, reproduce, and validate release assets
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-release'
+          $comparisonDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-release-comparison'
+          $archivePath = Join-Path $releaseDirectory 'pipeline-forge.zip'
+          $checksumPath = Join-Path $releaseDirectory 'pipeline-forge.zip.sha256'
+          $comparisonArchivePath = Join-Path $comparisonDirectory 'pipeline-forge.zip'
+
+          .\scripts\build_download_package.ps1 -OutputDirectory $releaseDirectory
+          .\scripts\build_download_package.ps1 -OutputDirectory $comparisonDirectory
+
+          $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+          $comparisonHash = (Get-FileHash -LiteralPath $comparisonArchivePath -Algorithm SHA256).Hash
+          if ($archiveHash -ne $comparisonHash) {
+            throw "Release archive is not reproducible: $archiveHash != $comparisonHash"
+          }
+
+          .\scripts\validate_download_package.ps1 -ArchivePath $archivePath
+          "PIPELINE_FORGE_ARCHIVE=$archivePath" >> $env:GITHUB_ENV
+          "PIPELINE_FORGE_CHECKSUM=$checksumPath" >> $env:GITHUB_ENV
+
+      - name: Publish validated GitHub release
+        shell: pwsh
+        working-directory: pipeline-forge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            --verify-tag `
+            --generate-notes `
+            --title "PipelineForge $env:GITHUB_REF_NAME" `
+            $env:PIPELINE_FORGE_ARCHIVE `
+            $env:PIPELINE_FORGE_CHECKSUM

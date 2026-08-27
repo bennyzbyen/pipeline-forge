@@ -61,5 +61,14 @@ class SourceSkillsCleanlinessTests(unittest.TestCase):
             validate_package.validate_clean_source_skills(self.repository_root)
 
 
+class ReleaseTagValidationTests(unittest.TestCase):
+    def test_exact_v_prefixed_tag_is_accepted(self) -> None:
+        validate_package.validate_release_tag("1.2.3", "v1.2.3")
+
+    def test_mismatched_tag_is_rejected(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "release tag"):
+            validate_package.validate_release_tag("1.2.3", "v1.2.4")
+
+
 if __name__ == "__main__":
     unittest.main()

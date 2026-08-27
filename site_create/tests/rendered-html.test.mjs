@@ -3,6 +3,10 @@ import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 const projectRoot = new URL("../", import.meta.url);
+const packageMetadata = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+const escapedPluginVersion = packageMetadata.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -56,7 +60,10 @@ test("server-renders the complete PipelineForge product story", async () => {
   }
 
   assert.doesNotMatch(html, /plugin:\/\//);
-  assert.match(html, /codex plugin marketplace add bennyzbyen\/pipeline-forge --ref main/);
+  assert.match(
+    html,
+    new RegExp(`codex plugin marketplace add bennyzbyen/pipeline-forge --ref v${escapedPluginVersion}`),
+  );
   assert.match(html, /下载 PipelineForge/);
   assert.match(html, /href="\/downloads\/pipeline-forge\.zip"[^>]*download/);
   assert.match(html, /完整插件包/);
@@ -72,7 +79,7 @@ test("server-renders the complete PipelineForge product story", async () => {
   assert.ok((await stat(archive)).size > 100_000);
   assert.match(checksum, /^[a-f0-9]{64}\s+pipeline-forge\.zip\s*$/i);
   assert.match(html, /1 个向导 \+ 6 个专业模块/);
-  assert.match(html, /1\.1\.0/);
+  assert.match(html, new RegExp(escapedPluginVersion));
   assert.match(html, /逐表校验字段、调度形态、rowkey 与运行配置/);
   assert.match(html, /通用项目使用受限执行契约并校验全部输出/);
   assert.match(html, /默认不连接数据库/);

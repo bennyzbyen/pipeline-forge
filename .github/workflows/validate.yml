@@ -33,6 +33,9 @@ jobs:
       - name: Validate package
         working-directory: pipeline-forge
         run: |
+          python scripts/bump_version.py --check
+          python scripts/test_bump_version.py
+          python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync
 
@@ -74,6 +77,9 @@ jobs:
       - name: Validate pinned source parity
         working-directory: pipeline-forge
         run: |
+          python scripts/bump_version.py --check
+          python scripts/test_bump_version.py
+          python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync
 
@@ -82,9 +88,18 @@ jobs:
         working-directory: pipeline-forge
         run: |
           $outputDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-download'
+          $comparisonDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-download-comparison'
           $archivePath = Join-Path $outputDirectory 'pipeline-forge.zip'
+          $comparisonArchivePath = Join-Path $comparisonDirectory 'pipeline-forge.zip'
           $checksumPath = Join-Path $outputDirectory 'pipeline-forge.zip.sha256'
           .\scripts\build_download_package.ps1 -OutputDirectory $outputDirectory
+          .\scripts\build_download_package.ps1 -OutputDirectory $comparisonDirectory
+
+          $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+          $comparisonHash = (Get-FileHash -LiteralPath $comparisonArchivePath -Algorithm SHA256).Hash
+          if ($archiveHash -ne $comparisonHash) {
+            throw "Download archive is not reproducible: $archiveHash != $comparisonHash"
+          }
           .\scripts\validate_download_package.ps1 -ArchivePath $archivePath
 
           $originalChecksum = Get-Content -LiteralPath $checksumPath -Raw -Encoding UTF8

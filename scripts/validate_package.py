@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from release_versions import (
+    VersionError,
+    validate_release_tag as require_matching_release_tag,
+    validate_version_consistency as require_consistent_versions,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge"
@@ -105,27 +111,20 @@ def validate_metadata() -> str:
 
 
 def validate_version_consistency(version: str) -> None:
-    site_root = ROOT / "site_create"
-    site_package = json.loads((site_root / "package.json").read_text(encoding="utf-8"))
-    site_lock = json.loads((site_root / "package-lock.json").read_text(encoding="utf-8"))
-    site_content = (site_root / "lib" / "site-content.ts").read_text(encoding="utf-8")
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-
-    require(site_package.get("version") == version, "website package version must match plugin manifest")
-    require(site_lock.get("version") == version, "website lockfile version must match plugin manifest")
-    require(
-        site_lock.get("packages", {}).get("", {}).get("version") == version,
-        "website lockfile root package version must match plugin manifest",
-    )
-    require(
-        f'export const PLUGIN_VERSION = "{version}";' in site_content,
-        "website displayed version must match plugin manifest",
-    )
-    release_headings = re.findall(r"^## ([^\s]+)(?:\s+-\s+\d{4}-\d{2}-\d{2})?$", changelog, flags=re.MULTILINE)
-    require(bool(release_headings) and release_headings[0] == version, "latest changelog version must match plugin manifest")
+    try:
+        require_consistent_versions(ROOT, expected_version=version)
+    except VersionError as exc:
+        raise AssertionError(str(exc)) from exc
 
 
-def validate_marketplace() -> None:
+def validate_release_tag(version: str, release_tag: str) -> None:
+    try:
+        require_matching_release_tag(version, release_tag)
+    except VersionError as exc:
+        raise AssertionError(str(exc)) from exc
+
+
+def validate_marketplace(version: str) -> None:
     marketplace_path = ROOT / ".agents" / "plugins" / "marketplace.json"
     require(marketplace_path.is_file(), "missing repo marketplace manifest")
     marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
@@ -138,7 +137,10 @@ def validate_marketplace() -> None:
     source = entry.get("source", {})
     require(source.get("source") == "url", "root-hosted Git plugin must use url source")
     require(source.get("url") == REPOSITORY_GIT_URL, "marketplace repository URL mismatch")
-    require(source.get("ref") == "main", "marketplace must track main")
+    require(
+        source.get("ref") == f"v{version}",
+        "marketplace source ref must pin the immutable plugin version tag",
+    )
     require(entry.get("policy", {}).get("installation") == "AVAILABLE", "marketplace installation policy mismatch")
     require(entry.get("policy", {}).get("authentication") == "ON_INSTALL", "marketplace authentication policy mismatch")
     require(entry.get("category") == "Productivity", "marketplace category mismatch")
@@ -151,12 +153,16 @@ def validate_assets() -> None:
 
 def validate_distribution_files() -> None:
     for relative in [
+        ".github/workflows/release.yml",
         "SOURCE_REVISION",
         "INSTALL.md",
         "CHANGELOG.md",
         "VERSIONING.md",
         "install-pipeline-forge.ps1",
         "scripts/build_download_package.ps1",
+        "scripts/build_reproducible_zip.py",
+        "scripts/bump_version.py",
+        "scripts/release_versions.py",
         "scripts/validate_download_package.ps1",
     ]:
         require((ROOT / relative).is_file(), f"missing distribution file: {relative}")
@@ -340,10 +346,16 @@ def main() -> int:
             "Intended for release validation."
         ),
     )
+    parser.add_argument(
+        "--release-tag",
+        help="Require this v-prefixed release tag to exactly match manifest and changelog versions.",
+    )
     args = parser.parse_args()
     version = validate_metadata()
     validate_version_consistency(version)
-    validate_marketplace()
+    if args.release_tag:
+        validate_release_tag(version, args.release_tag)
+    validate_marketplace(version)
     validate_assets()
     validate_distribution_files()
     source_revision = validate_source_revision()
