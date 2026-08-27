@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 - 2026-08-27
+
+- Fail closed on contaminated generation contracts and keep explicit safe scaffolds non-runnable.
+- Add malformed-input diagnostics and offline regressions for logs, DDL, and Pipeline Export workbooks.
+- Harden ZIP extraction, concurrent installation, release retries, and companion-site image handling.
+
 ## 1.1.1 - 2026-08-27
 
 - Added deterministic cross-skill regressions for document-to-code routes, log diagnosis, and four-dialect DDL conversion.

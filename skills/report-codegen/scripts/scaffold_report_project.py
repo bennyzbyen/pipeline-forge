@@ -9,12 +9,31 @@ import pprint
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
 from report_contract import validate_execution_contract
 
 
 TABLE_NAME_RE = re.compile(r"(?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+|/[^\s,;]+")
+
+
+def codegen_contract_is_blocked(contract: Mapping[str, Any]) -> bool:
+    if not contract:
+        return False
+    validation = contract.get("validation_result") if isinstance(contract.get("validation_result"), Mapping) else {}
+    conflicts = contract.get("conflicts", []) or []
+    unresolved_conflicts = not isinstance(conflicts, list) or any(
+        not isinstance(item, Mapping)
+        or str(item.get("status") or "").strip().lower() != "resolved"
+        for item in conflicts
+    )
+    return bool(
+        contract.get("ready_for_codegen") is not True
+        or contract.get("blockers")
+        or validation.get("status") == "failed"
+        or validation.get("errors")
+        or unresolved_conflicts
+    )
 
 VEHICLE_HBASE_FIELD_OVERRIDES = {
     "l0_mdp.mars_calendar": ["dataid", "m_year", "m_period"],
@@ -3103,7 +3122,11 @@ class DataStorage:
     (target / "data_utils" / "data_storage.py").write_text(content, encoding="utf-8")
 
 
-def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
+def write_implementation_status(
+    target: Path,
+    plan: Dict[str, Any],
+    safe_scaffold: bool = False,
+) -> None:
     vehicle_plan = plan_is_vehicle(plan)
     supervisor_plan = plan_is_supervisor_portal(plan)
     hbase_prepare_plan = plan_is_hbase_prepare_pipeline(plan)
@@ -3146,6 +3169,14 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
     lines = [
         "# Implementation Status",
         "",
+        *(
+            [
+                "**SAFE_SCAFFOLD: runtime is disabled. Resolve contract blockers and regenerate without `--allow-blocked-scaffold`.**",
+                "",
+            ]
+            if safe_scaffold
+            else []
+        ),
         "This project was generated as a structured scaffold from `report_codegen_plan.json`.",
         "It is not production-equivalent until the unchecked items below are implemented and log-validated.",
         "",
@@ -3173,6 +3204,18 @@ def write_implementation_status(target: Path, plan: Dict[str, Any]) -> None:
         ]
     )
     (target / "IMPLEMENTATION_STATUS.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_safe_scaffold_marker(target: Path) -> None:
+    marker = {
+        "status": "SAFE_SCAFFOLD",
+        "runtime_enabled": False,
+        "reason": "Explicit review-only scaffold generated from a blocked or invalid contract.",
+    }
+    (target / "SAFE_SCAFFOLD.json").write_text(
+        json.dumps(marker, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_params_example(target: Path, plan: Dict[str, Any]) -> None:
@@ -3211,7 +3254,8 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
         raise ValueError(
             "codegen_contract routes this design package to data-sync-codegen, not report-codegen."
         )
-    if codegen_contract and not codegen_contract.get("ready_for_codegen", False) and not allow_blocked_scaffold:
+    contract_blocked = codegen_contract_is_blocked(codegen_contract)
+    if contract_blocked and not allow_blocked_scaffold:
         blockers = "; ".join(str(item) for item in codegen_contract.get("blockers", [])) or "unresolved design blockers"
         raise ValueError(
             "codegen_contract blocks full scaffolding: "
@@ -3227,7 +3271,16 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
             "generic report full scaffolding requires a valid normalized execution_contract: "
             f"{details}. Re-run with --allow-blocked-scaffold only for a non-runnable review scaffold."
         )
+    safe_scaffold = bool(
+        allow_blocked_scaffold
+        and (
+            contract_blocked
+            or execution_validation.get("status") == "failed"
+        )
+    )
     clean_target(target)
+    if safe_scaffold:
+        write_safe_scaffold_marker(target)
     copy_minimal_project(target)
     write_col_config(target, plan)
     write_execution_contract_config(target, plan)
@@ -3236,7 +3289,7 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
     write_data_source(target, plan)
     write_data_process(target, plan)
     write_data_storage(target, plan)
-    write_implementation_status(target, plan)
+    write_implementation_status(target, plan, safe_scaffold=safe_scaffold)
     write_params_example(target, plan)
     (target / "report_codegen_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 

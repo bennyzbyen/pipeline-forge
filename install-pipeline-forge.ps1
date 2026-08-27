@@ -75,11 +75,15 @@ $sourceIdentity = Read-PluginIdentity -PluginRoot $sourceRoot
 $homeDirectoryPath = [System.IO.Path]::GetFullPath($HomeDirectory)
 $pluginsRoot = [System.IO.Path]::GetFullPath((Join-Path $homeDirectoryPath '.codex\plugins'))
 $destinationRoot = [System.IO.Path]::GetFullPath((Join-Path $pluginsRoot 'pipeline-forge'))
+$installLockPath = [System.IO.Path]::GetFullPath((Join-Path $pluginsRoot '.pipeline-forge.install.lock'))
 $marketplaceDirectory = [System.IO.Path]::GetFullPath((Join-Path $homeDirectoryPath '.agents\plugins'))
 $marketplacePath = [System.IO.Path]::GetFullPath((Join-Path $marketplaceDirectory 'marketplace.json'))
 
 if (-not (Test-PathWithin -Candidate $destinationRoot -Parent $pluginsRoot)) {
     throw 'Refusing to install outside the personal Codex plugins directory.'
+}
+if (-not (Test-PathWithin -Candidate $installLockPath -Parent $pluginsRoot)) {
+    throw 'Refusing to create an installation lock outside the personal Codex plugins directory.'
 }
 if (-not (Test-PathWithin -Candidate $marketplacePath -Parent $marketplaceDirectory)) {
     throw 'Refusing to update a marketplace outside the personal plugin directory.'
@@ -107,8 +111,21 @@ $marketplaceStagingPath = Join-Path $marketplaceDirectory ('.marketplace.pipelin
 $marketplaceBackupPath = Join-Path $marketplaceDirectory ('.marketplace.pipeline-forge.backup.{0}.json' -f $transactionId)
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-$destinationExisted = Test-Path -LiteralPath $destinationRoot -PathType Container
-$marketplaceExisted = Test-Path -LiteralPath $marketplacePath -PathType Leaf
+$installLockStream = $null
+try {
+    $installLockStream = [System.IO.FileStream]::new(
+        $installLockPath,
+        [System.IO.FileMode]::OpenOrCreate,
+        [System.IO.FileAccess]::ReadWrite,
+        [System.IO.FileShare]::None
+    )
+}
+catch [System.IO.IOException] {
+    throw "Another PipelineForge installation is already active for HomeDirectory '$homeDirectoryPath'."
+}
+
+$destinationExisted = $false
+$marketplaceExisted = $false
 $marketplaceOriginalBytes = $null
 $pluginBackupCreated = $false
 $pluginInstalled = $false
@@ -117,6 +134,20 @@ $marketplaceInstalled = $false
 $transactionCommitted = $false
 
 try {
+    $lockOwner = [PSCustomObject]@{
+        transactionId = $transactionId
+        processId = $PID
+        processStartUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o')
+        machine = [Environment]::MachineName
+        acquiredUtc = [DateTime]::UtcNow.ToString('o')
+    }
+    $lockOwnerBytes = $utf8NoBom.GetBytes(($lockOwner | ConvertTo-Json -Compress) + [Environment]::NewLine)
+    $installLockStream.SetLength(0)
+    $installLockStream.Write($lockOwnerBytes, 0, $lockOwnerBytes.Length)
+    $installLockStream.Flush($true)
+
+    $destinationExisted = Test-Path -LiteralPath $destinationRoot -PathType Container
+    $marketplaceExisted = Test-Path -LiteralPath $marketplacePath -PathType Leaf
     if ($marketplaceExisted) {
         $marketplaceOriginalBytes = [System.IO.File]::ReadAllBytes($marketplacePath)
         try {
@@ -242,6 +273,18 @@ finally {
                 catch {
                     Write-Warning "Installation succeeded, but the transaction backup could not be removed: $obsoletePath"
                 }
+            }
+        }
+    }
+    if ($null -ne $installLockStream) {
+        $installLockStream.Dispose()
+        $installLockStream = $null
+        try {
+            Remove-Item -LiteralPath $installLockPath -Force -ErrorAction Stop
+        }
+        catch {
+            if (Test-Path -LiteralPath $installLockPath) {
+                Write-Warning "Installation lock was released, but its owner record could not be removed: $installLockPath"
             }
         }
     }

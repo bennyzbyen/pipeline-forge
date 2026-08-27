@@ -35,6 +35,8 @@ jobs:
         run: |
           python scripts/bump_version.py --check
           python scripts/test_bump_version.py
+          python scripts/test_archive_safety.py
+          python scripts/test_publish_validated_release.py
           python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync
@@ -79,6 +81,8 @@ jobs:
         run: |
           python scripts/bump_version.py --check
           python scripts/test_bump_version.py
+          python scripts/test_archive_safety.py
+          python scripts/test_publish_validated_release.py
           python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -295,6 +296,30 @@ def analyze_log(text: str) -> Dict[str, Any]:
     traceback_info = extract_traceback(lines)
     hits = score_patterns(text)
     primary = hits[0] if hits else None
+    competing = []
+    if primary:
+        severity_rank = {"high": 0, "medium": 1, "low": 2}
+        primary_rank = severity_rank.get(primary["severity"], 9)
+        competing = [
+            item["id"]
+            for item in hits[1:]
+            if severity_rank.get(item["severity"], 9) == primary_rank and item["score"] == primary["score"]
+        ]
+    if not text.strip():
+        confidence = "low"
+        confidence_reason = "日志为空，没有可用于分类的失败证据。"
+    elif primary is None:
+        confidence = "low"
+        confidence_reason = "日志虽包含异常，但没有匹配到已知失败模式。"
+    elif traceback_info["traceback_count"] == 0 or not traceback_info["exception_line"]:
+        confidence = "low"
+        confidence_reason = "日志没有完整 traceback/异常终行，可能已被截断。"
+    elif competing:
+        confidence = "low"
+        confidence_reason = "存在同优先级、同分值的竞争错误模式，当前分类仅是确定性首选假设。"
+    else:
+        confidence = "high"
+        confidence_reason = "完整 traceback 与唯一最高优先级错误模式一致。"
     return {
         "primary_classification": primary["category"] if primary else "unknown",
         "primary_pattern_id": primary["id"] if primary else "unknown",
@@ -302,6 +327,10 @@ def analyze_log(text: str) -> Dict[str, Any]:
         "impact_scope": primary["impact"] if primary else "影响范围未确认。",
         "minimum_fix": primary["fix"] if primary else "先补齐完整日志，再按参数、路径/环境、数据缺失、外部服务、业务代码顺序排查。",
         "verification": primary["verify"] if primary else "确认日志包含参数、环境、源 SQL、目标写入和完整异常。",
+        "diagnosis_status": "confirmed" if confidence == "high" else "hypothesis",
+        "confidence": confidence,
+        "confidence_reason": confidence_reason,
+        "competing_pattern_ids": competing,
         "matched_patterns": [
             {
                 "id": item["id"],
@@ -338,8 +367,9 @@ def render_markdown(result: Dict[str, Any]) -> str:
     lines = [
         "# Data Job Log Diagnosis",
         "",
-        "## Confirmed Issues",
+        "## Confirmed Issue" if result["diagnosis_status"] == "confirmed" else "## Highest-confidence Hypothesis",
         f"- {result['confirmed_issue']}",
+        f"- Confidence: `{result['confidence']}` — {result['confidence_reason']}",
         "",
         "## Impact Scope",
         f"- {result['impact_scope']}",
@@ -355,6 +385,8 @@ def render_markdown(result: Dict[str, Any]) -> str:
         f"- First real exception: `{result['first_real_exception'] or 'not found'}`",
         f"- Traceback count: {result['traceback_count']}",
     ]
+    if result["competing_pattern_ids"]:
+        lines.append("- Competing patterns: " + ", ".join(f"`{item}`" for item in result["competing_pattern_ids"]))
     if result["matched_patterns"]:
         lines.append("- Matched patterns:")
         for item in result["matched_patterns"]:
@@ -380,9 +412,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
-    result = analyze_log(load_text(args.log))
+    try:
+        text = load_text(args.log)
+    except OSError as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        print(f"error: log could not be read: {detail}", file=sys.stderr)
+        return 2
+    if not text.strip():
+        print("error: log is empty; provide failure context before diagnosis", file=sys.stderr)
+        return 2
+    result = analyze_log(text)
     if args.format == "json":
         output = json.dumps(result, ensure_ascii=False, indent=2)
     else:
@@ -391,7 +432,8 @@ def main() -> None:
         args.output.write_text(output, encoding="utf-8")
     else:
         print(output)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

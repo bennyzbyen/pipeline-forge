@@ -9,7 +9,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/bennyzbyen/pipeline-forge.git",
-        "ref": "v1.1.1"
+        "ref": "v1.1.2"
       },
       "policy": {
         "installation": "AVAILABLE",

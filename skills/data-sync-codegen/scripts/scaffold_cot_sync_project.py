@@ -9,7 +9,7 @@ import json
 import pprint
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 
 DEFAULT_UPDATE_COLUMNS = [
@@ -40,6 +40,27 @@ DEFAULT_KEY_COLUMNS = [
     "main_store_code",
     "salesman_code",
 ]
+
+SAFE_SCAFFOLD_ISSUE = "safe_scaffold_runtime_disabled"
+
+
+def codegen_contract_is_blocked(contract: Mapping[str, Any]) -> bool:
+    if not contract:
+        return False
+    validation = contract.get("validation_result") if isinstance(contract.get("validation_result"), Mapping) else {}
+    conflicts = contract.get("conflicts", []) or []
+    unresolved_conflicts = not isinstance(conflicts, list) or any(
+        not isinstance(item, Mapping)
+        or str(item.get("status") or "").strip().lower() != "resolved"
+        for item in conflicts
+    )
+    return bool(
+        contract.get("ready_for_codegen") is not True
+        or contract.get("blockers")
+        or validation.get("status") == "failed"
+        or validation.get("errors")
+        or unresolved_conflicts
+    )
 
 COT_TABLE_NAME_OVERRIDES = {
     "supervisor_assist_visit": "v_supervisor_assist_visit_2026",
@@ -539,6 +560,7 @@ def write_manifest(
     configs: Dict[str, Dict[str, Any]],
     questions: List[str],
     codegen_contract: Dict[str, Any],
+    safe_scaffold: bool = False,
 ) -> None:
     manifest = {
         "manifest_version": 2,
@@ -553,6 +575,12 @@ def write_manifest(
         "tables": list(configs.values()),
         "questions": questions,
     }
+    if safe_scaffold:
+        manifest["artifact_status"] = {
+            "status": "SAFE_SCAFFOLD",
+            "runtime_enabled": False,
+            "reason": "Explicit review-only scaffold; resolve contract blockers and regenerate without --allow-blocked-scaffold.",
+        }
     (output_dir / "cot_sync_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (output_dir / "params.example.json").write_text(
         json.dumps(build_example_params(configs), ensure_ascii=False, indent=2),
@@ -578,6 +606,31 @@ def write_manifest(
     (output_dir / "verification.md").write_text("\n".join(verification) + "\n", encoding="utf-8")
 
 
+def mark_safe_scaffold(
+    configs: Dict[str, Dict[str, Any]],
+    questions: List[str],
+) -> None:
+    for config in configs.values():
+        if SAFE_SCAFFOLD_ISSUE not in config["contract_issues"]:
+            config["contract_issues"].append(SAFE_SCAFFOLD_ISSUE)
+        config["runtime_enabled"] = False
+    questions.append(
+        "SAFE_SCAFFOLD: runtime is disabled for every table until blockers are resolved and the project is regenerated without --allow-blocked-scaffold."
+    )
+
+
+def write_safe_scaffold_marker(output_dir: Path) -> None:
+    marker = {
+        "status": "SAFE_SCAFFOLD",
+        "runtime_enabled": False,
+        "reason": "Explicit review-only scaffold generated from a blocked or untrusted contract.",
+    }
+    (output_dir / "SAFE_SCAFFOLD.json").write_text(
+        json.dumps(marker, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def scaffold_project(args: argparse.Namespace) -> None:
     script_dir = Path(__file__).resolve().parent
     skill_dir = script_dir.parent
@@ -592,15 +645,24 @@ def scaffold_project(args: argparse.Namespace) -> None:
         raise ValueError(
             "codegen_contract routes this design package to report-codegen, not data-sync-codegen."
         )
-    if codegen_contract and not codegen_contract.get("ready_for_codegen", False) and not args.allow_blocked_scaffold:
+    contract_blocked = codegen_contract_is_blocked(codegen_contract)
+    if contract_blocked and not args.allow_blocked_scaffold:
         blockers = "; ".join(str(item) for item in codegen_contract.get("blockers", [])) or "unresolved design blockers"
         raise ValueError(
             "codegen_contract blocks full scaffolding: "
             f"{blockers}. Re-run with --allow-blocked-scaffold only for an explicitly requested safe scaffold."
         )
     configs, questions = build_table_configs(facts, args.extracted_tables)
+    safe_scaffold = bool(
+        args.allow_blocked_scaffold
+        and contract_blocked
+    )
+    if safe_scaffold:
+        mark_safe_scaffold(configs, questions)
 
     copy_template_tree(template_root, args.output_dir, args.force)
+    if safe_scaffold:
+        write_safe_scaffold_marker(args.output_dir)
     config_path = args.output_dir / "cot_config" / "plugin_config.py"
     config_path.write_text(
         render_plugin_config(configs, args.project_name, codegen_contract.get("runtime_contract", {})),
@@ -608,7 +670,13 @@ def scaffold_project(args: argparse.Namespace) -> None:
     )
     rowkey_config_path = args.output_dir / "cot_config" / "rowkey_config.py"
     rowkey_config_path.write_text(render_rowkey_config(configs), encoding="utf-8")
-    write_manifest(args.output_dir, configs, questions, facts.get("codegen_contract", {}))
+    write_manifest(
+        args.output_dir,
+        configs,
+        questions,
+        facts.get("codegen_contract", {}),
+        safe_scaffold=safe_scaffold,
+    )
 
 
 def parse_args() -> argparse.Namespace:

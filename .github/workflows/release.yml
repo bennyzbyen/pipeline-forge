@@ -54,6 +54,8 @@ jobs:
         run: |
           python scripts/bump_version.py --check
           python scripts/test_bump_version.py
+          python scripts/test_archive_safety.py
+          python scripts/test_publish_validated_release.py
           python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync --release-tag $env:GITHUB_REF_NAME
@@ -74,8 +76,11 @@ jobs:
         shell: pwsh
         working-directory: pipeline-forge
         run: |
-          $releaseDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-release'
-          $comparisonDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-release-comparison'
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP ("pipeline-forge-release-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          $comparisonDirectory = Join-Path $env:RUNNER_TEMP ("pipeline-forge-release-comparison-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          if ((Test-Path -LiteralPath $releaseDirectory) -or (Test-Path -LiteralPath $comparisonDirectory)) {
+            throw 'This workflow attempt does not have fresh release build directories.'
+          }
           $archivePath = Join-Path $releaseDirectory 'pipeline-forge.zip'
           $checksumPath = Join-Path $releaseDirectory 'pipeline-forge.zip.sha256'
           $comparisonArchivePath = Join-Path $comparisonDirectory 'pipeline-forge.zip'
@@ -89,7 +94,8 @@ jobs:
             throw "Release archive is not reproducible: $archiveHash != $comparisonHash"
           }
 
-          .\scripts\validate_download_package.ps1 -ArchivePath $archivePath
+          .\scripts\validate_download_package.ps1 -ArchivePath $archivePath -ChecksumPath $checksumPath
+          "PIPELINE_FORGE_ASSET_ROOT=$releaseDirectory" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_ARCHIVE=$archivePath" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_CHECKSUM=$checksumPath" >> $env:GITHUB_ENV
 
@@ -99,9 +105,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME `
-            --verify-tag `
-            --generate-notes `
+          python scripts/publish_validated_release.py `
+            --repository $env:GITHUB_REPOSITORY `
+            --tag $env:GITHUB_REF_NAME `
             --title "PipelineForge $env:GITHUB_REF_NAME" `
-            $env:PIPELINE_FORGE_ARCHIVE `
-            $env:PIPELINE_FORGE_CHECKSUM
+            --asset-root $env:PIPELINE_FORGE_ASSET_ROOT `
+            --archive $env:PIPELINE_FORGE_ARCHIVE `
+            --checksum $env:PIPELINE_FORGE_CHECKSUM
