@@ -10,19 +10,41 @@ $expectedManifestPath = Join-Path $pluginRoot '.codex-plugin\plugin.json'
 $expectedManifest = Get-Content -LiteralPath $expectedManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $expectedSourceRevision = (Get-Content -LiteralPath (Join-Path $pluginRoot 'SOURCE_REVISION') -Raw -Encoding UTF8).Trim()
 $archivePathResolved = (Resolve-Path -LiteralPath $ArchivePath).Path
-if ([string]::IsNullOrWhiteSpace($ChecksumPath)) {
-    $ChecksumPath = Join-Path (Split-Path -Parent $archivePathResolved) 'pipeline-forge.zip.sha256'
+$archiveReadLock = $null
+try {
+    # Keep one read handle open through hashing, preflight, and extraction so the
+    # path cannot be replaced or written between validation and use.
+    $archiveReadLock = [System.IO.FileStream]::new(
+        $archivePathResolved,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::Read
+    )
+    if ([string]::IsNullOrWhiteSpace($ChecksumPath)) {
+        $ChecksumPath = Join-Path (Split-Path -Parent $archivePathResolved) 'pipeline-forge.zip.sha256'
+    }
+    $checksumPathResolved = (Resolve-Path -LiteralPath $ChecksumPath).Path
+    $checksumRecord = (Get-Content -LiteralPath $checksumPathResolved -Raw -Encoding UTF8).Trim()
+    if ($checksumRecord -notmatch '^(?<hash>[0-9a-fA-F]{64})\s+\*?pipeline-forge\.zip$') {
+        throw "Invalid checksum file format: $checksumPathResolved"
+    }
+    $expectedChecksum = $Matches['hash'].ToLowerInvariant()
+    $actualChecksum = (Get-FileHash -LiteralPath $archivePathResolved -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualChecksum -ne $expectedChecksum) {
+        throw "Archive SHA256 mismatch: expected $expectedChecksum, found $actualChecksum"
+    }
+
+$archiveSafetyValidator = Join-Path $PSScriptRoot 'validate_archive_safety.py'
+if (-not (Test-Path -LiteralPath $archiveSafetyValidator -PathType Leaf)) {
+    throw "Archive safety validator is missing: $archiveSafetyValidator"
 }
-$checksumPathResolved = (Resolve-Path -LiteralPath $ChecksumPath).Path
-$checksumRecord = (Get-Content -LiteralPath $checksumPathResolved -Raw -Encoding UTF8).Trim()
-if ($checksumRecord -notmatch '^(?<hash>[0-9a-fA-F]{64})\s+\*?pipeline-forge\.zip$') {
-    throw "Invalid checksum file format: $checksumPathResolved"
+$archiveSafetyOutput = @(& python $archiveSafetyValidator --archive $archivePathResolved 2>&1)
+$archiveSafetyExitCode = $LASTEXITCODE
+if ($archiveSafetyExitCode -ne 0) {
+    $archiveSafetyDetail = ($archiveSafetyOutput | ForEach-Object { [string]$_ }) -join ' '
+    throw "Archive safety preflight failed before extraction: $archiveSafetyDetail"
 }
-$expectedChecksum = $Matches['hash'].ToLowerInvariant()
-$actualChecksum = (Get-FileHash -LiteralPath $archivePathResolved -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualChecksum -ne $expectedChecksum) {
-    throw "Archive SHA256 mismatch: expected $expectedChecksum, found $actualChecksum"
-}
+
 $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $testRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $temporaryRoot ("pipeline-forge-download-test-{0}" -f [System.Guid]::NewGuid().ToString('N')))
@@ -71,8 +93,8 @@ try {
         throw "Installer transaction test is missing: $installerTestPath"
     }
     $installerTest = & $installerTestPath -PackageRoot $packageRoot
-    if ($installerTest.Passed -ne 5) {
-        throw "Installer transaction test count mismatch: expected 5, found $($installerTest.Passed)."
+    if ($installerTest.Passed -ne 7) {
+        throw "Installer transaction test count mismatch: expected 7, found $($installerTest.Passed)."
     }
 
     Write-Output "PipelineForge $($expectedManifest.version) download archive and Windows setup helper validation passed ($($installerTest.Passed) installer cases)"
@@ -83,5 +105,11 @@ finally {
         if ($resolvedTestRoot.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
             Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
         }
+    }
+}
+}
+finally {
+    if ($null -ne $archiveReadLock) {
+        $archiveReadLock.Dispose()
     }
 }

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import zipfile
 from collections import OrderedDict, defaultdict
 from copy import copy
@@ -809,7 +810,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    counts = build_workbook(args)
+    try:
+        counts = build_workbook(args)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        print(f"error: Pipeline workbook was not generated: {detail}", file=sys.stderr)
+        return 2
     workbook_path = args.out_xlsx or args.template_xlsx
     print(json.dumps({"workbook": str(workbook_path), "questions": str(args.questions_out), "row_counts": counts}, ensure_ascii=False))
     return 0

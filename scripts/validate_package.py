@@ -162,13 +162,42 @@ def validate_distribution_files() -> None:
         "scripts/build_download_package.ps1",
         "scripts/build_reproducible_zip.py",
         "scripts/bump_version.py",
+        "scripts/publish_validated_release.py",
         "scripts/release_versions.py",
+        "scripts/test_archive_safety.py",
+        "scripts/test_installer_transaction.ps1",
+        "scripts/test_publish_validated_release.py",
+        "scripts/validate_archive_safety.py",
         "scripts/validate_download_package.ps1",
     ]:
         require((ROOT / relative).is_file(), f"missing distribution file: {relative}")
     install_text = (ROOT / "install-pipeline-forge.ps1").read_text(encoding="utf-8")
     require("./.codex/plugins/pipeline-forge" in install_text, "installer personal plugin path mismatch")
     require("Where-Object { $_.name -ne 'pipeline-forge' }" in install_text, "installer must preserve other plugin entries")
+    require("[System.IO.FileShare]::None" in install_text, "installer must use an exclusive per-home lock")
+
+    download_validator_text = (ROOT / "scripts/validate_download_package.ps1").read_text(
+        encoding="utf-8"
+    )
+    safety_call = download_validator_text.find("validate_archive_safety.py")
+    extraction_call = download_validator_text.find("Expand-Archive")
+    require(safety_call >= 0, "download validator must invoke archive safety preflight")
+    require(
+        extraction_call > safety_call,
+        "download validator must complete archive safety preflight before extraction",
+    )
+
+    release_workflow_text = (ROOT / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+    require(
+        "publish_validated_release.py" in release_workflow_text,
+        "release workflow must use retry-safe validated asset publication",
+    )
+    require(
+        "GITHUB_RUN_ATTEMPT" in release_workflow_text,
+        "release workflow must isolate build assets by workflow attempt",
+    )
 
 
 def validate_source_revision() -> str:

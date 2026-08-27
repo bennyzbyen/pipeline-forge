@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 
 DATA_UTILIZATION_SHEET = "Data Utilization"
@@ -150,8 +151,22 @@ def add_ooxml_storage_errors(path: Path, errors: list[str]) -> None:
             )
 
 
+def unreadable_workbook_result(path: Path, exc: Exception) -> dict[str, Any]:
+    detail = str(exc).strip() or exc.__class__.__name__
+    return {
+        "ok": False,
+        "workbook": str(path),
+        "row_counts": {},
+        "errors": [f"Workbook is unreadable or corrupt ({exc.__class__.__name__}): {detail}"],
+        "warnings": [],
+    }
+
+
 def validate_workbook(path: Path) -> dict[str, Any]:
-    wb = load_workbook(path, data_only=False)
+    try:
+        wb = load_workbook(path, data_only=False)
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile, InvalidFileException) as exc:
+        return unreadable_workbook_result(path, exc)
     errors: list[str] = []
     warnings: list[str] = []
     row_counts: dict[str, int] = {}
@@ -225,18 +240,19 @@ def validate_workbook(path: Path) -> dict[str, Any]:
         if clean(raw_field_length) != REQUIRED_FIELD_LENGTH:
             errors.append(f"Target Field row {row['_row']} field_length must be 200, got: {raw_field_length}")
 
-    field_ws = wb[FIELD_SHEET]
-    length_col = EXPECTED_HEADERS[FIELD_SHEET].index("field_length") + 1
-    sequence_col = EXPECTED_HEADERS[FIELD_SHEET].index("field_sequence") + 1
-    for row_idx in range(3, field_ws.max_row + 1):
-        length_cell = field_ws.cell(row_idx, length_col)
-        if length_cell.value not in (None, "") and length_cell.data_type != "s":
-            errors.append(f"Target Field row {row_idx} field_length must be stored as text, got cell type: {length_cell.data_type}")
-        cell = field_ws.cell(row_idx, sequence_col)
-        if cell.value in (None, ""):
-            continue
-        if cell.data_type != "s":
-            errors.append(f"Target Field row {row_idx} field_sequence must be stored as text, got cell type: {cell.data_type}")
+    if FIELD_SHEET in wb.sheetnames:
+        field_ws = wb[FIELD_SHEET]
+        length_col = EXPECTED_HEADERS[FIELD_SHEET].index("field_length") + 1
+        sequence_col = EXPECTED_HEADERS[FIELD_SHEET].index("field_sequence") + 1
+        for row_idx in range(3, field_ws.max_row + 1):
+            length_cell = field_ws.cell(row_idx, length_col)
+            if length_cell.value not in (None, "") and length_cell.data_type != "s":
+                errors.append(f"Target Field row {row_idx} field_length must be stored as text, got cell type: {length_cell.data_type}")
+            cell = field_ws.cell(row_idx, sequence_col)
+            if cell.value in (None, ""):
+                continue
+            if cell.data_type != "s":
+                errors.append(f"Target Field row {row_idx} field_sequence must be stored as text, got cell type: {cell.data_type}")
 
     target_field_counts: dict[str, int] = {}
     for row in fields:

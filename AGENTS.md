@@ -29,6 +29,8 @@ The repository owner is the final authority. A session instructed to act as **Pi
 - `python .\scripts\validate_package.py --source-root ..\skill_lab` validates metadata, versions, assets, helper syntax, and byte-level source parity.
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_download_package.ps1` rebuilds the ignored installer ZIP and tracked SHA256 file.
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate_download_package.ps1` validates installation behavior in an isolated temporary home.
+- `python .\scripts\test_archive_safety.py` runs malicious ZIP member regressions without extracting them.
+- `python .\scripts\test_publish_validated_release.py` exercises release retry and conflict handling against an offline fake GitHub runner.
 - `npm test` from `site_create` builds the companion site and runs rendered HTML tests.
 - `npm run lint` from `site_create` runs ESLint.
 

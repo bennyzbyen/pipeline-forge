@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import Image from "next/image";
 import {
   GITHUB_REPOSITORY_URL,
   MARKETPLACE_ADD_COMMAND,
@@ -31,7 +32,7 @@ function SiteHeader() {
     <header className="site-header">
       <nav className="nav-shell glass-panel" aria-label="主导航">
         <a className="brand" href="#top" aria-label="PipelineForge 首页">
-          <img src="/pipeline-forge-logo.png" alt="" width="40" height="40" />
+          <Image src="/pipeline-forge-logo.png" alt="" width={40} height={40} />
           <span>PipelineForge</span>
         </a>
 
@@ -99,7 +100,7 @@ function HeroPipeline() {
       <div className="pipeline-window glass-panel">
         <div className="window-bar">
           <div className="window-brand">
-            <img src="/pipeline-forge-icon.png" alt="" width="28" height="28" />
+            <Image src="/pipeline-forge-icon.png" alt="" width={28} height={28} />
             <span>PipelineForge</span>
           </div>
           <span className="window-status"><i /> Ready</span>
@@ -314,7 +315,7 @@ export default function Home() {
               </div>
               <span className="artifact-arrow" aria-hidden="true">→</span>
               <div className="forge-core">
-                <img src="/pipeline-forge-icon.png" alt="" width="52" height="52" />
+                <Image src="/pipeline-forge-icon.png" alt="" width={52} height={52} />
                 <strong>PipelineForge</strong>
                 <span>Understand · Generate · Verify</span>
               </div>
@@ -351,7 +352,7 @@ export default function Home() {
         <section className="final-cta section-shell reveal" id="enable" aria-labelledby="enable-title">
           <div className="cta-glow" aria-hidden="true" />
           <div className="cta-content">
-            <img src="/pipeline-forge-logo.png" alt="" width="68" height="68" />
+            <Image src="/pipeline-forge-logo.png" alt="" width={68} height={68} />
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
             <p>
@@ -413,7 +414,7 @@ export default function Home() {
 
       <footer className="site-footer section-shell">
         <div className="footer-brand">
-          <img src="/pipeline-forge-icon.png" alt="" width="34" height="34" />
+          <Image src="/pipeline-forge-icon.png" alt="" width={34} height={34} />
           <div><strong>PipelineForge</strong><span>Data engineering, forged with certainty.</span></div>
         </div>
         <div className="footer-meta">

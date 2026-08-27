@@ -312,6 +312,21 @@ def build_create_table(
     notes: Dict[str, List[str]] = {"assumptions": [], "risks": [], "type_mappings": []}
     if not columns:
         raise ValueError("schema contains no columns")
+    if not isinstance(columns, list) or any(not isinstance(column, dict) for column in columns):
+        raise ValueError("schema columns must be a list of column objects")
+    column_names = [str(column.get("name") or "").strip() for column in columns]
+    if any(not name for name in column_names):
+        raise ValueError("every schema column must have a non-empty name")
+    seen_names: Dict[str, str] = {}
+    duplicate_names: List[str] = []
+    for name in column_names:
+        normalized = name.casefold()
+        if normalized in seen_names and name not in duplicate_names:
+            duplicate_names.append(name)
+        else:
+            seen_names[normalized] = name
+    if duplicate_names:
+        raise ValueError(f"schema contains duplicate column names: {', '.join(duplicate_names)}")
 
     pk = primary_key if primary_key is not None else schema.get("primary_key", [])
     if not pk:
@@ -457,7 +472,7 @@ def render_output(sql: str, notes: Dict[str, List[str]], sql_only: bool) -> str:
     return "\n\n".join(sections)
 
 
-def main() -> None:
+def main() -> int:
     configure_stdout_utf8()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("schema_json", type=Path)
@@ -479,42 +494,54 @@ def main() -> None:
     parser.add_argument("--output", type=Path, help="Write generated DDL to this path using UTF-8")
     args = parser.parse_args()
 
-    document = json.loads(args.schema_json.read_text(encoding="utf-8"))
-    if args.all_tables and "tables" in document:
-        schemas = document["tables"]
-    elif "tables" in document and document["tables"]:
-        schemas = [document["tables"][0]]
-    else:
-        schemas = [document]
+    try:
+        document = json.loads(args.schema_json.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            raise ValueError("schema JSON root must be an object")
+        if args.all_tables and "tables" in document:
+            schemas = document["tables"]
+        elif "tables" in document and document["tables"]:
+            schemas = [document["tables"][0]]
+        else:
+            schemas = [document]
+        if not isinstance(schemas, list) or any(not isinstance(schema, dict) for schema in schemas):
+            raise ValueError("tables must be a list of schema objects")
+        if not schemas:
+            raise ValueError("schema contains no tables")
 
-    outputs: List[str] = []
-    for schema in schemas:
-        partition_by = split_csv(args.partition_by) or None
-        order_by = split_csv(args.order_by) or None
-        if args.cot_period_code_rule:
-            partition_by, order_by, _applied = apply_cot_period_code_rule(schema, partition_by, order_by)
-        sql, notes = build_create_table(
-            schema,
-            target=args.target,
-            env=args.env,
-            database=args.database or schema.get("database"),
-            table=args.table if len(schemas) == 1 else schema.get("table_name"),
-            partition_by=partition_by,
-            order_by=order_by,
-            primary_key=split_csv(args.primary_key) or None,
-            clickhouse_engine=args.engine,
-            clickhouse_cluster=args.cluster,
-            clickhouse_replication_path=args.replication_path,
-            clickhouse_version_column=args.version_column,
-            allow_key_nullability_coercion=args.allow_key_nullability_coercion,
-        )
-        outputs.append(render_output(sql, notes, args.sql_only))
-    output = "\n\n".join(outputs)
-    if args.output:
-        args.output.write_text(output + "\n", encoding="utf-8")
-    else:
-        print(output)
+        outputs: List[str] = []
+        for schema in schemas:
+            partition_by = split_csv(args.partition_by) or None
+            order_by = split_csv(args.order_by) or None
+            if args.cot_period_code_rule:
+                partition_by, order_by, _applied = apply_cot_period_code_rule(schema, partition_by, order_by)
+            sql, notes = build_create_table(
+                schema,
+                target=args.target,
+                env=args.env,
+                database=args.database or schema.get("database"),
+                table=args.table if len(schemas) == 1 else schema.get("table_name"),
+                partition_by=partition_by,
+                order_by=order_by,
+                primary_key=split_csv(args.primary_key) or None,
+                clickhouse_engine=args.engine,
+                clickhouse_cluster=args.cluster,
+                clickhouse_replication_path=args.replication_path,
+                clickhouse_version_column=args.version_column,
+                allow_key_nullability_coercion=args.allow_key_nullability_coercion,
+            )
+            outputs.append(render_output(sql, notes, args.sql_only))
+        output = "\n\n".join(outputs)
+        if args.output:
+            args.output.write_text(output + "\n", encoding="utf-8")
+        else:
+            print(output)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        print(f"error: DDL was not generated: {detail}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

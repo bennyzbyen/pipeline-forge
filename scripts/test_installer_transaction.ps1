@@ -55,7 +55,9 @@ function Assert-NoTransactionArtifacts {
     $artifacts = @()
     if (Test-Path -LiteralPath $pluginParent) {
         $artifacts += @(Get-ChildItem -LiteralPath $pluginParent -Force | Where-Object {
-            $_.Name -like '.pipeline-forge.staging.*' -or $_.Name -like '.pipeline-forge.backup.*'
+            $_.Name -like '.pipeline-forge.staging.*' -or
+            $_.Name -like '.pipeline-forge.backup.*' -or
+            $_.Name -eq '.pipeline-forge.install.lock'
         })
     }
     if (Test-Path -LiteralPath $marketplaceParent) {
@@ -214,6 +216,42 @@ try {
     Assert-Condition -Condition ($midMarker -eq 'original-plugin-state') -Message 'Mid-transaction failure did not restore the original plugin.'
     Assert-NoTransactionArtifacts -TestHome $midFailureHome
     $results.Add('mid-transaction rollback')
+
+    $lockHome = Join-Path $testRoot 'l\h'
+    $lockParent = Join-Path $lockHome '.codex\plugins'
+    $lockPath = Join-Path $lockParent '.pipeline-forge.install.lock'
+    New-Item -ItemType Directory -Path $lockParent -Force | Out-Null
+    $heldLock = [System.IO.FileStream]::new(
+        $lockPath,
+        [System.IO.FileMode]::OpenOrCreate,
+        [System.IO.FileAccess]::ReadWrite,
+        [System.IO.FileShare]::None
+    )
+    try {
+        $lockRejected = $false
+        try {
+            & $installerPath -HomeDirectory $lockHome
+        }
+        catch {
+            if ($_.Exception.Message -notlike 'Another PipelineForge installation is already active*') {
+                throw
+            }
+            $lockRejected = $true
+        }
+        Assert-Condition -Condition $lockRejected -Message 'A competing install unexpectedly acquired the same HomeDirectory lock.'
+        Assert-Condition -Condition (-not (Test-Path -LiteralPath (Join-Path $lockHome '.codex\plugins\pipeline-forge'))) -Message 'Lock contention changed the plugin installation.'
+        Assert-Condition -Condition (-not (Test-Path -LiteralPath (Join-Path $lockHome '.agents\plugins\marketplace.json'))) -Message 'Lock contention changed the personal marketplace.'
+    }
+    finally {
+        $heldLock.Dispose()
+    }
+    $results.Add('same-home lock competition')
+
+    Write-Utf8NoBom -Path $lockPath -Value '{"stale":"owner-record-without-a-kernel-lock"}'
+    & $installerPath -HomeDirectory $lockHome
+    Assert-InstalledIdentity -TestHome $lockHome -ExpectedVersion $expectedManifest.version -ExpectedRevision $expectedRevision
+    Assert-NoTransactionArtifacts -TestHome $lockHome
+    $results.Add('stale lock record recovery')
 
     [PSCustomObject]@{
         PackageRoot = $packageRootPath

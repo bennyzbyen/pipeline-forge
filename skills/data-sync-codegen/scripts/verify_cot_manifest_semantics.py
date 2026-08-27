@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 VALID_SYNC_MODES = {"with_period", "without_period"}
 VALID_SOURCE_GROUPS = {"report_ps_p", "store_report", "store_report_generator"}
+SAFE_SCAFFOLD_ISSUE = "safe_scaffold_runtime_disabled"
 RUNTIME_KEYS = (
     "mysql_table",
     "last_update_time_column",
@@ -112,6 +113,7 @@ def validate_table(
     runtime: Mapping[str, Any],
     rowkey_rules: Mapping[str, Any],
     contract_ready: bool,
+    safe_scaffold: bool,
     errors: List[Dict[str, str]],
     warnings: List[Dict[str, str]],
     deployment_blockers: List[Dict[str, str]],
@@ -171,6 +173,8 @@ def validate_table(
         for column in dict.fromkeys(column for column in required_columns if column):
             if column not in field_set:
                 expected_contract_issues.append(f"column_not_in_fields:{column}")
+    if safe_scaffold:
+        expected_contract_issues.append(SAFE_SCAFFOLD_ISSUE)
     if clean_list(table.get("contract_issues")) != expected_contract_issues:
         add_issue(
             errors,
@@ -256,6 +260,9 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
             raise FileNotFoundError(path)
 
     manifest = load_json(manifest_path)
+    artifact_status = manifest.get("artifact_status") if isinstance(manifest.get("artifact_status"), Mapping) else {}
+    safe_scaffold = artifact_status.get("status") == "SAFE_SCAFFOLD"
+    safe_marker_path = project_dir / "SAFE_SCAFFOLD.json"
     raw_tables = manifest.get("tables")
     if not isinstance(raw_tables, list):
         raise ValueError("cot_sync_manifest.json tables must be a list")
@@ -271,13 +278,38 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     errors: List[Dict[str, str]] = []
     warnings: List[Dict[str, str]] = []
     deployment_blockers: List[Dict[str, str]] = []
+    if safe_scaffold:
+        if artifact_status.get("runtime_enabled") is not False:
+            add_issue(errors, "safe_scaffold_runtime_enabled", "SAFE_SCAFFOLD artifact_status must set runtime_enabled=false")
+        if not safe_marker_path.is_file():
+            add_issue(errors, "safe_scaffold_marker_missing", "SAFE_SCAFFOLD.json is required for a safe scaffold")
+        else:
+            safe_marker = load_json(safe_marker_path)
+            if safe_marker.get("status") != "SAFE_SCAFFOLD" or safe_marker.get("runtime_enabled") is not False:
+                add_issue(errors, "invalid_safe_scaffold_marker", "SAFE_SCAFFOLD.json must explicitly disable runtime")
+        add_issue(
+            deployment_blockers,
+            "safe_scaffold_runtime_disabled",
+            "SAFE_SCAFFOLD is review-only and cannot be deployed or executed",
+        )
+    elif safe_marker_path.exists():
+        add_issue(errors, "unexpected_safe_scaffold_marker", "SAFE_SCAFFOLD.json exists but manifest artifact_status is not SAFE_SCAFFOLD")
     validate_summary(manifest, tables, errors)
     validate_unique_targets(tables, errors)
 
     contract = manifest.get("codegen_contract") if isinstance(manifest.get("codegen_contract"), Mapping) else {}
     contract_ready = contract.get("ready_for_codegen") is True
     table_results = [
-        validate_table(table, runtime, rowkey_rules, contract_ready, errors, warnings, deployment_blockers)
+        validate_table(
+            table,
+            runtime,
+            rowkey_rules,
+            contract_ready,
+            safe_scaffold,
+            errors,
+            warnings,
+            deployment_blockers,
+        )
         for table in tables
     ]
 
@@ -322,6 +354,8 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
         "project_dir": str(project_dir),
         "status": "failed" if errors else "passed",
         "deployment_status": "ready" if deployment_ready else "review_required",
+        "artifact_status": "SAFE_SCAFFOLD" if safe_scaffold else "GENERATED",
+        "runtime_enabled": not safe_scaffold,
         "table_count": len(table_results),
         "checked_table_count": len(table_results),
         "with_period_count": len(expected_with),

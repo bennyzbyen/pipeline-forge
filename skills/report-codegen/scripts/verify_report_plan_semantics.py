@@ -215,6 +215,17 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     errors: List[Dict[str, str]] = []
     warnings: List[Dict[str, str]] = []
     deployment_blockers: List[Dict[str, str]] = []
+    safe_marker_path = project_dir / "SAFE_SCAFFOLD.json"
+    safe_scaffold = safe_marker_path.is_file()
+    if safe_scaffold:
+        safe_marker = load_json(safe_marker_path)
+        if safe_marker.get("status") != "SAFE_SCAFFOLD" or safe_marker.get("runtime_enabled") is not False:
+            add_issue(errors, "invalid_safe_scaffold_marker", "SAFE_SCAFFOLD.json must explicitly disable runtime")
+        add_issue(
+            deployment_blockers,
+            "safe_scaffold_runtime_disabled",
+            "SAFE_SCAFFOLD is review-only and cannot be deployed or executed",
+        )
     component_kind = clean_text((plan.get("summary") or {}).get("component_kind"))
     specialized = is_specialized(plan)
     if not component_kind and specialized:
@@ -260,11 +271,19 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
         add_issue(errors, f"contract_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
     for issue in validation_result.get("deployment_blockers", []) or []:
         add_issue(deployment_blockers, f"contract_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
+    if safe_scaffold and design_ready and execution_validation.get("status") != "failed":
+        add_issue(
+            errors,
+            "unexpected_safe_scaffold_marker",
+            "SAFE_SCAFFOLD.json is only valid when the design or execution contract is blocked",
+        )
     deployment_ready = not errors and not deployment_blockers and design_ready and implementation_ready
     return {
         "project_dir": str(project_dir),
         "status": "passed" if not errors else "failed",
         "deployment_status": "ready" if deployment_ready else "review_required",
+        "artifact_status": "SAFE_SCAFFOLD" if safe_scaffold else "GENERATED",
+        "runtime_enabled": not safe_scaffold,
         "component_kind": component_kind,
         "specialized_implementation": specialized,
         "implementation_ready": implementation_ready,

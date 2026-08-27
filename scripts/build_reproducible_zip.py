@@ -11,6 +11,8 @@ import uuid
 import zipfile
 from pathlib import Path
 
+from validate_archive_safety import validate_archive
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_PREFIX = "pipeline-forge"
@@ -49,29 +51,54 @@ def is_excluded(relative_path: Path) -> bool:
     )
 
 
+def is_filesystem_alias(path: Path) -> bool:
+    """Return whether a source path is a symlink, junction, or other reparse point."""
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if is_junction is not None and is_junction():
+        return True
+    attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
+    return bool(attributes & reparse_attribute)
+
+
 def collect_package_files(root: Path) -> list[tuple[str, Path]]:
     """Return stable archive-name/source pairs and reject filesystem aliases."""
     files: dict[str, Path] = {}
+    canonical_names: dict[str, str] = {}
     for relative in PACKAGE_PATHS:
         source = root / relative
         if not source.exists():
             raise FileNotFoundError(f"Required package path is missing: {relative}")
-        if source.is_symlink():
-            raise ValueError(f"Symbolic links are not allowed in the package: {relative}")
+        if is_filesystem_alias(source):
+            raise ValueError(f"Filesystem aliases are not allowed in the package: {relative}")
 
         candidates = [source] if source.is_file() else source.rglob("*")
         for candidate in candidates:
-            if candidate.is_symlink():
+            if is_filesystem_alias(candidate):
                 child = candidate.relative_to(root).as_posix()
-                raise ValueError(f"Symbolic links are not allowed in the package: {child}")
+                raise ValueError(f"Filesystem aliases are not allowed in the package: {child}")
             if not candidate.is_file():
                 continue
+            try:
+                candidate.resolve(strict=True).relative_to(root)
+            except ValueError as exc:
+                child = candidate.relative_to(root).as_posix()
+                raise ValueError(f"Package source resolves outside the repository: {child}") from exc
             relative_file = candidate.relative_to(root)
             if is_excluded(relative_file):
                 continue
             archive_name = f"{PACKAGE_PREFIX}/{relative_file.as_posix()}"
             if archive_name in files:
                 raise ValueError(f"Duplicate archive member: {archive_name}")
+            canonical_name = archive_name.casefold()
+            if canonical_name in canonical_names:
+                raise ValueError(
+                    "Case-conflicting archive members: "
+                    f"{canonical_names[canonical_name]} and {archive_name}"
+                )
+            canonical_names[canonical_name] = archive_name
             files[archive_name] = candidate
 
     return sorted(files.items(), key=lambda item: item[0])
@@ -107,6 +134,7 @@ def build_archive(root: Path, output: Path) -> Path:
                     compress_type=zipfile.ZIP_DEFLATED,
                     compresslevel=9,
                 )
+        validate_archive(temporary_output)
         os.replace(temporary_output, output)
     finally:
         temporary_output.unlink(missing_ok=True)

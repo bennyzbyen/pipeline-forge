@@ -11,7 +11,20 @@ from params_configs.execution_contract import execution_contract
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _assert_runtime_enabled():
+    marker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SAFE_SCAFFOLD.json")
+    if not os.path.isfile(marker_path):
+        return
+    with open(marker_path, "r", encoding="utf-8") as handle:
+        marker = json.load(handle)
+    if marker.get("status") == "SAFE_SCAFFOLD" or marker.get("runtime_enabled") is False:
+        raise RuntimeError(
+            "SAFE_SCAFFOLD runtime is disabled; resolve contract blockers and regenerate without --allow-blocked-scaffold"
+        )
+
+
 def main(params: dict):
+    _assert_runtime_enabled()
     params = normalize_parameters(params, execution_contract)
     validate_runtime_environment(params, execution_contract)
     # Security: expose only operational routing fields, never the raw payload.
