@@ -5,6 +5,7 @@
 - Fail closed on contaminated generation contracts and keep explicit safe scaffolds non-runnable.
 - Add malformed-input diagnostics and offline regressions for logs, DDL, and Pipeline Export workbooks.
 - Harden ZIP extraction, concurrent installation, release retries, and companion-site image handling.
+- Split the report scaffolder and DOCX extractor into bounded modules with compatibility and size regressions.
 
 ## 1.1.1 - 2026-08-27
 
