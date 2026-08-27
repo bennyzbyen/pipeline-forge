@@ -17,6 +17,7 @@ Extract requirement evidence into a technical-design handoff. Do not generate pr
 - Keep the formal handoff to three files: `technical_design.md`, `structured_facts.json`, and `questions.md`. Extracted evidence remains audit/debug material, not a normal codegen input.
 - Treat `technical_design.md` as one concise design document with explicit HLD and component-LLD sections. Do not create separate HLD, LLD, manifest, or traceability files unless the user asks.
 - Do not claim that the design is complete or invent missing decisions. Put routing, components, blockers, and `ready_for_codegen` in `structured_facts.json.codegen_contract`.
+- Give every generated ambiguity a stable semantic ID: `TC-CG-*` for code-generation blockers, `TC-DP-*` for deployment confirmations, and `TC-NB-*` for non-blocking questions. Preserve the same ID in `questions.md`, `codegen_contract.open_questions`, blocker summaries, and user-facing confirmation prompts.
 
 ## Inputs And Outputs
 
@@ -34,14 +35,15 @@ Write under the user-provided output directory, or `outputs/<project-name>/`:
 1. Run `scripts/extract_docx_bundle.py --docx <paths...> --out <output-dir> [--project-name <name>]`. Pass all PRD and waterline documents for the same project in one run.
 2. Review extracted evidence and `structured_facts.json`. Check any field-dictionary mapping that fell back to embedded-sheet order.
 3. Build `codegen_contract`, then use `assets/technical_design_template.md` as the final HLD + LLD document shape.
-4. Put material gaps in the matching `questions.md` category. Only `Blocking Code Generation` prevents full codegen.
+4. Put material gaps in the matching `questions.md` category. Refer to questions by their stable ID when asking for or applying user confirmation. Only `Blocking Code Generation` prevents full codegen.
+5. Run `scripts/validate_technical_contract.py --facts <structured_facts.json>` for normal review and add `--strict-deployment` only for deployment review. Run `scripts/verify_technical_contract_regression.py` after contract-schema changes.
 
 ## Acceptance Criteria
 
 - COT/data-sync handoffs expose source and target tables, target prefixes, field dictionaries, schedules, and unresolved rowkey or table exceptions.
 - Report handoffs expose physical targets, ordered output fields, source fields, filters, joins, calculations, schedules, and write behavior without requiring codegen to reopen the DOCX.
 - `structured_facts.json` is the machine-readable handoff. For detectable bySKU pipelines, emit `component_hints[].component_kind = bysku_report_pipeline`; inferred physical targets remain confirmation-required.
-- `codegen_contract` exposes `project_type`, `component_kind`, `components`, `ready_for_codegen`, and `blockers` without duplicating separate manifest or traceability files.
+- Contract v2 exposes field/source/rule/parameter/runtime/write contracts, stable validation gates, stable open-question IDs, conflicts, `ready_for_codegen`, and deployment blockers. Readers keep v1 compatibility, but strict deployment requires v2.
 - Block full-codegen readiness when physical targets, field mappings, FS/SKU parameters, schedules, write predicates, rowkeys, or rerun behavior required by the project are missing.
 
 ## Reference Routing

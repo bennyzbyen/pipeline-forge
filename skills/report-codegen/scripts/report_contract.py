@@ -44,6 +44,8 @@ SUPPORTED_EXPRESSION_OPS = {
 }
 SUPPORTED_AGGREGATIONS = {"sum", "count", "nunique", "min", "max", "mean", "first", "last"}
 SUPPORTED_WRITE_MODES = {"append", "replace_where"}
+SUPPORTED_CONTRACT_VERSIONS = {1, 2}
+PARAMETER_SHAPES = ("omitted", "null", "blank", "empty", "scalar", "list", "invalid")
 SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
@@ -59,6 +61,112 @@ def string_list(value: Any) -> List[str]:
 
 def add_issue(issues: List[Dict[str, str]], code: str, path: str, message: str) -> None:
     issues.append({"code": code, "path": path, "message": message})
+
+
+def validate_parameter_contracts(contract: Mapping[str, Any], blockers: List[Dict[str, str]]) -> None:
+    parameters = contract.get("parameters")
+    if not isinstance(parameters, list) or not parameters:
+        add_issue(blockers, "parameter_contract_undeclared", "execution_contract.parameters", "v2 requires an explicit parameter list")
+        return
+    names: Set[str] = set()
+    for index, parameter in enumerate(parameters):
+        path = f"execution_contract.parameters[{index}]"
+        if not isinstance(parameter, Mapping):
+            add_issue(blockers, "invalid_parameter_contract", path, "parameter contract must be an object")
+            continue
+        name = clean_text(parameter.get("name"))
+        if not name:
+            add_issue(blockers, "missing_parameter_name", path, "parameter name is required")
+        elif name in names:
+            add_issue(blockers, "duplicate_parameter_name", path, f"duplicate parameter: {name}")
+        names.add(name)
+        semantics = parameter.get("semantics")
+        if not isinstance(semantics, Mapping):
+            add_issue(blockers, "parameter_shapes_incomplete", f"{path}.semantics", "shape semantics must be an object")
+            continue
+        missing = [shape for shape in PARAMETER_SHAPES if not clean_text(semantics.get(shape))]
+        if missing:
+            add_issue(blockers, "parameter_shapes_incomplete", f"{path}.semantics", f"missing semantics for: {', '.join(missing)}")
+        default_on = string_list(parameter.get("default_on"))
+        if any(shape not in PARAMETER_SHAPES for shape in default_on):
+            add_issue(blockers, "invalid_parameter_default_shape", f"{path}.default_on", "default_on contains an unsupported shape")
+        accepted = string_list(parameter.get("accepted_shapes"))
+        if not accepted or any(shape not in {"scalar", "list"} for shape in accepted):
+            add_issue(blockers, "invalid_parameter_accepted_shapes", f"{path}.accepted_shapes", "accepted_shapes must explicitly contain scalar and/or list")
+        if any(shape in default_on for shape in ("omitted", "null", "blank", "empty")) and "default" not in parameter:
+            add_issue(blockers, "missing_parameter_default", f"{path}.default", "default_on requires an explicit default")
+
+
+def validate_runtime_contract(contract: Mapping[str, Any], blockers: List[Dict[str, str]]) -> None:
+    runtime = contract.get("runtime")
+    if not isinstance(runtime, Mapping):
+        add_issue(blockers, "runtime_contract_undeclared", "execution_contract.runtime", "v2 requires a runtime contract")
+        return
+    for key in ("python_min", "entrypoint"):
+        if not clean_text(runtime.get(key)):
+            add_issue(blockers, "runtime_contract_incomplete", f"execution_contract.runtime.{key}", f"{key} is required")
+    expected_protocol = {"method": "put", "scope": "inst", "level": "task", "body_key": "metrics"}
+    protocol = runtime.get("result_protocol")
+    if not isinstance(protocol, Mapping) or any(clean_text(protocol.get(key)) != value for key, value in expected_protocol.items()):
+        add_issue(
+            blockers,
+            "invalid_dataengine_result_protocol",
+            "execution_contract.runtime.result_protocol",
+            "expected method=put, scope=inst, level=task, body_key=metrics",
+        )
+    matrix = runtime.get("environment_connection_matrix")
+    if not isinstance(matrix, Mapping) or not matrix:
+        add_issue(blockers, "environment_matrix_undeclared", "execution_contract.runtime.environment_connection_matrix", "declare each supported runtime environment and connection mode")
+    else:
+        for environment, profile in matrix.items():
+            if not clean_text(environment) or not isinstance(profile, Mapping) or not clean_text(profile.get("connection_mode")):
+                add_issue(blockers, "invalid_environment_profile", f"execution_contract.runtime.environment_connection_matrix.{environment}", "each environment needs connection_mode")
+    safe_log_policy = runtime.get("safe_log_policy")
+    if not isinstance(safe_log_policy, Mapping) or safe_log_policy.get("log_credentials") is not False or safe_log_policy.get("log_parameter_values") is not False:
+        add_issue(blockers, "unsafe_log_policy", "execution_contract.runtime.safe_log_policy", "set log_credentials=false and log_parameter_values=false")
+
+
+def validate_v2_write_safety(
+    write: Mapping[str, Any],
+    expected_columns: List[str],
+    path: str,
+    blockers: List[Dict[str, str]],
+) -> None:
+    columns = string_list(write.get("columns"))
+    if columns != expected_columns:
+        add_issue(blockers, "write_columns_mismatch", f"{path}.columns", "write columns must match the ordered output columns")
+    column_types = string_list(write.get("column_types"))
+    if len(column_types) != len(columns) or not all(column_types):
+        add_issue(blockers, "write_types_incomplete", f"{path}.column_types", "every ordered column needs an explicit target type")
+    if clean_text(write.get("empty_output_policy")) != "block_destructive_replace":
+        add_issue(blockers, "unsafe_empty_output_policy", f"{path}.empty_output_policy", "empty output must not trigger destructive replacement")
+    transport = clean_text(write.get("transport"))
+    if transport not in {"insert_df", "insert_file"}:
+        add_issue(blockers, "unsupported_write_transport", f"{path}.transport", "transport must be insert_df or insert_file")
+    if transport == "insert_file":
+        wire = write.get("staging_wire_format")
+        expected = {
+            "encoding": "utf-8",
+            "bom": False,
+            "header": False,
+            "null": "\\N",
+            "datetime_precision": "seconds",
+            "integer_format": "integer",
+            "explicit_columns": True,
+        }
+        if not isinstance(wire, Mapping) or any(wire.get(key) != value for key, value in expected.items()):
+            add_issue(blockers, "invalid_clickhouse_wire_format", f"{path}.staging_wire_format", "insert_file requires UTF-8 without BOM/header, \\N nulls, integer formatting, second precision, and explicit columns")
+    if clean_text(write.get("mode")) == "replace_where":
+        safety = write.get("replacement_safety")
+        if not isinstance(safety, Mapping):
+            add_issue(blockers, "replacement_safety_undeclared", f"{path}.replacement_safety", "replace_where needs an atomic, recoverable, or acknowledged non-atomic strategy")
+        else:
+            strategy = clean_text(safety.get("strategy"))
+            acknowledged = safety.get("non_atomic_risk_acknowledged") is True
+            if strategy not in {"atomic_swap", "recoverable_replace", "delete_then_insert"}:
+                add_issue(blockers, "replacement_safety_undeclared", f"{path}.replacement_safety.strategy", "unsupported replacement strategy")
+            elif strategy == "delete_then_insert" and not acknowledged:
+                add_issue(blockers, "non_atomic_replace_unacknowledged", f"{path}.replacement_safety", "DELETE-then-INSERT requires explicit risk acknowledgement")
 
 
 def valid_value_from(value: Any) -> bool:
@@ -196,12 +304,28 @@ def validate_step(
 def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     errors: List[Dict[str, str]] = []
     warnings: List[Dict[str, str]] = []
+    deployment_blockers: List[Dict[str, str]] = []
     if not isinstance(contract, Mapping):
         add_issue(errors, "missing_execution_contract", "execution_contract", "execution_contract must be an object")
-        return {"status": "failed", "error_count": len(errors), "warning_count": 0, "errors": errors, "warnings": []}
+        return {
+            "status": "failed",
+            "deployment_status": "review_required",
+            "error_count": len(errors),
+            "deployment_blocker_count": 0,
+            "warning_count": 0,
+            "errors": errors,
+            "deployment_blockers": [],
+            "warnings": [],
+        }
 
-    if contract.get("version") != 1:
-        add_issue(errors, "unsupported_contract_version", "execution_contract.version", "version must be 1")
+    version = contract.get("version", 1)
+    if version not in SUPPORTED_CONTRACT_VERSIONS:
+        add_issue(errors, "unsupported_contract_version", "execution_contract.version", "version must be 1 or 2")
+    elif version == 1:
+        add_issue(deployment_blockers, "legacy_execution_contract_v1", "execution_contract.version", "v1 remains codegen-compatible but strict deployment requires v2")
+    else:
+        validate_parameter_contracts(contract, deployment_blockers)
+        validate_runtime_contract(contract, deployment_blockers)
 
     sources = contract.get("sources")
     if not isinstance(sources, Mapping) or not sources:
@@ -316,11 +440,16 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
                     add_issue(errors, "missing_predicate_value", path, "replace predicate value_from is required")
                 elif not valid_value_from(predicate.get("value_from")):
                     add_issue(errors, "invalid_value_from", path, "write value_from must use time_range.<key> or params.<key>")
+        if version == 2:
+            validate_v2_write_safety(write, expected_outputs.get(clean_text(output_name), []), path, deployment_blockers)
 
     return {
         "status": "passed" if not errors else "failed",
+        "deployment_status": "ready" if not errors and not deployment_blockers else "review_required",
         "error_count": len(errors),
+        "deployment_blocker_count": len(deployment_blockers),
         "warning_count": len(warnings),
         "errors": errors,
+        "deployment_blockers": deployment_blockers,
         "warnings": warnings,
     }

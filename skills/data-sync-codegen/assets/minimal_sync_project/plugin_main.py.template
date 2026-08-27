@@ -38,7 +38,23 @@ def _apply_table_defaults(params: dict) -> dict:
 
     clickhouse_info = params.setdefault("clickhouse_information", {})
     clickhouse_info.setdefault("clickhouse_table", defaults.get("clickhouse_table"))
+    source_info["period"] = _normalize_period(source_info.get("period"))
     return params
+
+
+def _normalize_period(value):
+    """COT semantics: empty means automatic incremental mode; non-empty means ordered manual periods."""
+    if value is None or value == "" or value == [] or value == ():
+        return None
+    values = list(value) if isinstance(value, (list, tuple)) else [value]
+    normalized = []
+    for item in values:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("period must be a non-empty string or list of non-empty strings")
+        item = item.strip()
+        if item not in normalized:
+            normalized.append(item)
+    return normalized
 
 
 def calc_single(params: dict):

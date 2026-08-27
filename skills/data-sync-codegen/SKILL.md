@@ -34,7 +34,7 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 6. If `codegen_contract.ready_for_codegen = false`, return its blockers. Use `--allow-blocked-scaffold` only for an explicitly requested safe scaffold, and do not claim full implementation.
 7. Adapt only confirmed tables, fields, parameters, rowkeys, and exceptions. Keep business-specific variation in config where possible.
 8. Compile generated Python, then run `scripts/verify_cot_manifest_semantics.py --project-dir <target>` to check every table against the manifest, runtime config, fields, and rowkey review surface.
-9. Run `scripts/verify_codegen_observability.py --project-dir <target>` and `scripts/verify_cot_runtime_semantics.py --project-dir <target>` for scaffold projects. Use the manifest verifier's `--strict-deployment` mode only when the user is preparing a deployment review.
+9. Run `scripts/verify_codegen_observability.py --project-dir <target>` and `scripts/verify_cot_runtime_semantics.py --project-dir <target>` for scaffold projects. The runtime verifier checks empty/manual period semantics and the final HBase request after wrapper defaults. Use the manifest verifier's `--strict-deployment` mode only when the user is preparing a deployment review.
 10. After changing manifest generation or validation logic, run `scripts/verify_cot_manifest_semantics_regression.py` to prove both a valid table and an invalid guarded table behave correctly.
 
 ## Output-Equivalence Standard
@@ -58,3 +58,5 @@ Generated code may be simpler than a production sample, but it must preserve:
 - Do not claim runtime parity without the fake-runtime verifier or equivalent deployment-log evidence.
 - Do not claim full-table coverage from the six-case fake runtime alone; require the all-table manifest verifier as well.
 - Keep per-table `runtime_enabled=false` while generated `contract_issues` remain; do not bypass that guard for a review-only scaffold.
+- Treat empty period input as automatic incremental mode; normalize non-empty scalar/list input to an ordered deduplicated list and reject invalid non-empty shapes.
+- Do not infer environment connection modes from names. Strict deployment requires the declared runtime matrix and target write/recovery contracts.

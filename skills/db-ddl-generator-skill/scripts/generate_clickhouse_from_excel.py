@@ -28,12 +28,7 @@ def choose_order_by(schema: Dict[str, Any], explicit_order_by: Optional[List[str
     if explicit_order_by:
         return explicit_order_by
 
-    names = [column["name"] for column in schema.get("columns", [])]
-    lower_to_name = {name.lower(): name for name in names}
-    for preferred in ("rowkey", "dateid", "id"):
-        if preferred in lower_to_name:
-            return [lower_to_name[preferred]]
-    return names[:1]
+    return []
 
 
 def parse_excel(path: Path, sheet: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -58,6 +53,11 @@ def main() -> None:
     parser.add_argument("--env", choices=["qa", "prod"], default="qa")
     parser.add_argument("--order-by", help="Comma-separated ORDER BY fields applied to every generated table")
     parser.add_argument("--partition-by", help="Comma-separated PARTITION BY fields applied to every generated table")
+    parser.add_argument("--engine", required=True, choices=["MergeTree", "ReplacingMergeTree", "ReplicatedMergeTree", "ReplicatedReplacingMergeTree"])
+    parser.add_argument("--cluster")
+    parser.add_argument("--replication-path")
+    parser.add_argument("--version-column")
+    parser.add_argument("--allow-key-nullability-coercion", action="store_true")
     parser.add_argument("--cot-period-code-rule", action="store_true", help="When both period and code exist, use PARTITION BY period and ORDER BY (period, code)")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -75,10 +75,8 @@ def main() -> None:
         effective_partition_by = partition_by
         if args.cot_period_code_rule and explicit_order_by is None and partition_by is None:
             effective_partition_by, order_by, _applied = generate_ddl.apply_cot_period_code_rule(schema, None, None)
-        key_names = set(order_by or [])
-        for column in schema.get("columns", []):
-            if column["name"] in key_names:
-                column["nullable"] = False
+        if not order_by:
+            raise ValueError("--order-by is required unless --cot-period-code-rule applies")
         sql, _notes = generate_ddl.build_create_table(
             schema,
             target="clickhouse",
@@ -87,6 +85,11 @@ def main() -> None:
             table=schema.get("table_name"),
             partition_by=effective_partition_by,
             order_by=order_by,
+            clickhouse_engine=args.engine,
+            clickhouse_cluster=args.cluster,
+            clickhouse_replication_path=args.replication_path,
+            clickhouse_version_column=args.version_column,
+            allow_key_nullability_coercion=args.allow_key_nullability_coercion,
         )
         sql_parts.append(sql)
 

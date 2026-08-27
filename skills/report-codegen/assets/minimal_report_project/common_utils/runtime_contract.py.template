@@ -1,0 +1,91 @@
+# coding: utf-8
+"""Apply execution-contract parameter and environment semantics at the entrypoint."""
+
+import datetime
+
+
+PARAMETER_SHAPES = ("omitted", "null", "blank", "empty", "scalar", "list", "invalid")
+
+
+def parameter_shape(present, value):
+    if not present:
+        return "omitted"
+    if value is None:
+        return "null"
+    if isinstance(value, str) and not value.strip():
+        return "blank"
+    if isinstance(value, (list, tuple)):
+        return "empty" if not value else "list"
+    if isinstance(value, (str, int, float, bool)):
+        return "scalar"
+    return "invalid"
+
+
+def resolve_default(default, today=None):
+    if not isinstance(default, dict):
+        return default
+    kind = default.get("kind")
+    if kind == "relative_date":
+        base = today or datetime.date.today()
+        if isinstance(base, datetime.datetime):
+            base = base.date()
+        target = base + datetime.timedelta(days=int(default.get("days", 0)))
+        return target.strftime(default.get("format") or "%Y-%m-%d")
+    if kind == "literal":
+        return default.get("value")
+    raise ValueError("unsupported parameter default kind: {}".format(kind))
+
+
+def normalize_one(params, contract, today=None):
+    name = str(contract.get("name") or "").strip()
+    if not name:
+        raise ValueError("parameter contract name is required")
+    present = name in params
+    value = params.get(name)
+    shape = parameter_shape(present, value)
+    if shape in set(contract.get("default_on") or []):
+        value = resolve_default(contract.get("default"), today=today)
+        shape = parameter_shape(True, value)
+    accepted = set(contract.get("accepted_shapes") or [])
+    if shape == "invalid" or shape not in accepted:
+        raise ValueError("parameter {} does not accept {} input".format(name, shape))
+    if shape == "scalar" and contract.get("normalize_to") == "list":
+        value = [value]
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list):
+        if contract.get("trim_strings", True):
+            value = [item.strip() if isinstance(item, str) else item for item in value]
+        if contract.get("reject_blank_items", True) and any(isinstance(item, str) and not item for item in value):
+            raise ValueError("parameter {} contains a blank list item".format(name))
+        if contract.get("deduplicate"):
+            deduplicated = []
+            for item in value:
+                if item not in deduplicated:
+                    deduplicated.append(item)
+            value = deduplicated
+    return value
+
+
+def normalize_parameters(params, execution_contract, today=None):
+    normalized = dict(params or {})
+    if execution_contract.get("version", 1) != 2:
+        return normalized
+    for parameter in execution_contract.get("parameters") or []:
+        name = str(parameter.get("name") or "").strip()
+        normalized[name] = normalize_one(normalized, parameter, today=today)
+    return normalized
+
+
+def validate_runtime_environment(params, execution_contract):
+    if execution_contract.get("version", 1) != 2:
+        return
+    runtime = execution_contract.get("runtime") or {}
+    matrix = runtime.get("environment_connection_matrix") or {}
+    environment = params.get("running_env") or runtime.get("default_environment")
+    if not environment:
+        raise ValueError("running_env is required by execution contract v2")
+    if environment not in matrix:
+        raise ValueError("running_env is not declared in the environment connection matrix")
+    if not (matrix.get(environment) or {}).get("connection_mode"):
+        raise ValueError("running_env connection_mode is missing")

@@ -21,6 +21,11 @@ def main() -> None:
     parser.add_argument("--partition-by")
     parser.add_argument("--order-by")
     parser.add_argument("--primary-key")
+    parser.add_argument("--engine", choices=["MergeTree", "ReplacingMergeTree", "ReplicatedMergeTree", "ReplicatedReplacingMergeTree"])
+    parser.add_argument("--cluster")
+    parser.add_argument("--replication-path")
+    parser.add_argument("--version-column")
+    parser.add_argument("--allow-key-nullability-coercion", action="store_true")
     parser.add_argument("--sql-only", action="store_true")
     args = parser.parse_args()
 
@@ -37,6 +42,11 @@ def main() -> None:
         partition_by=generate_ddl.split_csv(args.partition_by) or None,
         order_by=generate_ddl.split_csv(args.order_by) or None,
         primary_key=generate_ddl.split_csv(args.primary_key) or None,
+        clickhouse_engine=args.engine,
+        clickhouse_cluster=args.cluster,
+        clickhouse_replication_path=args.replication_path,
+        clickhouse_version_column=args.version_column,
+        allow_key_nullability_coercion=args.allow_key_nullability_coercion,
     )
     if args.sql_only:
         print(sql)

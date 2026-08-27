@@ -1,11 +1,11 @@
 # Versioning
 
-PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The stable version baseline is `1.0.2`.
+PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The current stable version is `1.1.0`.
 
 ## Increment Rules
 
-- Increment PATCH for backward-compatible fixes, documentation updates, prompt refinements, and internal maintenance: `1.0.2` to `1.0.3`.
-- Increment MINOR for backward-compatible features, new skills, or newly supported workflows: `1.0.3` to `1.1.0`.
+- Increment PATCH for backward-compatible fixes, documentation updates, prompt refinements, and internal maintenance: `1.1.0` to `1.1.1`.
+- Increment MINOR for backward-compatible features, new skills, or newly supported workflows: `1.1.1` to `1.2.0`.
 - Increment MAJOR for incompatible changes to plugin structure, configuration, public workflows, or supported contracts: `1.8.4` to `2.0.0`.
 - Use prerelease identifiers for test releases: `1.1.0-beta.1`.
 

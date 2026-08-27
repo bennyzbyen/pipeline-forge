@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 - 2026-08-27
+
+- Added technical contract v2 with explicit field, source, rule, parameter, runtime, write, conflict, and validation-gate sections while retaining v1 review compatibility.
+- Separated code-generation readiness from strict deployment blockers and made warnings non-blocking evidence.
+- Added executable parameter-shape semantics, DataEngine result-protocol checks, environment connection matrices, and safe-log requirements.
+- Added ClickHouse column/type/wire-format preflight, empty-output protection, and explicit non-atomic replacement acknowledgement.
+- Added final HBase request verification after wrapper defaults and normalized COT period scalar/list/empty behavior.
+- Promoted the DDL module into the repository source-of-truth set and removed inferred ClickHouse engines, clusters, replication paths, and uniqueness assumptions.
+- Added self-contained synthetic QAS acceptance regressions for threshold conflicts, boundaries, required fields, multi-date inputs, period isolation, exact enums, zero output, reconciliation, and result protocol.
+
 ## 1.0.2 - 2026-08-21
 
 - Established `1.0.2` as the stable PipelineForge version baseline.

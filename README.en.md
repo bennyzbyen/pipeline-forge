@@ -77,4 +77,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## Release Notes
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md), starting from the stable `1.0.2` baseline. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `1.1.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.

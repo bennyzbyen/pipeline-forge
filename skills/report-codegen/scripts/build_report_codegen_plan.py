@@ -289,6 +289,11 @@ def render_markdown(plan: Dict[str, Any]) -> str:
                     [f"  - `{item.get('path', '')}`: {item.get('message', '')}" for item in validation.get("errors", [])]
                     or ["  - None."]
                 ),
+                f"- Deployment blockers: {validation.get('deployment_blocker_count', 0)}",
+                *(
+                    [f"  - `{item.get('path', '')}`: {item.get('message', '')}" for item in validation.get("deployment_blockers", [])]
+                    or ["  - None."]
+                ),
                 "",
             ]
         )

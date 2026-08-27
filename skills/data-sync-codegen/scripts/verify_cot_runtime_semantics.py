@@ -354,6 +354,17 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
     sync_without.COT_REPORT_WITHOUT_P = COT_REPORT_WITHOUT_P
     with isolated_imports(project_dir, {"sync_with_period": sync_with, "sync_without_period": sync_without}):
         module = import_from_path("plugin_main", project_dir / "plugin_main.py")
+        assert module._normalize_period(None) is None
+        assert module._normalize_period("") is None
+        assert module._normalize_period([]) is None
+        assert module._normalize_period("2026P03") == ["2026P03"]
+        assert module._normalize_period(["2026P03", "2026P02", "2026P03"]) == ["2026P03", "2026P02"]
+        try:
+            module._normalize_period({"invalid": True})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid non-empty period shape must fail")
         with_result = module.calc_single({"source_informations": {"mysql_table": "ic_detail_gb_p"}})
         without_result = module.calc_single({"source_informations": {"mysql_table": "rpt_exe_visit_frequency_by_people"}})
 
@@ -369,9 +380,42 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
     return {"case": "plugin_main_defaults", "events": events, "with_table": with_params["source_informations"]["mysql_table"]}
 
 
+def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
+    requests: List[Dict[str, Any]] = []
+
+    class FakeHBaseClient:
+        def query_df(self, **kwargs):
+            requests.append(dict(kwargs))
+            import pandas as pd
+
+            return pd.DataFrame(columns=["rowkey"])
+
+    common = types.ModuleType("plugin_common")
+
+    class ClientWrapper:
+        def __init__(self, client_type: str):
+            assert client_type == "gateway"
+            self.fs_client = object()
+            self.hbase_client = FakeHBaseClient()
+
+    common.ClientWrapper = ClientWrapper
+    module_path = project_dir / "cot_sync_with_period" / "hbase_operation.py"
+    with isolated_imports(project_dir, {"plugin_common": common}):
+        module = import_from_path("cot_sync_with_period.hbase_operation", module_path)
+        result = module.delete_hbase("l2_fixture.table", ["period", "code"], "2026P03", [])
+    assert result == 0, result
+    assert len(requests) == 1, requests
+    final_request = requests[0]
+    assert final_request["row_start"] == "2026P03", final_request
+    assert final_request["row_stop"] == "2026P03Z", final_request
+    assert final_request["row_prefixs"] == [str(item) for item in range(10)], final_request
+    return {"case": "hbase_final_request", "row_prefix_count": len(final_request["row_prefixs"]), "status": "passed"}
+
+
 def run_verification(project_dir: Path) -> Dict[str, Any]:
     cases = [
         test_plugin_main_defaults,
+        test_hbase_final_request,
         test_with_period_manual,
         test_with_period_incremental,
         test_with_period_no_changes,

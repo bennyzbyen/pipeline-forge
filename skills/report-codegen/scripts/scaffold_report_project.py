@@ -2837,6 +2837,8 @@ class DataStorage:
 def write_contract_data_storage(target: Path) -> None:
     content = '''# coding: utf-8
 import re
+import tempfile
+from pathlib import Path
 
 from common_utils.all_modules import Dict, logger, pd
 from params_configs.execution_contract import execution_contract
@@ -2896,11 +2898,69 @@ class DataStorage:
             return client.insert_dataframe(table, df)
         raise RuntimeError("clickhouse_client must provide insert_df(table, df) or insert_dataframe(table, df)")
 
+    def _prepare(self, output_name: str, df: pd.DataFrame, write: dict) -> pd.DataFrame:
+        columns = list(write.get("columns") or [])
+        column_types = list(write.get("column_types") or [])
+        missing = [column for column in columns if column not in df.columns]
+        if missing:
+            raise ValueError(f"output {output_name} is missing target columns: {missing}")
+        if len(columns) != len(column_types):
+            raise ValueError(f"output {output_name} target columns/types are not aligned")
+        prepared = df.loc[:, columns].copy()
+        for column, target_type in zip(columns, column_types):
+            normalized_type = str(target_type or "").lower().replace("nullable(", "").rstrip(")")
+            if normalized_type.startswith(("int", "uint")):
+                numeric = pd.to_numeric(prepared[column], errors="coerce")
+                invalid = prepared[column].notna() & numeric.isna()
+                fractional = numeric.notna() & ((numeric % 1) != 0)
+                if invalid.any() or fractional.any():
+                    raise ValueError(f"{output_name}.{column} requires integer-compatible values")
+                prepared[column] = numeric.map(lambda value: None if pd.isna(value) else str(int(value)))
+            elif normalized_type.startswith("datetime"):
+                parsed = pd.to_datetime(prepared[column], errors="coerce")
+                invalid = prepared[column].notna() & parsed.isna()
+                if invalid.any():
+                    raise ValueError(f"{output_name}.{column} requires datetime-compatible values")
+                prepared[column] = parsed.map(lambda value: None if pd.isna(value) else value.strftime("%Y-%m-%d %H:%M:%S"))
+        return prepared
+
+    def _insert_file(self, client, table: str, df: pd.DataFrame, write: dict):
+        wire = write.get("staging_wire_format") or {}
+        columns = list(write.get("columns") or [])
+        insert_file_fn = self.params.get("clickhouse_insert_file")
+        if insert_file_fn is None:
+            from clickhouse_connect.driver.tools import insert_file as insert_file_fn
+        database, _, table_name = table.partition(".")
+        if not table_name:
+            database, table_name = None, database
+        with tempfile.TemporaryDirectory(prefix="pipelineforge_clickhouse_") as temp_dir:
+            path = Path(temp_dir) / f"{table_name}.csv"
+            df.to_csv(
+                path,
+                index=False,
+                header=False,
+                encoding="utf-8",
+                na_rep="\\\\N",
+                lineterminator="\\n",
+            )
+            raw = path.read_bytes()
+            if raw.startswith(b"\\xef\\xbb\\xbf"):
+                raise ValueError("ClickHouse staging CSV must not contain a UTF-8 BOM")
+            return insert_file_fn(
+                client,
+                table_name,
+                str(path),
+                column_names=columns,
+                database=database,
+                settings={"input_format_allow_errors_ratio": 0, "input_format_allow_errors_num": 0},
+            )
+
     def _write_one(self, client, output_name: str, df: pd.DataFrame, write: dict):
         table = self._identifier(write.get("table"))
         if df is None or df.empty:
             logger.info("stage_skip stage=data_storage output={} reason=empty_output", output_name)
             return {"output": output_name, "target": table, "rows": 0, "status": "skipped_empty"}
+        prepared = self._prepare(output_name, df, write)
         mode = write.get("mode")
         if mode == "replace_where":
             predicate = write.get("predicate") or {}
@@ -2911,7 +2971,10 @@ class DataStorage:
         elif mode != "append":
             raise ValueError(f"unsupported write mode: {mode}")
         logger.info("target_insert storage=clickhouse output={} target={} rows={}", output_name, table, len(df))
-        self._insert(client, table, df)
+        if write.get("transport") == "insert_file":
+            self._insert_file(client, table, prepared, write)
+        else:
+            self._insert(client, table, prepared)
         return {"output": output_name, "target": table, "rows": len(df), "status": "inserted", "mode": mode}
 
     def run(self):

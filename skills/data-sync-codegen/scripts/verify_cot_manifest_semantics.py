@@ -22,6 +22,7 @@ RUNTIME_KEYS = (
     "key_column",
     "hbase_table",
     "rowkey_rule_columns",
+    "hbase_delete_request_contract",
     "clickhouse_table",
     "source_group",
     "sync_mode",
@@ -113,6 +114,7 @@ def validate_table(
     contract_ready: bool,
     errors: List[Dict[str, str]],
     warnings: List[Dict[str, str]],
+    deployment_blockers: List[Dict[str, str]],
 ) -> Dict[str, Any]:
     table_name = clean_text(table.get("mysql_table"))
     table_errors_before = len(errors)
@@ -224,7 +226,15 @@ def validate_table(
             if not isinstance(prefix.get("mod"), int) or prefix.get("mod", 0) <= 0:
                 add_issue(errors, "invalid_rowkey_prefix", "enabled rowkey prefix needs a positive integer mod", table_name)
         if not confirmed:
-            add_issue(warnings, "rowkey_unconfirmed", "rowkey rule still has confirmed=false", table_name)
+            add_issue(deployment_blockers, "rowkey_unconfirmed", "rowkey rule still has confirmed=false", table_name)
+
+    request_contract = table.get("hbase_delete_request_contract") if isinstance(table.get("hbase_delete_request_contract"), Mapping) else {}
+    if sync_mode == "with_period":
+        expected_prefixes = [str(item) for item in range(10)]
+        if clean_list(request_contract.get("row_prefixs")) != expected_prefixes:
+            add_issue(errors, "hbase_final_request_mismatch", "final HBase delete request must use row prefixes 0-9", table_name)
+        if request_contract.get("validate_after_wrapper_defaults") is not True:
+            add_issue(deployment_blockers, "hbase_final_request_unvalidated", "validate the final HBase request after wrapper defaults", table_name)
 
     return {
         "table": table_name,
@@ -260,13 +270,14 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
 
     errors: List[Dict[str, str]] = []
     warnings: List[Dict[str, str]] = []
+    deployment_blockers: List[Dict[str, str]] = []
     validate_summary(manifest, tables, errors)
     validate_unique_targets(tables, errors)
 
     contract = manifest.get("codegen_contract") if isinstance(manifest.get("codegen_contract"), Mapping) else {}
     contract_ready = contract.get("ready_for_codegen") is True
     table_results = [
-        validate_table(table, runtime, rowkey_rules, contract_ready, errors, warnings)
+        validate_table(table, runtime, rowkey_rules, contract_ready, errors, warnings, deployment_blockers)
         for table in tables
     ]
 
@@ -288,11 +299,25 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
 
     questions = clean_list(manifest.get("questions"))
     for question in questions:
-        add_issue(warnings, "open_question", question)
+        add_issue(deployment_blockers, "open_question", question)
     if not contract_ready:
         add_issue(warnings, "codegen_contract_blocked", "codegen_contract.ready_for_codegen is not true")
 
-    deployment_ready = not errors and not warnings and contract_ready
+    if contract.get("contract_version", 1) == 1:
+        add_issue(deployment_blockers, "legacy_codegen_contract_v1", "strict deployment requires codegen contract v2")
+    validation_result = contract.get("validation_result") if isinstance(contract.get("validation_result"), Mapping) else {}
+    for item in validation_result.get("errors", []) or []:
+        add_issue(errors, f"contract_{item.get('code')}", f"{item.get('path')}: {item.get('message')}")
+    for item in validation_result.get("deployment_blockers", []) or []:
+        add_issue(deployment_blockers, f"contract_{item.get('code')}", f"{item.get('path')}: {item.get('message')}")
+    runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), Mapping) else {}
+    for key in ("python_min", "entrypoint", "result_protocol", "environment_connection_matrix", "safe_log_policy"):
+        if not runtime_contract.get(key):
+            add_issue(deployment_blockers, "runtime_contract_incomplete", f"runtime_contract.{key} is required")
+    write_contracts = manifest.get("write_contracts")
+    if not isinstance(write_contracts, list) or not write_contracts:
+        add_issue(deployment_blockers, "write_contract_undeclared", "strict deployment requires target write and recovery contracts")
+    deployment_ready = not errors and not deployment_blockers and contract_ready
     return {
         "project_dir": str(project_dir),
         "status": "failed" if errors else "passed",
@@ -303,8 +328,10 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
         "without_period_count": len(expected_without),
         "confirmed_rowkey_count": sum(1 for result in table_results if result["rowkey_confirmed"]),
         "error_count": len(errors),
+        "deployment_blocker_count": len(deployment_blockers),
         "warning_count": len(warnings),
         "errors": errors,
+        "deployment_blockers": deployment_blockers,
         "warnings": warnings,
         "tables": table_results,
     }
@@ -317,7 +344,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strict-deployment",
         action="store_true",
-        help="Fail when deployment confirmations or open questions remain, not only on structural errors.",
+        help="Fail when ERROR or DEPLOYMENT_BLOCKER findings remain; warnings are non-blocking.",
     )
     return parser.parse_args()
 

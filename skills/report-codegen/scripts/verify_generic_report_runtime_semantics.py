@@ -32,6 +32,10 @@ class FakeClickHouseClient:
         self.events.append(("insert_df", table, df.copy()))
 
 
+def fake_insert_file(client, table: str, file_path: str, column_names: List[str], database: str, settings: Dict[str, Any]):
+    client.events.append(("insert_file", database, table, list(column_names), Path(file_path).read_bytes(), dict(settings)))
+
+
 def build_plan(component_kind: str) -> Dict[str, Any]:
     columns = ["region", "period", "revenue", "store_count", "avg_revenue"]
     rules = [
@@ -39,7 +43,40 @@ def build_plan(component_kind: str) -> Dict[str, Any]:
         for column in columns
     ]
     contract = {
-        "version": 1,
+        "version": 2,
+        "parameters": [
+            {
+                "name": "target_date",
+                "type": "date-list",
+                "accepted_shapes": ["scalar", "list"],
+                "default_on": ["omitted", "null", "blank", "empty"],
+                "default": {"kind": "relative_date", "days": -1, "format": "%Y-%m-%d"},
+                "normalize_to": "list",
+                "deduplicate": True,
+                "preserve_order": True,
+                "semantics": {
+                    "omitted": "default to T-1",
+                    "null": "default to T-1",
+                    "blank": "default to T-1",
+                    "empty": "default to T-1",
+                    "scalar": "normalize to a one-item list",
+                    "list": "preserve order and deduplicate",
+                    "invalid": "raise ValueError",
+                },
+            }
+        ],
+        "runtime": {
+            "python_min": "3.8",
+            "entrypoint": "plugin_main.py",
+            "default_environment": "qa",
+            "result_protocol": {"method": "put", "scope": "inst", "level": "task", "body_key": "metrics"},
+            "environment_connection_matrix": {
+                "dev": {"connection_mode": "direct"},
+                "qa": {"connection_mode": "managed"},
+                "prod": {"connection_mode": "managed"},
+            },
+            "safe_log_policy": {"log_credentials": False, "log_parameter_values": False},
+        },
         "sources": {
             "orders": {
                 "kind": "injected",
@@ -120,6 +157,23 @@ def build_plan(component_kind: str) -> Dict[str, Any]:
                 "table": "qa.region_sales",
                 "mode": "replace_where",
                 "predicate": {"column": "period", "value_from": "time_range.period"},
+                "columns": columns,
+                "column_types": ["String", "String", "Decimal(18,2)", "UInt64", "Decimal(18,2)"],
+                "transport": "insert_file" if component_kind == "bysku_report_pipeline" else "insert_df",
+                "empty_output_policy": "block_destructive_replace",
+                "staging_wire_format": {
+                    "encoding": "utf-8",
+                    "bom": False,
+                    "header": False,
+                    "null": "\\N",
+                    "datetime_precision": "seconds",
+                    "integer_format": "integer",
+                    "explicit_columns": True,
+                },
+                "replacement_safety": {
+                    "strategy": "delete_then_insert",
+                    "non_atomic_risk_acknowledged": True,
+                },
             }
         },
     }
@@ -161,10 +215,18 @@ def build_plan(component_kind: str) -> Dict[str, Any]:
         "schedules": [{}],
         "component_hints": [],
         "codegen_contract": {
+            "contract_version": 2,
             "project_type": "report",
             "component_kind": component_kind,
             "ready_for_codegen": True,
             "blockers": [],
+            "validation_result": {
+                "status": "passed",
+                "deployment_status": "ready",
+                "errors": [],
+                "deployment_blockers": [],
+                "warnings": [],
+            },
         },
         "execution_contract": contract,
         "execution_validation": {"status": "passed", "error_count": 0, "warning_count": 0, "errors": [], "warnings": []},
@@ -191,6 +253,7 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
     verification = validate_project(project_dir)
     assert verification["status"] == "passed", verification
     assert verification["implementation_ready"] is True, verification
+    assert verification["deployment_status"] == "ready", verification
     observability = verify_observability(project_dir)
     assert observability["status"] == "passed", observability
     for name in ["data_source.py", "data_process.py", "data_storage.py"]:
@@ -203,6 +266,23 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
         DataSource = importlib.import_module("data_utils.data_source").DataSource
         DataProcess = importlib.import_module("data_utils.data_process").DataProcess
         DataStorage = importlib.import_module("data_utils.data_storage").DataStorage
+        runtime_contract = importlib.import_module("common_utils.runtime_contract")
+
+        fixed_today = __import__("datetime").date(2026, 8, 27)
+        normalized = runtime_contract.normalize_parameters({}, build_plan(component_kind)["execution_contract"], today=fixed_today)
+        assert normalized["target_date"] == ["2026-08-26"], normalized
+        normalized = runtime_contract.normalize_parameters(
+            {"target_date": ["2026-08-25", "2026-08-24", "2026-08-25"]},
+            build_plan(component_kind)["execution_contract"],
+            today=fixed_today,
+        )
+        assert normalized["target_date"] == ["2026-08-25", "2026-08-24"], normalized
+        try:
+            runtime_contract.normalize_parameters({"target_date": {"bad": True}}, build_plan(component_kind)["execution_contract"], today=fixed_today)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid non-empty target_date shape must fail")
 
         params = {
             "period": "2026P01",
@@ -224,6 +304,7 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
                     ]
                 ),
             },
+            "clickhouse_insert_file": fake_insert_file,
         }
         source_data, time_range = DataSource(params).run()
         outputs = DataProcess(source_data, time_range, params).run()
@@ -239,9 +320,22 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
         client = FakeClickHouseClient()
         params["clickhouse_client"] = client
         metrics = DataStorage(outputs, time_range, params).run()
-        assert [event[0] for event in client.events] == ["command", "insert_df"], client.events
+        expected_insert_event = "insert_file" if component_kind == "bysku_report_pipeline" else "insert_df"
+        assert [event[0] for event in client.events] == ["command", expected_insert_event], client.events
         assert "DELETE WHERE period = '2026P01'" in client.events[0][1], client.events
         assert metrics[0]["rows"] == 1, metrics
+        if component_kind == "bysku_report_pipeline":
+            payload = client.events[1][4]
+            assert not payload.startswith(b"\xef\xbb\xbf"), payload
+            assert b"region,period" not in payload, payload
+            assert b",2," in payload and b",2.0," not in payload, payload
+
+            wire_client = FakeClickHouseClient()
+            wire_params = dict(params, clickhouse_client=wire_client)
+            nullable_result = result.copy()
+            nullable_result.loc[0, "region"] = None
+            DataStorage({"region_sales": nullable_result}, time_range, wire_params).run()
+            assert b"\\N," in wire_client.events[1][4], wire_client.events[1][4]
 
         empty_client = FakeClickHouseClient()
         empty_params = dict(params, clickhouse_client=empty_client)
