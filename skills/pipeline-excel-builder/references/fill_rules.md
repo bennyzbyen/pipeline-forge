@@ -32,7 +32,7 @@
 - Match catalog rows by physical table suffix, for example `abnormal_monitor.qas_feedback_detail` -> `qas_feedback_detail`.
 - Fill catalog registration fields only for project-owned/report output tables. For QAS-style projects this means tables with the project prefix such as `qas_`; shared/reference tables such as `soldto_details_p` keep catalog fields blank even if the document lists catalog evidence.
 - Set `dataset_name` and `dataset_title` to the Catalog Basic Info data item name. Set `dataset_description` to the Catalog Basic Info title/description.
-- For owner/name columns, prefer a person-style value. If the document only provides an email, derive a name from the email local part, remove digits, and format it as words, for example `tracy.zhang1@effem.com` -> `Tracy Zhang`.
+- For owner/name columns, prefer a person-style value. If the document only provides an email, derive a name from the email local part, remove digits, and format it as words, for example `tracy.zhang1@example.invalid` -> `Tracy Zhang`.
 - Fill email columns with the extracted email address.
 - Keep `dataset_source` blank unless the document provides source/link text.
 - If paragraph text claims a target count that conflicts with extracted target rows, keep extracted rows and add a question.

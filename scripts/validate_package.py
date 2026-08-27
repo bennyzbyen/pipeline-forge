@@ -7,6 +7,7 @@ import argparse
 import json
 import py_compile
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,9 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge"
 REPOSITORY_GIT_URL = f"{REPOSITORY_URL}.git"
+SOURCE_REPOSITORY_URL = "https://github.com/bennyzbyen/data_pipeline_develop_skills"
+SOURCE_REVISION_PATH = ROOT / "SOURCE_REVISION"
+GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SEMVER_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\."
     r"(0|[1-9]\d*)\."
@@ -147,6 +151,7 @@ def validate_assets() -> None:
 
 def validate_distribution_files() -> None:
     for relative in [
+        "SOURCE_REVISION",
         "INSTALL.md",
         "CHANGELOG.md",
         "VERSIONING.md",
@@ -158,6 +163,15 @@ def validate_distribution_files() -> None:
     install_text = (ROOT / "install-pipeline-forge.ps1").read_text(encoding="utf-8")
     require("./.codex/plugins/pipeline-forge" in install_text, "installer personal plugin path mismatch")
     require("Where-Object { $_.name -ne 'pipeline-forge' }" in install_text, "installer must preserve other plugin entries")
+
+
+def validate_source_revision() -> str:
+    revision = SOURCE_REVISION_PATH.read_text(encoding="utf-8").strip()
+    require(
+        GIT_SHA_PATTERN.fullmatch(revision) is not None,
+        "SOURCE_REVISION must contain exactly one full 40-character lowercase Git commit SHA",
+    )
+    return revision
 
 
 def validate_skills() -> None:
@@ -194,10 +208,82 @@ def discover_source_repository(explicit_root: Optional[Path]) -> Optional[Path]:
     return None
 
 
-def validate_source_sync(explicit_root: Optional[Path]) -> None:
+def run_git(repository_root: Path, *arguments: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repository_root), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise AssertionError("git is required for strict source identity validation") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown git error").strip()
+        raise AssertionError(f"unable to read source repository identity: {detail}") from exc
+    return result.stdout.strip()
+
+
+def validate_source_repository_identity(repository_root: Path, expected_revision: str) -> None:
+    actual_revision = run_git(repository_root, "rev-parse", "HEAD").lower()
+    origin_url = run_git(repository_root, "remote", "get-url", "origin").rstrip("/")
+    normalized_origin_url = origin_url.removesuffix(".git")
+    require(
+        normalized_origin_url == SOURCE_REPOSITORY_URL,
+        f"source repository origin mismatch: expected {SOURCE_REPOSITORY_URL}, found {origin_url}",
+    )
+    require(
+        actual_revision == expected_revision,
+        f"source repository revision mismatch: expected {expected_revision}, found {actual_revision}",
+    )
+
+
+def validate_clean_source_skills(repository_root: Path) -> None:
+    status = run_git(
+        repository_root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--",
+        "skills",
+    )
+    require(
+        not status,
+        f"source repository skills/ worktree must be clean:\n{status}",
+    )
+
+    tracked_output = run_git(repository_root, "ls-files", "-z", "--", "skills")
+    tracked_files = {path for path in tracked_output.split("\0") if path}
+    filesystem_files = {
+        path.relative_to(repository_root).as_posix()
+        for path in (repository_root / "skills").rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    }
+    ignored_or_untracked = sorted(filesystem_files - tracked_files)
+    require(
+        not ignored_or_untracked,
+        "source repository skills/ contains files not recorded by HEAD: "
+        f"{ignored_or_untracked}",
+    )
+
+
+def validate_source_sync(
+    explicit_root: Optional[Path],
+    expected_revision: str,
+    require_source_sync: bool,
+) -> None:
     repository_root = discover_source_repository(explicit_root)
     if repository_root is None:
+        require(
+            not require_source_sync,
+            "source repository is required; pass --source-root pointing to the pinned skill_lab checkout",
+        )
         return
+
+    if require_source_sync:
+        validate_source_repository_identity(repository_root, expected_revision)
+        validate_clean_source_skills(repository_root)
     source_root = repository_root / "skills"
 
     for skill in sorted(SOURCE_SKILLS):
@@ -245,14 +331,24 @@ def main() -> int:
         type=Path,
         help="Optional skill_lab repository path for byte-level source/package parity validation.",
     )
+    parser.add_argument(
+        "--require-source-sync",
+        action="store_true",
+        help=(
+            "Require the source repository, verify that its HEAD matches SOURCE_REVISION, "
+            "reject changes under source skills/, and enforce byte-level skill parity. "
+            "Intended for release validation."
+        ),
+    )
     args = parser.parse_args()
     version = validate_metadata()
     validate_version_consistency(version)
     validate_marketplace()
     validate_assets()
     validate_distribution_files()
+    source_revision = validate_source_revision()
     validate_skills()
-    validate_source_sync(args.source_root)
+    validate_source_sync(args.source_root, source_revision, args.require_source_sync)
     validate_guide_contract()
     validate_codegen_contract_tools()
     validate_python_helpers()
