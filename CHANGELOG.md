@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-08-27
+
+- Added deterministic cross-skill regressions for document-to-code routes, log diagnosis, and four-dialect DDL conversion.
+- Made release archives reproducible and enforced version-matched immutable marketplace tags.
+- Added transactional Windows installation rollback and upgraded website dependencies to eliminate audited vulnerabilities.
+
 ## 1.1.0 - 2026-08-27
 
 - Added technical contract v2 with explicit field, source, rule, parameter, runtime, write, conflict, and validation-gate sections while retaining v1 review compatibility.

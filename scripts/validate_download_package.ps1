@@ -33,10 +33,9 @@ if (-not $testRoot.StartsWith($temporaryRoot, [System.StringComparison]::Ordinal
 }
 
 $extractRoot = Join-Path $testRoot 'extract'
-$homeRoot = Join-Path $testRoot 'home'
 
 try {
-    New-Item -ItemType Directory -Path $extractRoot, $homeRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
     Expand-Archive -LiteralPath $archivePathResolved -DestinationPath $extractRoot
 
     $packageRoot = Join-Path $extractRoot 'pipeline-forge'
@@ -67,42 +66,16 @@ try {
         throw "The download archive contains generated runtime files: $forbiddenPaths"
     }
 
-    & $installerPath -HomeDirectory $homeRoot
-
-    $installedManifest = Join-Path $homeRoot '.codex\plugins\pipeline-forge\.codex-plugin\plugin.json'
-    $installedSourceRevision = Join-Path $homeRoot '.codex\plugins\pipeline-forge\SOURCE_REVISION'
-    $marketplacePath = Join-Path $homeRoot '.agents\plugins\marketplace.json'
-    if (-not (Test-Path -LiteralPath $installedManifest)) {
-        throw 'The installer did not copy the plugin manifest.'
+    $installerTestPath = Join-Path $PSScriptRoot 'test_installer_transaction.ps1'
+    if (-not (Test-Path -LiteralPath $installerTestPath -PathType Leaf)) {
+        throw "Installer transaction test is missing: $installerTestPath"
     }
-    if (-not (Test-Path -LiteralPath $installedSourceRevision)) {
-        throw 'The installer did not copy SOURCE_REVISION.'
-    }
-    if (-not (Test-Path -LiteralPath $marketplacePath)) {
-        throw 'The installer did not create the personal marketplace file.'
+    $installerTest = & $installerTestPath -PackageRoot $packageRoot
+    if ($installerTest.Passed -ne 5) {
+        throw "Installer transaction test count mismatch: expected 5, found $($installerTest.Passed)."
     }
 
-    $installedPlugin = Get-Content -LiteralPath $installedManifest -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($installedPlugin.name -ne $expectedManifest.name) {
-        throw "Installed plugin name '$($installedPlugin.name)' does not match '$($expectedManifest.name)'."
-    }
-    if ($installedPlugin.version -ne $expectedManifest.version) {
-        throw "Installed plugin version '$($installedPlugin.version)' does not match '$($expectedManifest.version)'."
-    }
-    $installedRevision = (Get-Content -LiteralPath $installedSourceRevision -Raw -Encoding UTF8).Trim()
-    if ($installedRevision -ne $expectedSourceRevision) {
-        throw "Installed SOURCE_REVISION '$installedRevision' does not match '$expectedSourceRevision'."
-    }
-
-    $marketplace = Get-Content -LiteralPath $marketplacePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $entry = $marketplace.plugins | Where-Object {
-        $_.name -eq 'pipeline-forge' -and $_.source.path -eq './.codex/plugins/pipeline-forge'
-    }
-    if (-not $entry) {
-        throw 'The installer did not create the expected PipelineForge marketplace entry.'
-    }
-
-    Write-Output "PipelineForge $($installedPlugin.version) download archive and Windows setup helper validation passed"
+    Write-Output "PipelineForge $($expectedManifest.version) download archive and Windows setup helper validation passed ($($installerTest.Passed) installer cases)"
 }
 finally {
     if (Test-Path -LiteralPath $testRoot) {

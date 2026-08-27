@@ -373,6 +373,14 @@ def parse_sql(sql: str, source: Optional[str] = None) -> Dict[str, Any]:
             if column["primary_key"] and column["name"] not in schema["primary_key"]:
                 schema["primary_key"].append(column["name"])
 
+    if schema["dialect"] == "clickhouse":
+        # ClickHouse nullability is encoded in the type itself. A bare type is
+        # non-nullable even though SQL dialects generally default to nullable.
+        for column in schema["columns"]:
+            column["nullable"] = bool(
+                re.search(r"(?:^|\()Nullable\(", str(column.get("source_type") or ""), flags=re.IGNORECASE)
+            )
+
     for column in schema["columns"]:
         if column["name"] in schema["primary_key"]:
             column["primary_key"] = True
