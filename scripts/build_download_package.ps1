@@ -79,6 +79,7 @@ try {
     New-Item -ItemType Directory -Path $outputDirectoryPath -Force | Out-Null
 
     foreach ($relativePath in @(
+        'SOURCE_REVISION',
         '.codex-plugin',
         'assets',
         'skills',

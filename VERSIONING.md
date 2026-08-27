@@ -14,8 +14,9 @@ Version components do not use decimal carrying. For example, the patch release a
 ## Release Checklist
 
 1. Classify the release by compatibility and choose the next version.
-2. Update `.codex-plugin/plugin.json`, `site_create/package.json`, the root entries in `site_create/package-lock.json`, `site_create/lib/site-content.ts`, and the website version assertion.
-3. Add the release at the top of `CHANGELOG.md`.
-4. Run `python .\scripts\validate_package.py`.
-5. Rebuild and validate the downloadable archive with `scripts/build_download_package.ps1` and `scripts/validate_download_package.ps1`.
-6. Run the website tests before publishing.
+2. Mirror the finalized skills from `data_pipeline_develop_skills`, then write that repository's full 40-character commit SHA to `SOURCE_REVISION`.
+3. Update `.codex-plugin/plugin.json`, `site_create/package.json`, the root entries in `site_create/package-lock.json`, `site_create/lib/site-content.ts`, and the website version assertion.
+4. Add the release at the top of `CHANGELOG.md`.
+5. Run `python .\scripts\validate_package.py --source-root ..\skill_lab --require-source-sync` so the pinned source revision, a clean `skills/` worktree, and packaged skill bytes are all enforced. Changes outside `skills/` do not block this release check.
+6. Rebuild and validate the downloadable archive with `scripts/build_download_package.ps1` and `scripts/validate_download_package.ps1`; the validator must use the generated `.sha256` file.
+7. Run the website tests and lint before publishing.

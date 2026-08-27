@@ -365,19 +365,25 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
             pass
         else:
             raise AssertionError("invalid non-empty period shape must fail")
-        with_result = module.calc_single({"source_informations": {"mysql_table": "ic_detail_gb_p"}})
-        without_result = module.calc_single({"source_informations": {"mysql_table": "rpt_exe_visit_frequency_by_people"}})
+        assert module.WITH_PERIOD, "generated project must configure at least one with-period table"
+        assert module.WITHOUT_PERIOD, "generated project must configure at least one without-period table"
+        with_table = module.WITH_PERIOD[0]
+        without_table = module.WITHOUT_PERIOD[0]
+        with_result = module.calc_single({"source_informations": {"mysql_table": with_table}})
+        without_result = module.calc_single({"source_informations": {"mysql_table": without_table}})
 
     assert with_result["branch"] == "with", with_result
     assert without_result["branch"] == "without", without_result
     with_params = with_result["params"]
     without_params = without_result["params"]
-    assert with_params["hbase_informations"]["hbase_table"] == "l2_cot_perfect_store.ic_detail_gb_2026_p", with_params
-    assert with_params["clickhouse_information"]["clickhouse_table"] == "ic_detail_gb_p", with_params
-    assert with_params["source_informations"]["period_column"] == "period", with_params
-    assert without_params["hbase_informations"]["rowkey_rule_columns"] == ["id"], without_params
-    assert without_params["clickhouse_information"]["clickhouse_table"] == "rpt_exe_visit_frequency_by_people", without_params
-    return {"case": "plugin_main_defaults", "events": events, "with_table": with_params["source_informations"]["mysql_table"]}
+    with_defaults = module.table_configs[with_table]
+    without_defaults = module.table_configs[without_table]
+    assert with_params["hbase_informations"]["hbase_table"] == with_defaults["hbase_table"], with_params
+    assert with_params["clickhouse_information"]["clickhouse_table"] == with_defaults["clickhouse_table"], with_params
+    assert with_params["source_informations"]["period_column"] == with_defaults["period_column"], with_params
+    assert without_params["hbase_informations"]["rowkey_rule_columns"] == without_defaults["rowkey_rule_columns"], without_params
+    assert without_params["clickhouse_information"]["clickhouse_table"] == without_defaults["clickhouse_table"], without_params
+    return {"case": "plugin_main_defaults", "events": events, "with_table": with_table, "without_table": without_table}
 
 
 def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:

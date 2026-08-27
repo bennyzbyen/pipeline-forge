@@ -8,8 +8,22 @@ jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout package
         uses: actions/checkout@v4
+        with:
+          path: pipeline-forge
+
+      - name: Read pinned source revision
+        id: source-revision
+        working-directory: pipeline-forge
+        run: echo "sha=$(tr -d '\r\n' < SOURCE_REVISION)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned skill source
+        uses: actions/checkout@v4
+        with:
+          repository: bennyzbyen/data_pipeline_develop_skills
+          ref: ${{ steps.source-revision.outputs.sha }}
+          path: skill_lab
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -17,4 +31,91 @@ jobs:
           python-version: "3.12"
 
       - name: Validate package
-        run: python scripts/validate_package.py
+        working-directory: pipeline-forge
+        run: |
+          python scripts/test_validate_package.py
+          python scripts/validate_package.py --source-root ../skill_lab --require-source-sync
+
+  windows-release-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout package
+        uses: actions/checkout@v4
+        with:
+          path: pipeline-forge
+
+      - name: Read pinned source revision
+        id: source-revision
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $revision = (Get-Content -LiteralPath 'SOURCE_REVISION' -Raw -Encoding UTF8).Trim()
+          "sha=$revision" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout pinned skill source
+        uses: actions/checkout@v4
+        with:
+          repository: bennyzbyen/data_pipeline_develop_skills
+          ref: ${{ steps.source-revision.outputs.sha }}
+          path: skill_lab
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: pipeline-forge/site_create/package-lock.json
+
+      - name: Validate pinned source parity
+        working-directory: pipeline-forge
+        run: |
+          python scripts/test_validate_package.py
+          python scripts/validate_package.py --source-root ../skill_lab --require-source-sync
+
+      - name: Build and validate download package
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $outputDirectory = Join-Path $env:RUNNER_TEMP 'pipeline-forge-download'
+          $archivePath = Join-Path $outputDirectory 'pipeline-forge.zip'
+          $checksumPath = Join-Path $outputDirectory 'pipeline-forge.zip.sha256'
+          .\scripts\build_download_package.ps1 -OutputDirectory $outputDirectory
+          .\scripts\validate_download_package.ps1 -ArchivePath $archivePath
+
+          $originalChecksum = Get-Content -LiteralPath $checksumPath -Raw -Encoding UTF8
+          Set-Content -LiteralPath $checksumPath -Value (('0' * 64) + '  pipeline-forge.zip') -Encoding UTF8
+          $checksumWasRejected = $false
+          try {
+            .\scripts\validate_download_package.ps1 -ArchivePath $archivePath
+          }
+          catch {
+            if ($_.Exception.Message -notlike 'Archive SHA256 mismatch:*') {
+              throw
+            }
+            $checksumWasRejected = $true
+            Write-Host "Checksum negative control was rejected: $($_.Exception.Message)"
+          }
+          finally {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($checksumPath, $originalChecksum, $utf8NoBom)
+          }
+          if (-not $checksumWasRejected) {
+            throw 'Checksum negative control unexpectedly passed.'
+          }
+
+      - name: Install website dependencies
+        working-directory: pipeline-forge/site_create
+        run: npm ci
+
+      - name: Test website
+        working-directory: pipeline-forge/site_create
+        run: npm test
+
+      - name: Lint website
+        working-directory: pipeline-forge/site_create
+        run: npm run lint
