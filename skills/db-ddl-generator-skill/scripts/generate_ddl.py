@@ -248,13 +248,23 @@ def normalize_default(default: Any, target: str) -> Optional[str]:
     return text
 
 
-def clickhouse_type(column: Dict[str, Any], key_columns: Iterable[str], notes: Dict[str, List[str]]) -> str:
+def clickhouse_type(
+    column: Dict[str, Any],
+    key_columns: Iterable[str],
+    notes: Dict[str, List[str]],
+    allow_key_nullability_coercion: bool = False,
+) -> str:
     mapped = map_type(column.get("source_type") or column.get("type"), "clickhouse", column)
     name = column["name"]
     nullable = bool(column.get("nullable", True))
     if name in set(key_columns):
         if nullable:
-            notes["risks"].append(f"{name}: key column was nullable; generated as non-nullable for ClickHouse key compatibility")
+            if not allow_key_nullability_coercion:
+                raise ValueError(
+                    f"ClickHouse key column {name!r} is nullable; confirm source semantics and use "
+                    "--allow-key-nullability-coercion only when non-nullability is justified"
+                )
+            notes["risks"].append(f"{name}: key nullability was explicitly coerced to non-nullable")
         return mapped
     if nullable and not mapped.lower().startswith("nullable("):
         return f"Nullable({mapped})"
@@ -290,6 +300,11 @@ def build_create_table(
     partition_by: Optional[List[str]] = None,
     order_by: Optional[List[str]] = None,
     primary_key: Optional[List[str]] = None,
+    clickhouse_engine: Optional[str] = None,
+    clickhouse_cluster: Optional[str] = None,
+    clickhouse_replication_path: Optional[str] = None,
+    clickhouse_version_column: Optional[str] = None,
+    allow_key_nullability_coercion: bool = False,
 ) -> Tuple[str, Dict[str, List[str]]]:
     target = target.lower()
     columns = schema.get("columns", [])
@@ -308,33 +323,56 @@ def build_create_table(
         partition_cols = partition_by if partition_by is not None else schema.get("partition_by", [])
         order_cols = order_by if order_by is not None else schema.get("order_by", [])
         if not order_cols:
-            order_cols = pk or [columns[0]["name"]]
-            notes["assumptions"].append(f"ClickHouse ORDER BY defaulted to {', '.join(order_cols)}")
+            raise ValueError("ClickHouse ORDER BY must be supplied by the deployment profile or source DDL")
+        profile_root = schema.get("settings") if isinstance(schema.get("settings"), dict) else {}
+        profiles = profile_root.get("clickhouse_profiles") if isinstance(profile_root.get("clickhouse_profiles"), dict) else {}
+        profile = profiles.get(env) if isinstance(profiles.get(env), dict) else {}
+        engine_name = clickhouse_engine or profile.get("engine") or schema.get("engine")
+        cluster_name = clickhouse_cluster if clickhouse_cluster is not None else profile.get("cluster", "")
+        replication_path = clickhouse_replication_path or profile.get("replication_path")
+        version_column = clickhouse_version_column or profile.get("version_column")
+        if not engine_name:
+            raise ValueError(
+                "ClickHouse engine is unresolved; pass --engine or define settings.clickhouse_profiles.<env>.engine"
+            )
         key_columns = set(order_cols) | set(partition_cols) | set(pk)
         column_lines = []
         for column in columns:
-            mapped = clickhouse_type(column, key_columns, notes)
+            mapped = clickhouse_type(column, key_columns, notes, allow_key_nullability_coercion)
             default = normalize_default(column.get("default"), target)
             default_sql = f" DEFAULT {default}" if default else ""
             comment_sql = f" COMMENT '{esc_comment(column.get('comment'))}'" if column.get("comment") else ""
             column_lines.append(f"    {quote_ident(column['name'], target)} {mapped}{default_sql}{comment_sql}")
             notes["type_mappings"].append(f"{column['name']}: {column.get('source_type') or column.get('type')} -> {mapped}")
 
-        version = choose_version_column(columns)
-        if env == "prod":
-            cluster_sql = " ON CLUSTER cl_1shards_2replicas"
-            if version:
-                engine = f"ReplicatedReplacingMergeTree('/clickhouse/databases/{db}/tables/{{shard_name}}/{table_name}', '{{replica}}', {version})"
-            else:
-                engine = f"ReplicatedMergeTree('/clickhouse/databases/{db}/tables/{{shard_name}}/{table_name}', '{{replica}}')"
-                notes["assumptions"].append("No version column found; used ReplicatedMergeTree instead of ReplicatedReplacingMergeTree")
+        allowed_engines = {
+            "MergeTree",
+            "ReplacingMergeTree",
+            "ReplicatedMergeTree",
+            "ReplicatedReplacingMergeTree",
+        }
+        engine_text = str(engine_name).strip()
+        if "(" in engine_text:
+            engine = engine_text
         else:
-            cluster_sql = ""
-            if version:
-                engine = f"ReplacingMergeTree({version})"
+            if engine_text not in allowed_engines:
+                raise ValueError(f"unsupported ClickHouse engine profile: {engine_text!r}")
+            if engine_text.startswith("Replicated"):
+                if not replication_path:
+                    raise ValueError("Replicated ClickHouse engines require an explicit replication path")
+                replica_args = f"'{esc_comment(replication_path)}', '{{replica}}'"
+                if engine_text == "ReplicatedReplacingMergeTree" and version_column:
+                    replica_args += f", {version_column}"
+                engine = f"{engine_text}({replica_args})"
+            elif engine_text == "ReplacingMergeTree":
+                engine = f"ReplacingMergeTree({version_column})" if version_column else "ReplacingMergeTree()"
             else:
                 engine = "MergeTree"
-                notes["assumptions"].append("No version column found; used MergeTree")
+
+        if cluster_name and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(cluster_name)):
+            raise ValueError("ClickHouse cluster must be a safe identifier")
+        cluster_sql = f" ON CLUSTER {cluster_name}" if cluster_name else ""
+        notes["risks"].append("ClickHouse ORDER BY controls sorting/deduplication behavior; it is not a uniqueness constraint")
 
         partition_sql = f"\nPARTITION BY {', '.join(partition_cols)}" if partition_cols else ""
         primary_sql = f"\nPRIMARY KEY ({', '.join(pk)})" if pk else ""
@@ -430,6 +468,11 @@ def main() -> None:
     parser.add_argument("--partition-by")
     parser.add_argument("--order-by")
     parser.add_argument("--primary-key")
+    parser.add_argument("--engine", choices=["MergeTree", "ReplacingMergeTree", "ReplicatedMergeTree", "ReplicatedReplacingMergeTree"], help="Explicit ClickHouse engine profile")
+    parser.add_argument("--cluster", help="Explicit ClickHouse cluster name; omit for no ON CLUSTER")
+    parser.add_argument("--replication-path", help="Explicit ZooKeeper path for Replicated engines")
+    parser.add_argument("--version-column", help="Explicit ReplacingMergeTree version column")
+    parser.add_argument("--allow-key-nullability-coercion", action="store_true", help="Acknowledge conversion of nullable ClickHouse key columns to non-nullable")
     parser.add_argument("--all-tables", action="store_true", help="Generate DDL for every schema in tables[]")
     parser.add_argument("--cot-period-code-rule", action="store_true", help="When both period and code exist, use PARTITION BY period and ORDER BY (period, code)")
     parser.add_argument("--sql-only", action="store_true")
@@ -459,6 +502,11 @@ def main() -> None:
             partition_by=partition_by,
             order_by=order_by,
             primary_key=split_csv(args.primary_key) or None,
+            clickhouse_engine=args.engine,
+            clickhouse_cluster=args.cluster,
+            clickhouse_replication_path=args.replication_path,
+            clickhouse_version_column=args.version_column,
+            allow_key_nullability_coercion=args.allow_key_nullability_coercion,
         )
         outputs.append(render_output(sql, notes, args.sql_only))
     output = "\n\n".join(outputs)

@@ -1,18 +1,15 @@
 # ClickHouse Rules
 
-## QA Template
+## Deployment Profiles
 
-- Usually omit `ON CLUSTER`.
-- Prefer `ReplacingMergeTree(version_column)` when a version/update timestamp column exists; otherwise use `MergeTree`.
-- Keep partition/order expressions simple and explicit.
+- Require an explicit engine and `ORDER BY` in QA and PROD.
+- Add `ON CLUSTER` only when the confirmed profile names a cluster.
+- Require an explicit replication path for replicated engines.
+- Require an explicit version column when replacement semantics depend on one; never pick a datetime column merely because it exists.
 
-## PROD Template
-
-- Include `ON CLUSTER cl_1shards_2replicas` when the user says production creation used it, even if exported DDL omits it.
-- Prefer `ReplicatedReplacingMergeTree(path, '{replica}', version_column)` when a version/update timestamp column exists.
-- Use ZooKeeper path format:
-  `/clickhouse/databases/{database}/tables/{shard_name}/{table_name}`
-- Include `PARTITION BY`, `ORDER BY`, optional `PRIMARY KEY`, and `SETTINGS index_granularity = 8192`.
+- Environment names do not imply engine, cluster, or replication settings.
+- Source production DDL may be preserved as an explicit profile, but exported metadata gaps remain blockers.
+- `ORDER BY` is not a uniqueness constraint. Document the intended replacement grain separately.
 
 ## Key Constraints
 
@@ -29,6 +26,7 @@
   `ORDER BY (period, code)`
 - In that case, make `period` and `code` non-nullable in the generated ClickHouse DDL.
 - Do not apply this convention when either column is missing or the user explicitly provides other partition/order fields.
+- The convention is a requested COT profile, not a universal ClickHouse default.
 
 ## Type Notes
 

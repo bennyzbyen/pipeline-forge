@@ -83,6 +83,11 @@ def run_regression() -> Dict[str, Any]:
         )
         good = validate_project(good_project)
         assert good["status"] == "passed", good
+        assert good["deployment_status"] == "review_required", good
+        assert {item["code"] for item in good["deployment_blockers"]} >= {
+            "rowkey_unconfirmed",
+            "legacy_codegen_contract_v1",
+        }, good
         assert good["checked_table_count"] == 1, good
         assert good["tables"][0]["error_count"] == 0, good
         good_manifest = json.loads((good_project / "cot_sync_manifest.json").read_text(encoding="utf-8"))

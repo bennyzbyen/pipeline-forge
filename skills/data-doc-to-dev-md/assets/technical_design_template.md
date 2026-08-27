@@ -123,6 +123,7 @@ For report docs, include source, target, and field-logic matrices:
 
 - Contract version:
 - Ready for codegen:
+- Deployment validation: ready / review-required
 - Machine-readable contract: `structured_facts.json#codegen_contract`
 
 ### Blocking Code Generation

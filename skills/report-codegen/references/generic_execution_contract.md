@@ -17,13 +17,23 @@ Without this contract, `--allow-blocked-scaffold` may create a review-only proje
 
 ```json
 {
-  "version": 1,
+  "version": 2,
+  "parameters": [],
+  "runtime": {},
   "sources": {},
   "steps": [],
   "outputs": {},
   "writes": {}
 }
 ```
+
+Version 1 remains readable for code-generation review. Strict deployment requires version 2.
+
+## Parameters And Runtime
+
+Each parameter declares semantics for `omitted`, `null`, `blank`, `empty`, `scalar`, `list`, and `invalid`, plus executable `accepted_shapes`, `default_on`, and `default` fields. Keep project-specific meanings distinct: a report date may default to T-1, while an empty COT period may mean automatic incremental mode.
+
+Runtime v2 declares `python_min`, `entrypoint`, the exact DataEngine result protocol (`put` / `inst` / `task` / `metrics`), an environment-to-connection-mode matrix, and a safe-log policy with credential and parameter-value logging disabled. Environment names never imply a connection mode.
 
 Output and write keys must exactly match the plan's output target names. Output columns must exactly match each plan output's `final_columns`, including order.
 
@@ -111,6 +121,23 @@ Example:
       "kind": "clickhouse",
       "table": "report.region_sales",
       "mode": "replace_where",
+      "columns": ["region", "period", "revenue"],
+      "column_types": ["String", "String", "Decimal(18,2)"],
+      "transport": "insert_file",
+      "empty_output_policy": "block_destructive_replace",
+      "replacement_safety": {
+        "strategy": "delete_then_insert",
+        "non_atomic_risk_acknowledged": true
+      },
+      "staging_wire_format": {
+        "encoding": "utf-8",
+        "bom": false,
+        "header": false,
+        "null": "\\N",
+        "datetime_precision": "seconds",
+        "integer_format": "integer",
+        "explicit_columns": true
+      },
       "predicate": {
         "column": "period",
         "value_from": "time_range.period"
@@ -122,6 +149,8 @@ Example:
 
 Supported write modes are `append` and `replace_where`. A replace predicate must use one confirmed identifier and a runtime value from `time_range.<key>` or `params.<key>`. Generated storage validates identifiers, escapes values, and never deletes existing rows when the output DataFrame is empty.
 
+`DELETE` followed by `INSERT` is non-atomic. Strict deployment blocks it unless the contract supplies an atomic/recoverable strategy or explicitly acknowledges the non-atomic risk. For `insert_file`, staging must use explicit ordered columns, UTF-8 without BOM or header, `\\N` nulls, integer-safe formatting, and second-precision datetimes.
+
 ## Verification
 
 Run:
@@ -129,6 +158,7 @@ Run:
 ```text
 python scripts/verify_report_plan_semantics.py --project-dir <generated-project>
 python scripts/verify_generic_report_runtime_semantics.py
+python scripts/verify_qas_synthetic_acceptance.py
 ```
 
 For HBase prepare projects, also run:

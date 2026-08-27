@@ -30,7 +30,7 @@ REQUIRED_SKILLS = {
     "report-codegen",
     "db-ddl-generator-skill",
 }
-SOURCE_SKILLS = REQUIRED_SKILLS - {"db-ddl-generator-skill"}
+SOURCE_SKILLS = REQUIRED_SKILLS
 GUIDE_REFERENCES = {
     "references/document-to-delivery.md",
     "references/specialized-routes.md",
@@ -43,15 +43,25 @@ GUIDE_STATUSES = {
     "READY_FOR_DEPLOYMENT_REVIEW",
 }
 CODEGEN_CONTRACT_FILES = {
+    "data-doc-to-dev-md": {
+        "scripts/technical_contract.py",
+        "scripts/validate_technical_contract.py",
+        "scripts/verify_technical_contract_regression.py",
+    },
     "data-sync-codegen": {
         "scripts/verify_cot_manifest_semantics.py",
         "scripts/verify_cot_manifest_semantics_regression.py",
+        "scripts/verify_cot_runtime_semantics.py",
     },
     "report-codegen": {
         "references/generic_execution_contract.md",
         "scripts/report_contract.py",
         "scripts/verify_generic_report_runtime_semantics.py",
         "scripts/verify_report_plan_semantics.py",
+        "scripts/verify_qas_synthetic_acceptance.py",
+    },
+    "db-ddl-generator-skill": {
+        "scripts/verify_clickhouse_deployment_profile.py",
     },
 }
 
@@ -200,7 +210,7 @@ def validate_codegen_contract_tools() -> None:
         skill_text = (skills_root / skill / "SKILL.md").read_text(encoding="utf-8")
         for relative in sorted(files):
             require((skills_root / skill / relative).is_file(), f"missing {skill} contract tool: {relative}")
-            if Path(relative).name != "report_contract.py":
+            if Path(relative).name not in {"report_contract.py", "technical_contract.py"}:
                 require(relative in skill_text or Path(relative).name in skill_text, f"{skill} does not route to {relative}")
     guide_route = (skills_root / "pipeline-forge-guide" / "references" / "document-to-delivery.md").read_text(encoding="utf-8")
     require("verify_cot_manifest_semantics.py" in guide_route, "guide omits all-table sync verification")

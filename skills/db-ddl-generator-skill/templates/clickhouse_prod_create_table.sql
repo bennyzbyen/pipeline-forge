@@ -1,8 +1,8 @@
-CREATE TABLE {{database}}.{{table_name}} ON CLUSTER cl_1shards_2replicas
+CREATE TABLE {{database}}.{{table_name}} {{confirmed_on_cluster_clause}}
 (
 {{columns}}
 )
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/databases/{{database}}/tables/{shard_name}/{{table_name}}', '{replica}', {{version_column}})
+ENGINE = {{confirmed_engine_expression}}
 {{partition_by}}
 ORDER BY ({{order_by}})
 {{primary_key}}

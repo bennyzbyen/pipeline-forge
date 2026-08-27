@@ -287,6 +287,16 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
             "key_column": key_column,
             "hbase_table": hbase_table,
             "rowkey_rule_columns": rowkey_rule_columns,
+            "hbase_delete_request_contract": (
+                {
+                    "row_start": "{period}",
+                    "row_stop": "{period}Z",
+                    "row_prefixs": [str(item) for item in range(10)],
+                    "validate_after_wrapper_defaults": True,
+                }
+                if with_period
+                else {}
+            ),
             "clickhouse_database": clickhouse_database,
             "clickhouse_table": source_table,
             "clickhouse_full_name": f"{clickhouse_database}.{source_table}" if clickhouse_database else source_table,
@@ -331,7 +341,12 @@ def py_literal(value: Any) -> str:
     return pprint.pformat(value, width=120, sort_dicts=True)
 
 
-def render_plugin_config(configs: Dict[str, Dict[str, Any]], project_name: str) -> str:
+def render_plugin_config(
+    configs: Dict[str, Dict[str, Any]],
+    project_name: str,
+    runtime_contract: Dict[str, Any] | None = None,
+) -> str:
+    runtime_contract = runtime_contract if isinstance(runtime_contract, dict) else {}
     with_period_tables = [name for name, item in configs.items() if item["sync_mode"] == "with_period"]
     without_period_tables = [name for name, item in configs.items() if item["sync_mode"] == "without_period"]
     store_report_generator_table_list = [
@@ -352,6 +367,7 @@ def render_plugin_config(configs: Dict[str, Dict[str, Any]], project_name: str) 
             "key_column": item["key_column"],
             "hbase_table": item["hbase_table"],
             "rowkey_rule_columns": item["rowkey_rule_columns"],
+            "hbase_delete_request_contract": item["hbase_delete_request_contract"],
             "clickhouse_table": item["clickhouse_table"],
             "source_group": item["source_group"],
             "sync_mode": item["sync_mode"],
@@ -366,8 +382,17 @@ def render_plugin_config(configs: Dict[str, Dict[str, Any]], project_name: str) 
 from loguru import logger
 
 
-env = os.environ.get("running_env") or "qa"
-logger.info("running env: {{}}", env)
+runtime_contract = {py_literal(runtime_contract)}
+environment_connection_matrix = runtime_contract.get("environment_connection_matrix") or {{}}
+env = os.environ.get("running_env") or runtime_contract.get("default_environment") or ("qa" if not environment_connection_matrix else "")
+if not env:
+    raise ValueError("running_env is required by the runtime contract")
+if environment_connection_matrix and env not in environment_connection_matrix:
+    raise ValueError("running_env is not declared in environment_connection_matrix")
+environment_profile = environment_connection_matrix.get(env) or {{}}
+if environment_connection_matrix and not environment_profile.get("connection_mode"):
+    raise ValueError("environment profile is missing connection_mode")
+logger.info("running env configured: {{}}", bool(env))
 
 fs_root_dir = "/datahub/project_storage/{project_name}"
 
@@ -403,7 +428,7 @@ mysql_store_report_params = {{
     "charset": "utf8",
 }}
 
-cluster = "" if env in {{"qa", "uat"}} else "<CLICKHOUSE_CLUSTER>"
+cluster = environment_profile.get("clickhouse_cluster", "") if environment_connection_matrix else ("" if env in {{"qa", "uat"}} else "<CLICKHOUSE_CLUSTER>")
 
 table_configs = {py_literal(runtime_table_configs)}
 
@@ -516,12 +541,15 @@ def write_manifest(
     codegen_contract: Dict[str, Any],
 ) -> None:
     manifest = {
+        "manifest_version": 2,
         "summary": {
             "table_count": len(configs),
             "with_period_count": len([item for item in configs.values() if item["sync_mode"] == "with_period"]),
             "without_period_count": len([item for item in configs.values() if item["sync_mode"] == "without_period"]),
         },
         "codegen_contract": codegen_contract,
+        "runtime_contract": codegen_contract.get("runtime_contract", {}),
+        "write_contracts": codegen_contract.get("write_contracts", []),
         "tables": list(configs.values()),
         "questions": questions,
     }
@@ -574,7 +602,10 @@ def scaffold_project(args: argparse.Namespace) -> None:
 
     copy_template_tree(template_root, args.output_dir, args.force)
     config_path = args.output_dir / "cot_config" / "plugin_config.py"
-    config_path.write_text(render_plugin_config(configs, args.project_name), encoding="utf-8")
+    config_path.write_text(
+        render_plugin_config(configs, args.project_name, codegen_contract.get("runtime_contract", {})),
+        encoding="utf-8",
+    )
     rowkey_config_path = args.output_dir / "cot_config" / "rowkey_config.py"
     rowkey_config_path.write_text(render_rowkey_config(configs), encoding="utf-8")
     write_manifest(args.output_dir, configs, questions, facts.get("codegen_contract", {}))

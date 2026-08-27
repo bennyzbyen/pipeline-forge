@@ -66,7 +66,7 @@ Represent extracted schema as JSON with this shape:
 }
 ```
 
-If information is missing, choose the conservative default from `rules/common_ddl_rules.md` and list it under assumptions.
+If information is missing, choose the conservative default from `rules/common_ddl_rules.md` and list it under assumptions. ClickHouse engine, cluster, replication path, replacement grain, and `ORDER BY` are deployment decisions: never invent them as defaults.
 
 ## Script Usage
 
@@ -79,10 +79,11 @@ python scripts/parse_excel_schema.py input.xlsx --table target_table --output sc
 python scripts/parse_docx_schema.py input.docx --table target_table --output schema.json
 python scripts/parse_existing_ddl.py input.sql --output schema.json
 python scripts/parse_existing_ddl.py clickhouse_ddl_export.csv --output prod_templates.json
-python scripts/generate_clickhouse_from_excel.py dictionary.xlsx --database test --output clickhouse_ddl.sql
-python scripts/generate_ddl.py schema.json --target clickhouse --env prod --database db --table table_name --partition-by period --order-by period,code --output table.sql
-python scripts/generate_ddl.py docx_schema.json --target clickhouse --env prod --all-tables --cot-period-code-rule --sql-only --output clickhouse_prod.sql
-python scripts/convert_ddl.py source.sql --source mysql --target clickhouse --env prod --database db --table table_name
+python scripts/generate_clickhouse_from_excel.py dictionary.xlsx --database test --engine MergeTree --order-by id --output clickhouse_ddl.sql
+python scripts/generate_ddl.py schema.json --target clickhouse --env prod --database db --table table_name --engine ReplicatedMergeTree --cluster <CLUSTER> --replication-path '/clickhouse/<CONFIRMED_PATH>/{shard}/{table}' --partition-by period --order-by period,code --output table.sql
+python scripts/generate_ddl.py docx_schema.json --target clickhouse --env prod --all-tables --engine MergeTree --cot-period-code-rule --sql-only --output clickhouse_prod.sql
+python scripts/convert_ddl.py source.sql --source mysql --target clickhouse --env prod --database db --table table_name --engine MergeTree --order-by id
+python scripts/verify_clickhouse_deployment_profile.py
 ```
 
 ## Output Rules
@@ -101,13 +102,14 @@ Keep Chinese notes concise and concrete. Do not hide uncertain conversions; stat
 
 ## ClickHouse Template Rules
 
-For ClickHouse, distinguish QA and PROD:
+For ClickHouse, distinguish QA and PROD through an explicit deployment profile:
 
-- QA usually uses `ReplacingMergeTree(...)`, no `ON CLUSTER`, and simpler partition/order expressions.
-- PROD usually uses `ON CLUSTER cl_1shards_2replicas`, `ReplicatedMergeTree` or `ReplicatedReplacingMergeTree`, a ZooKeeper path, `PARTITION BY`, `ORDER BY`, optional `PRIMARY KEY`, and `SETTINGS`.
+- Require the engine and `ORDER BY` for every environment. Require cluster and replication path only when the confirmed profile uses them.
+- Do not infer `ReplacingMergeTree`, `ReplicatedMergeTree`, cluster names, ZooKeeper paths, or replacement grain from an environment label.
+- `ORDER BY` controls sorting and replacement behavior; it is not a uniqueness constraint.
 - For COT/DataEngine dictionaries, prefer `inksaa_last_modified_timestamp` as the ReplacingMergeTree version column when present. Fall back to common update timestamp names, then to another datetime field only if no update timestamp exists.
 - Production DDL exported from `system.tables` or similar sources may omit `ON CLUSTER` even when original creation used it. If the user states original production create had `ON CLUSTER cl_1shards_2replicas`, keep that in the extracted reusable PROD template and list it as an assumption.
-- Never silently put Nullable columns into `ORDER BY`, `PRIMARY KEY`, or partition keys. Convert those key columns to non-nullable only if source semantics support it; otherwise report the conflict.
+- Never silently put Nullable columns into `ORDER BY`, `PRIMARY KEY`, or partition keys. Conversion to non-nullable requires `--allow-key-nullability-coercion` or an already non-null source contract.
 - For DOCX Target sections, treat `clickhouse表` as the authoritative destination table name. Use the data dictionary only for columns and comments unless it also supplies stronger type/nullability metadata.
 - For COT/DataEngine report tables, when both `period` and `code` fields exist and the user has not supplied explicit keys, use `PARTITION BY period` and `ORDER BY (period, code)`, and generate both fields as non-nullable.
 

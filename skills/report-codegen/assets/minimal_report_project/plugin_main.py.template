@@ -4,12 +4,16 @@ import os
 import sys
 
 from common_utils.all_modules import logger
+from common_utils.runtime_contract import normalize_parameters, validate_runtime_environment
 from main_execute import ReportPipeline
+from params_configs.execution_contract import execution_contract
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main(params: dict):
+    params = normalize_parameters(params, execution_contract)
+    validate_runtime_environment(params, execution_contract)
     # Security: expose only operational routing fields, never the raw payload.
     logger.info(
         "dispatch component={} period={} current_date={} activation_enabled={}",

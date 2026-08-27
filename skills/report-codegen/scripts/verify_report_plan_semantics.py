@@ -214,6 +214,7 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
 
     errors: List[Dict[str, str]] = []
     warnings: List[Dict[str, str]] = []
+    deployment_blockers: List[Dict[str, str]] = []
     component_kind = clean_text((plan.get("summary") or {}).get("component_kind"))
     specialized = is_specialized(plan)
     if not component_kind and specialized:
@@ -243,6 +244,8 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     )
     for issue in execution_validation.get("errors", []):
         add_issue(errors, f"execution_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
+    for issue in execution_validation.get("deployment_blockers", []):
+        add_issue(deployment_blockers, f"execution_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
     implementation_ready = specialized or execution_validation.get("status") == "passed"
     validate_generated_files(project_dir, plan, implementation_ready, errors, warnings)
 
@@ -250,7 +253,14 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     design_ready = codegen_contract.get("ready_for_codegen") is True
     if not design_ready:
         add_issue(warnings, "codegen_contract_blocked", "codegen_contract.ready_for_codegen is not true")
-    deployment_ready = not errors and not warnings and design_ready and implementation_ready
+    if codegen_contract.get("contract_version", 1) == 1:
+        add_issue(deployment_blockers, "legacy_codegen_contract_v1", "strict deployment requires codegen contract v2")
+    validation_result = codegen_contract.get("validation_result") if isinstance(codegen_contract.get("validation_result"), Mapping) else {}
+    for issue in validation_result.get("errors", []) or []:
+        add_issue(errors, f"contract_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
+    for issue in validation_result.get("deployment_blockers", []) or []:
+        add_issue(deployment_blockers, f"contract_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
+    deployment_ready = not errors and not deployment_blockers and design_ready and implementation_ready
     return {
         "project_dir": str(project_dir),
         "status": "passed" if not errors else "failed",
@@ -263,8 +273,10 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
         "final_column_count": sum(item["final_column_count"] for item in output_results),
         "field_rule_count": sum(item["field_rule_count"] for item in output_results),
         "error_count": len(errors),
+        "deployment_blocker_count": len(deployment_blockers),
         "warning_count": len(warnings),
         "errors": errors,
+        "deployment_blockers": deployment_blockers,
         "warnings": warnings,
         "execution_validation": execution_validation,
         "outputs": output_results,
@@ -275,7 +287,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", type=Path, required=True, help="Generated report project directory.")
     parser.add_argument("--json-out", type=Path, help="Optional path for the JSON verification report.")
-    parser.add_argument("--strict-deployment", action="store_true", help="Fail when warnings or deployment confirmations remain.")
+    parser.add_argument("--strict-deployment", action="store_true", help="Fail when ERROR or DEPLOYMENT_BLOCKER findings remain; warnings are non-blocking.")
     args = parser.parse_args()
     result = validate_project(args.project_dir.resolve())
     payload = json.dumps(result, ensure_ascii=False, indent=2)

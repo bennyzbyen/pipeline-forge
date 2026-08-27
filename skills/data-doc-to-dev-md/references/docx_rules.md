@@ -32,7 +32,7 @@
 - If embedded Excel contains a report/sync matrix, `technical_design.md` must include the actual rows, not only the CSV filenames.
 - Generate and review `dev_doc/structured_facts.json` whenever recognizable matrices exist.
 - `structured_facts.json.codegen_contract` should expose routing, components, readiness, and blockers for downstream codegen.
-- `questions.md` should classify every ambiguity as codegen-blocking, deployment confirmation, or non-blocking.
+- `questions.md` should classify every ambiguity as codegen-blocking, deployment confirmation, or non-blocking and render the same stable `TC-CG-*`, `TC-DP-*`, or `TC-NB-*` ID stored in `structured_facts.json.codegen_contract.open_questions`.
 - Do not collapse multiple target tables into one vague paragraph; list them separately when possible.
 - For multi-DOCX output, `structured_facts.json` should list `documents`, include source provenance on facts, and preserve per-document extracted CSV paths under `extracted/doc_###_<name>/`.
 

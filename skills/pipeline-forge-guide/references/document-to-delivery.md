@@ -16,6 +16,8 @@ Treat extracted CSVs and embedded workbook data as audit evidence. Do not ask th
 
 Read `structured_facts.json.codegen_contract` before selecting a generator:
 
+- Contract v2 is the normal output. Legacy v1 remains readable for code-generation review, but cannot reach strict deployment review.
+
 - `project_type = data-sync` or `component_kind = cot_table_sync`: use `data-sync-codegen`.
 - `project_type = report` or report component kinds such as `standard_report`, `bysku_report_pipeline`, or `hbase_prepare_pipeline`: use `report-codegen`.
 - Unknown or conflicting routing: remain `BLOCKED_INPUT` and present the evidence conflict in plain language.
@@ -28,8 +30,9 @@ If `ready_for_codegen` is false:
 
 1. Group duplicate blockers.
 2. Select the three decisions with the greatest effect on architecture or data correctness.
-3. Translate them with `references/beginner-questions.md`.
-4. Stop full generation until they are answered.
+3. Preserve each question's stable `TC-CG-*`, `TC-DP-*`, or `TC-NB-*` ID in Plan-mode prompts, ordinary chat, and answer summaries.
+4. Translate them with `references/beginner-questions.md`.
+5. Stop full generation until the blocking IDs are answered.
 
 If the user explicitly wants a test project, generate only the safe placeholder scaffold supported by the matching codegen skill's blocked-scaffold option. Mark it `SAFE_SCAFFOLD`, keep credentials as placeholders, and preserve every unresolved item in the handoff.
 
@@ -47,10 +50,11 @@ Always compile generated Python. Then run the applicable packaged checks:
 
 - Sync: `verify_cot_manifest_semantics.py` for every table, then `verify_codegen_observability.py` and `verify_cot_runtime_semantics.py`.
 - Report: `verify_report_plan_semantics.py` for every output/field/write contract, then `verify_codegen_observability.py`; run `verify_report_runtime_semantics.py` for specialized types and the packaged generic runtime regression after changing standard/bySKU contract generation.
+- Cross-cutting contract changes: run `validate_technical_contract.py`, `verify_technical_contract_regression.py`, and the synthetic QAS acceptance regression.
 
 Parse generated JSON files and scan the generated project for credentials and workspace-only paths. Do not connect to Gateway, HBase, FS, ClickHouse, MSSQL, or other production services.
 
-Use `VERIFIED_TEST` only when every applicable deterministic check passes. Use `READY_FOR_DEPLOYMENT_REVIEW` only after blockers are resolved and environment-specific deployment values remain clearly separated from generated placeholders.
+Use `VERIFIED_TEST` only when every applicable deterministic check passes. Use `READY_FOR_DEPLOYMENT_REVIEW` only when strict validation has no `ERROR` or `DEPLOYMENT_BLOCKER`; `WARNING` remains non-blocking review evidence. Environment-specific deployment values must remain clearly separated from generated placeholders.
 
 ## Optional Downstream Artifacts
 
