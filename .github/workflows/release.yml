@@ -58,6 +58,8 @@ jobs:
           python scripts/test_publish_validated_release.py
           python scripts/test_reproducible_package.py
           python scripts/test_validate_package.py
+          python skills/data-doc-to-dev-md/scripts/verify_extract_docx_bundle_compat.py
+          python skills/report-codegen/scripts/verify_scaffold_structure.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync --release-tag $env:GITHUB_REF_NAME
 
       - name: Install website dependencies
