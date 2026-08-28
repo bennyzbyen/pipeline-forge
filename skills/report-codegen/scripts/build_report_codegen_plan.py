@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from report_contract import validate_execution_contract
+from code_unit_selection import select_code_unit
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -154,14 +155,103 @@ def has_specialized_implementation(
     )
 
 
-def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
+def _unit_codegen_contract(unit: Dict[str, Any], legacy: Dict[str, Any]) -> Dict[str, Any]:
+    readiness = unit.get("readiness") if isinstance(unit.get("readiness"), dict) else {}
+    ready = readiness.get("ready_for_codegen") is True
+    return {
+        **legacy,
+        "project_type": "report",
+        "component_kind": unit.get("component_kind", "standard_report"),
+        "components": [
+            {
+                "name": unit.get("code_unit_id", ""),
+                "kind": unit.get("component_kind", "standard_report"),
+                "role": unit.get("split_reason", "Confirmed code-unit execution boundary."),
+                "status": "confirmed" if readiness.get("ready_for_codegen") else "blocked",
+            }
+        ],
+        "ready_for_codegen": ready,
+        "blockers": list(readiness.get("blockers") or []),
+        "conflicts": list(unit.get("conflicts") or []),
+        "validation_result": {
+            "status": "passed",
+            "deployment_status": "ready" if ready else "review_required",
+            "errors": [],
+            "deployment_blockers": [],
+            "warnings": [],
+        },
+        "selected_code_unit_id": unit.get("code_unit_id", ""),
+    }
+
+
+def _contract_output_names(execution_contract: Dict[str, Any], unit: Dict[str, Any] | None) -> set[str]:
+    names = set(str(item) for item in execution_contract.get("outputs", {}).keys()) if isinstance(execution_contract.get("outputs"), dict) else set()
+    for item in (unit or {}).get("covered_tables", []) or []:
+        names.add(clean_text(item))
+    return {clean_text(item).lower() for item in names if clean_text(item)}
+
+
+def _unit_sources(execution_contract: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_sources = execution_contract.get("sources")
+    if isinstance(raw_sources, dict):
+        items = list(raw_sources.items())
+    elif isinstance(raw_sources, list):
+        items = [(f"source_{index + 1:03d}", value) for index, value in enumerate(raw_sources)]
+    else:
+        items = []
+    result = []
+    for name, raw in items:
+        source = raw if isinstance(raw, dict) else {"location": raw}
+        result.append(
+            {
+                "storage": source.get("kind") or source.get("storage") or "other",
+                "table_or_path": source.get("location") or source.get("table") or source.get("path") or name,
+                "description": source.get("description") or source.get("logical_name") or name,
+                "range": source.get("range") or source.get("selection") or "",
+                "fields": source.get("columns") or source.get("fields") or [],
+                "join_filter": source.get("join_filter") or source.get("filter") or "",
+            }
+        )
+    return result
+
+
+def _matches_selected_target(item: Dict[str, Any], selected: set[str]) -> bool:
+    values = {
+        clean_text(item.get(key)).lower()
+        for key in ("target_name", "physical_table", "table", "table_name", "name")
+        if clean_text(item.get(key))
+    }
+    values.update(value.rsplit(".", 1)[-1] for value in list(values))
+    return bool(values.intersection(selected))
+
+
+def _deduplicate_outputs(outputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
+    order: List[tuple[str, str]] = []
+    for output in outputs:
+        key = (
+            clean_text(output.get("target_name")).lower(),
+            clean_text(output.get("physical_table")).lower(),
+        )
+        if key not in by_key:
+            by_key[key] = output
+            order.append(key)
+            continue
+        if len(output.get("final_columns") or []) > len(by_key[key].get("final_columns") or []):
+            by_key[key] = output
+    return [by_key[key] for key in order]
+
+
+def build_plan(facts: Dict[str, Any], code_unit_id: str = "") -> Dict[str, Any]:
+    unit = select_code_unit(facts, code_unit_id, "report-codegen")
     sources = facts.get("report_sources", [])
     physical_targets = facts.get("report_physical_targets") or facts.get("report_clickhouse_targets", [])
     logical_targets = facts.get("report_targets", [])
     field_mappings = facts.get("report_field_mappings", [])
     schedules = facts.get("report_schedules", [])
     component_hints = facts.get("component_hints", [])
-    codegen_contract = facts.get("codegen_contract", {})
+    legacy_codegen_contract = facts.get("codegen_contract", {})
+    codegen_contract = _unit_codegen_contract(unit, legacy_codegen_contract) if unit else legacy_codegen_contract
     component_kind = clean_text(codegen_contract.get("component_kind")) or infer_component_kind(
         sources,
         physical_targets,
@@ -191,6 +281,32 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
                 "field_rules": fields,
             }
         )
+    outputs = _deduplicate_outputs(outputs)
+
+    execution_contract = (
+        unit.get("execution_contract", {})
+        if unit
+        else (facts.get("report_execution_contract") or facts.get("execution_contract") or {})
+    )
+    selected_output_names = _contract_output_names(execution_contract, unit)
+    if unit:
+        outputs = [
+            output
+            for output in outputs
+            if {
+                clean_text(output.get("target_name")).lower(),
+                clean_text(output.get("physical_table")).lower(),
+            }.intersection(selected_output_names)
+        ]
+        physical_targets = [
+            item for item in physical_targets if _matches_selected_target(item, selected_output_names)
+        ]
+        logical_targets = [
+            item for item in logical_targets if _matches_selected_target(item, selected_output_names)
+        ]
+        sources = _unit_sources(execution_contract)
+        schedules = list(unit.get("waterline_bindings") or [])
+        component_hints = []
 
     grouped_sources: Dict[str, List[Dict[str, Any]]] = {"hbase": [], "fs": [], "mssql": [], "mysql": [], "other": []}
     for source in sources:
@@ -207,7 +323,6 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-    execution_contract = facts.get("report_execution_contract") or facts.get("execution_contract") or {}
     specialized = has_specialized_implementation(component_kind, sources, outputs)
     execution_validation = (
         {"status": "specialized", "error_count": 0, "warning_count": 0, "errors": [], "warnings": []}
@@ -228,6 +343,7 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
             "design_ready_for_codegen": design_ready,
             "implementation_ready": implementation_ready,
             "ready_for_codegen": design_ready and implementation_ready,
+            "code_unit_id": unit.get("code_unit_id", "") if unit else "",
         },
         "sources": grouped_sources,
         "physical_targets": physical_targets,
@@ -240,6 +356,7 @@ def build_plan(facts: Dict[str, Any]) -> Dict[str, Any]:
         "execution_validation": execution_validation,
         "handoff_readiness": facts.get("handoff_readiness", []),
         "inferences": facts.get("inferences", []),
+        "code_unit_contract": unit or {},
     }
 
 
@@ -271,6 +388,7 @@ def render_markdown(plan: Dict[str, Any]) -> str:
             f"- Outputs: {summary['output_count']}",
             f"- Schedules: {summary['schedule_count']}",
             f"- Component kind: {summary.get('component_kind', 'standard_report')}",
+            f"- Code unit: {summary.get('code_unit_id') or 'legacy single component'}",
             f"- Ready for codegen: {summary.get('ready_for_codegen')}",
             f"- Design contract ready: {summary.get('design_ready_for_codegen')}",
             f"- Implementation ready: {summary.get('implementation_ready')}",
@@ -308,6 +426,20 @@ def render_markdown(plan: Dict[str, Any]) -> str:
                 f"- Ready for codegen: {contract.get('ready_for_codegen', False)}",
                 "- Blockers:",
                 *([f"  - {item}" for item in contract.get("blockers", [])] or ["  - None."]),
+                "",
+            ]
+        )
+    if plan.get("code_unit_contract"):
+        unit = plan["code_unit_contract"]
+        lines.extend(
+            [
+                "## Selected Code Unit",
+                "",
+                f"- ID: {unit.get('code_unit_id', '')}",
+                f"- Covered waterlines: {', '.join(unit.get('covered_waterlines', []))}",
+                f"- Depends on: {', '.join(unit.get('depends_on', [])) or 'None'}",
+                f"- Split / merge reason: {unit.get('split_reason', '')}",
+                f"- Confidence: {unit.get('confidence', '')}",
                 "",
             ]
         )
@@ -429,13 +561,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build a report codegen plan from structured_facts.json.")
     parser.add_argument("--facts", required=True, help="Path to structured_facts.json.")
     parser.add_argument("--out", required=True, help="Output directory for report_codegen_plan.md/json.")
+    parser.add_argument(
+        "--code-unit-id",
+        default="",
+        help="Confirmed code_unit_id. Required when the project contains multiple code units.",
+    )
     args = parser.parse_args()
 
     facts_path = Path(args.facts).expanduser().resolve()
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    plan = build_plan(load_json(facts_path))
+    plan = build_plan(load_json(facts_path), args.code_unit_id)
     (out_dir / "report_codegen_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     (out_dir / "report_codegen_plan.md").write_text(render_markdown(plan), encoding="utf-8")
     print(f"plan_json: {out_dir / 'report_codegen_plan.json'}")

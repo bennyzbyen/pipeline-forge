@@ -21,10 +21,10 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "1.2.0";
+export const PLUGIN_VERSION = "1.3.0";
 export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 export const GITHUB_REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge";
-export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.2.0";
+export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.3.0";
 export const PLUGIN_DOWNLOAD_URL = "/downloads/pipeline-forge.zip";
 export const PLUGIN_CHECKSUM_URL = "/downloads/pipeline-forge.zip.sha256";
 
@@ -33,7 +33,7 @@ export const capabilities: readonly Capability[] = [
     id: "guided-workflow",
     eyebrow: "BEGINNER GUIDE",
     title: "一条龙开发向导",
-    description: "先检查材料，再选择正确模块；把 rowkey、周期分类与写入策略等阻塞项翻译成易回答的问题，并持续推进到本地验证交付。",
+    description: "先检查材料和代码边界，再给出代码单元拆分建议；由你确认合并或拆分后，逐单元路由、生成和验证。",
     input: "任意现场材料",
     output: "路线 / 产物 / 状态",
     glyph: "导",
@@ -42,10 +42,10 @@ export const capabilities: readonly Capability[] = [
   {
     id: "requirements",
     eyebrow: "DOCUMENT INTELLIGENCE",
-    title: "需求文档转开发说明",
-    description: "解析 Markdown 或 DOCX 编写的 PRD、DataHub 与 COT 需求，把正文和表格中的规则整理为 AI 可读的开发说明。",
+    title: "需求文档转技术设计",
+    description: "解析 Markdown 或 DOCX 编写的 PRD、水线与 COT 需求，识别共享逻辑、参数、状态和写入边界，形成待确认的代码单元计划。",
     input: "Markdown / DOCX / 表格",
-    output: "开发说明.md",
+    output: "技术设计 / 单元契约",
     glyph: "文",
     tone: "blue",
   },
@@ -103,14 +103,15 @@ export const capabilities: readonly Capability[] = [
 
 export const workflowSteps: readonly WorkflowStep[] = [
   { index: "01", verb: "识别", title: "接住现场材料", description: "向导先读取需求文档、任务日志、Pipeline Export 模板、字段表或已有 DDL。" },
-  { index: "02", verb: "路由", title: "选择专业路线", description: "识别任务类型和工程语义，只调用当前交付真正需要的模块。" },
-  { index: "03", verb: "生成", title: "交付真实产物", description: "输出开发说明、诊断结论、项目代码、Excel 工作簿与 SQL。" },
-  { index: "04", verb: "验证", title: "给出明确状态", description: "运行适用校验，区分阻塞、安全脚手架、测试通过和待部署复核。" },
+  { index: "02", verb: "确认", title: "确认代码边界", description: "综合共享算法、参数化、状态、写入与部署边界提出拆分建议；确认前不生成完整代码。" },
+  { index: "03", verb: "生成", title: "逐单元交付", description: "把已确认单元分别路由到报表、同步或匹配模块，生成独立代码、配置、入口与测试。" },
+  { index: "04", verb: "验证", title: "给出明确状态", description: "每个单元独立报告就绪和阻塞状态，不用一个通用脚手架掩盖真实边界。" },
 ] as const;
 
 export const reliabilityPoints: readonly ReliabilityPoint[] = [
   { title: "产物可审计", description: "关键假设、字段映射与变更内容保留在可读文件中，便于复核与交接。" },
-  { title: "语义可验证", description: "生成项目沿用确定的运行语义验证，减少“能生成、不能运行”的落差。" },
+  { title: "契约可确认", description: "项目总契约与单元执行契约记录拆分依据、用户覆盖和失效条件，边界变化时重新确认。" },
+  { title: "语义可验证", description: "每个代码单元独立校验运行、状态、写入和失败语义，减少“能生成、不能运行”的落差。" },
   { title: "模板可复用", description: "优先基于既有工程模板与平台调用方式生成，避免脱离团队真实环境。" },
   { title: "默认不执行", description: "默认不连接数据库，默认不执行 SQL；所有运行与发布动作都留在你的控制之内。" },
 ] as const;

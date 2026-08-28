@@ -17,7 +17,9 @@ from typing import Any, Iterable, Mapping
 
 CONTRACT_VERSION = 2
 SEVERITIES = {"ERROR", "DEPLOYMENT_BLOCKER", "WARNING"}
-QUESTION_ID_PATTERN = re.compile(r"^TC-(?:CG|DP|NB)-(?:\d{3}|X[A-F0-9]{6})$")
+QUESTION_ID_PATTERN = re.compile(
+    r"^TC-(?:CG|DP|NB)-(?:\d{3}|X[A-F0-9]{6}|[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)$"
+)
 QUESTION_CATEGORIES = {"blocking_codegen", "deployment_confirmation", "non_blocking"}
 VALIDATION_GATES = [
     {
@@ -474,7 +476,14 @@ def validate_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
             continue
         question_id = clean(question.get("id"))
         if not QUESTION_ID_PATTERN.fullmatch(question_id):
-            errors.append(issue("INVALID_QUESTION_ID", "ERROR", f"{path}.id", "Question ID must use TC-CG/TC-DP/TC-NB plus a stable numeric or deterministic fallback suffix."))
+            errors.append(
+                issue(
+                    "INVALID_QUESTION_ID",
+                    "ERROR",
+                    f"{path}.id",
+                    "Question ID must use TC-CG/TC-DP/TC-NB plus a stable numeric, hash, or uppercase semantic suffix.",
+                )
+            )
         elif question_id in seen_question_ids:
             errors.append(issue("DUPLICATE_QUESTION_ID", "ERROR", f"{path}.id", f"Question ID {question_id} is duplicated."))
         seen_question_ids.add(question_id)

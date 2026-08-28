@@ -101,10 +101,17 @@ def assert_markdown_only(root: Path) -> dict:
     assert facts["report_physical_targets"][0]["table"] == "abnormal_monitor.qas_alert_daily"
     assert len(facts["report_field_mappings"]) == 1
     assert len(facts["report_field_mappings"][0]["fields"]) == 2
+    assert facts["project_contract"]["status"] == "awaiting_user_confirmation"
+    assert facts["code_unit_plan"]["status"] == "awaiting_user_confirmation"
+    assert facts["code_unit_plan"]["proposed_count"] >= 1
+    assert facts["code_units"]
     csvs = list((output / "extracted").rglob("markdown_table_*.csv"))
     assert len(csvs) == 5, csvs
     design = (output / "dev_doc" / "technical_design.md").read_text(encoding="utf-8")
     assert "`prd.md`" in design and "`waterline.markdown`" in design
+    assert "## Code Unit Plan" in design
+    questions = (output / "dev_doc" / "questions.md").read_text(encoding="utf-8")
+    assert "[TC-CG-CODE-UNIT-CONFIRMATION]" in questions
     return {"documents": 2, "markdown_tables": len(csvs), "mapped_fields": 2}
 
 

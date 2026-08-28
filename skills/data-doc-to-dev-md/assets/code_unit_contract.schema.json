@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pipelineforge.local/schema/code-unit-contract-v1.json",
+  "title": "PipelineForge Two-Level Code-Unit Contract",
+  "type": "object",
+  "required": ["project_contract", "code_unit_plan", "code_units", "waterlines"],
+  "properties": {
+    "project_contract": {
+      "type": "object",
+      "required": ["contract_version", "status", "confirmed_code_unit_count", "confirmed_mapping", "dependency_graph", "boundary_evidence_fingerprint", "overall_readiness"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "status": {"enum": ["proposed", "awaiting_user_confirmation", "confirmed"]},
+        "confirmed_code_unit_count": {"type": ["integer", "null"], "minimum": 1},
+        "confirmed_mapping": {"type": "array"},
+        "dependency_graph": {"type": "array"},
+        "user_overrides": {"type": "array"},
+        "boundary_evidence_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "overall_readiness": {"enum": ["awaiting_user_confirmation", "ready_for_codegen", "partially_blocked"]}
+      }
+    },
+    "code_unit_plan": {
+      "type": "object",
+      "required": ["plan_version", "status", "proposed_count", "confirmed_count", "covered_waterlines", "proposed_mapping", "confirmed_mapping", "dependency_graph", "boundary_evidence_fingerprint", "confirmation_audit"],
+      "properties": {
+        "plan_version": {"const": 1},
+        "status": {"enum": ["proposed", "awaiting_user_confirmation", "confirmed"]},
+        "proposed_count": {"type": "integer", "minimum": 1},
+        "confirmed_count": {"type": ["integer", "null"], "minimum": 1},
+        "covered_waterlines": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+        "parameterization": {"type": "array"},
+        "split_reason": {"type": "string"},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "proposed_mapping": {"type": "array", "minItems": 1},
+        "confirmed_mapping": {"type": "array"},
+        "dependency_graph": {"type": "array"},
+        "unresolved_questions": {"type": "array"},
+        "boundary_evidence_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "confirmation_audit": {"type": "array"}
+      }
+    },
+    "code_units": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["code_unit_id", "status", "codegen_route", "component_kind", "covered_waterlines", "waterline_bindings", "parameterization", "split_reason", "confidence", "depends_on", "execution_contract", "tests", "readiness", "blockers"],
+        "properties": {
+          "code_unit_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "status": {"enum": ["proposed", "confirmed"]},
+          "codegen_route": {"type": "string"},
+          "codegen_route_candidates": {"type": "array"},
+          "component_kind": {"type": "string"},
+          "covered_waterlines": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+          "waterline_bindings": {"type": "array", "minItems": 1},
+          "parameter_profiles": {"type": "array"},
+          "parameterization": {"type": "object"},
+          "split_reason": {"type": "string", "minLength": 1},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "depends_on": {"type": "array", "items": {"type": "string"}},
+          "dependency_evidence": {"type": "object"},
+          "covered_tables": {"type": "array", "items": {"type": "string"}},
+          "execution_contract": {
+            "type": "object",
+            "properties": {
+              "sources": {},
+              "steps": {},
+              "outputs": {},
+              "writes": {},
+              "state": {},
+              "retry": {},
+              "rerun": {},
+              "empty_output_semantics": {},
+              "failure_semantics": {}
+            }
+          },
+          "tests": {"type": "array"},
+          "readiness": {
+            "type": "object",
+            "required": ["ready_for_codegen", "blockers"],
+            "properties": {
+              "ready_for_codegen": {"type": "boolean"},
+              "blockers": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "blockers": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "waterlines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["waterline_id", "codegen_route", "component_kind", "algorithm_key", "state_boundary", "write_boundary", "deployment_boundary", "failure_boundary", "boundary_confidence"],
+        "properties": {
+          "waterline_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "codegen_route": {"type": "string"},
+          "codegen_route_candidates": {"type": "array"},
+          "component_kind": {"type": "string"},
+          "algorithm_key": {"type": "string"},
+          "state_boundary": {"type": "object"},
+          "write_boundary": {"type": "object"},
+          "deployment_boundary": {"type": "object"},
+          "failure_boundary": {"type": "object"},
+          "dependency_evidence": {"type": "object"},
+          "boundary_evidence": {"type": "object"},
+          "boundary_confidence": {"enum": ["high", "medium", "low"]}
+        }
+      }
+    }
+  }
+}

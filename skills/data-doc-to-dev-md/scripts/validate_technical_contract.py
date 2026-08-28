@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from technical_contract import validate_contract
+from code_unit_contract import validate_code_unit_contract
 
 
 def main() -> int:
@@ -22,6 +23,20 @@ def main() -> int:
     if not isinstance(contract, dict):
         raise ValueError("structured facts must contain an object at codegen_contract")
     result = validate_contract(contract)
+    code_unit_result = validate_code_unit_contract(payload)
+    result["code_unit_contract"] = code_unit_result
+    if code_unit_result["status"] == "failed":
+        result["status"] = "failed"
+        result["errors"] = list(result.get("errors", [])) + [
+            {
+                "code": "CODE_UNIT_CONTRACT_INVALID",
+                "severity": "ERROR",
+                "path": "code_unit_plan",
+                "message": message,
+            }
+            for message in code_unit_result["errors"]
+        ]
+        result["error_count"] = len(result["errors"])
     text = json.dumps(result, ensure_ascii=False, indent=2)
     print(text)
     if args.json_out:

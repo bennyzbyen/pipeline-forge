@@ -47,7 +47,7 @@ test("server-renders the complete PipelineForge product story", async () => {
 
   for (const capability of [
     "一条龙开发向导",
-    "需求文档转开发说明",
+    "需求文档转技术设计",
     "数据任务日志诊断",
     "数据同步项目代码生成",
     "报表项目代码生成",
@@ -82,6 +82,8 @@ test("server-renders the complete PipelineForge product story", async () => {
   assert.match(checksum, /^[a-f0-9]{64}\s+pipeline-forge\.zip\s*$/i);
   assert.match(html, /1 个向导 \+ 6 个专业模块/);
   assert.match(html, new RegExp(escapedPluginVersion));
+  assert.match(html, /待确认的代码单元计划/);
+  assert.match(html, /确认前不生成完整代码/);
   assert.match(html, /逐表校验字段、调度形态、rowkey 与运行配置/);
   assert.match(html, /通用项目使用受限执行契约并校验全部输出/);
   assert.match(html, /默认不连接数据库/);
