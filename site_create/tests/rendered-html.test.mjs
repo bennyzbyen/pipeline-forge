@@ -39,6 +39,8 @@ test("server-renders the complete PipelineForge product story", async () => {
   assert.match(html, /<title>PipelineForge — 把数据工程锻造成确定性<\/title>/i);
   assert.match(html, /把数据工程，锻造成确定性。/);
   assert.match(html, /需求可读/);
+  assert.match(html, /Markdown \/ DOCX/);
+  assert.match(html, /PRD与水线设计\.md/);
   assert.match(html, /诊断可查/);
   assert.match(html, /代码可运行/);
   assert.match(html, /变更可审计/);

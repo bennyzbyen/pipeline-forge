@@ -21,7 +21,7 @@ Act as the beginner-friendly front door for PipelineForge. Select and sequence t
 
 | User intent or evidence | Route |
 | --- | --- |
-| Requirement DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with `data-doc-to-dev-md`, then route to `data-sync-codegen` or `report-codegen` from `codegen_contract`. |
+| Requirement Markdown/DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with `data-doc-to-dev-md`, then route to `data-sync-codegen` or `report-codegen` from `codegen_contract`. |
 | Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
 | DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
 | Job log, error screenshot, or failed DataEngine/DataHub run | Read `references/specialized-routes.md`, then use `data-job-log-debugger`. |

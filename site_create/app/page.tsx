@@ -108,10 +108,10 @@ function HeroPipeline() {
 
         <div className="window-body">
           <div className="input-card">
-            <span className="file-chip">DOCX</span>
+            <span className="file-chip">MD</span>
             <div>
-              <strong>需求说明书_v3.docx</strong>
-              <span>DataHub · COT · HBase</span>
+              <strong>PRD与水线设计.md</strong>
+              <span>Markdown · DataHub · COT</span>
             </div>
             <span className="input-check">✓</span>
           </div>
@@ -311,7 +311,7 @@ export default function Home() {
             <div className="artifact-flow glass-panel reveal">
               <div className="artifact-group">
                 <span className="artifact-label">INPUT</span>
-                <div><b>DOCX</b><b>LOG</b><b>XLSX</b><b>SCHEMA</b></div>
+                <div><b>MD</b><b>DOCX</b><b>LOG</b><b>XLSX</b><b>SCHEMA</b></div>
               </div>
               <span className="artifact-arrow" aria-hidden="true">→</span>
               <div className="forge-core">

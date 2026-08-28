@@ -17,7 +17,7 @@ Explicit user-confirmed values override inferred document values. Production exp
 
 ## Script-First Workflow
 
-1. If only DOCX inputs exist, use `data-doc-to-dev-md/scripts/extract_docx_bundle.py` to produce `structured_facts.json`.
+1. If only Markdown or DOCX requirement inputs exist, use `data-doc-to-dev-md/scripts/extract_docx_bundle.py --input <paths...>` to produce `structured_facts.json`.
 2. Run `scripts/build_pipeline_excel.py --template-xlsx <workbook> --structured-facts <facts> --questions-out <questions.md> --project-name <name>`. The template is filled in place unless `--out-xlsx` is supplied.
 3. Run `scripts/validate_pipeline_excel.py --xlsx <workbook> --json-out <validation.json>`.
 4. Review `questions.md` and validation warnings before calling the workbook import-ready.

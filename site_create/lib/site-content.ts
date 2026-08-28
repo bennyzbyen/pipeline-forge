@@ -21,10 +21,10 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "1.1.2";
+export const PLUGIN_VERSION = "1.2.0";
 export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 export const GITHUB_REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge";
-export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.1.2";
+export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.2.0";
 export const PLUGIN_DOWNLOAD_URL = "/downloads/pipeline-forge.zip";
 export const PLUGIN_CHECKSUM_URL = "/downloads/pipeline-forge.zip.sha256";
 
@@ -43,8 +43,8 @@ export const capabilities: readonly Capability[] = [
     id: "requirements",
     eyebrow: "DOCUMENT INTELLIGENCE",
     title: "需求文档转开发说明",
-    description: "解析 PRD、DataHub 与 COT 需求，把散落在文档和嵌入表格中的规则整理为 AI 可读的开发说明。",
-    input: "DOCX / 表格",
+    description: "解析 Markdown 或 DOCX 编写的 PRD、DataHub 与 COT 需求，把正文和表格中的规则整理为 AI 可读的开发说明。",
+    input: "Markdown / DOCX / 表格",
     output: "开发说明.md",
     glyph: "文",
     tone: "blue",
