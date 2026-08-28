@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from code_unit_render import render_code_unit_plan_markdown
+
 from docx_bundle_ooxml import Paragraph, SheetSummary, compact_text
 
 
@@ -464,6 +466,7 @@ def _render_technical_design_content(
     parameter_design: str,
     codegen_contract: dict,
     blockers_section: str,
+    code_unit_plan_section: str,
 ) -> str:
     content = f"""---
 document_type: technical-design
@@ -531,6 +534,8 @@ The extracted embedded tables below are the primary field-dictionary evidence:
 ### 3.4 Parameter And Orchestration Contract
 
 {parameter_design}
+
+{code_unit_plan_section}
 
 ## 4. Verification And Acceptance
 
@@ -615,5 +620,6 @@ def write_dev_doc_v2(
         parameter_design=sections["parameter_design"],
         codegen_contract=contract["codegen_contract"],
         blockers_section=contract["blockers_section"],
+        code_unit_plan_section=render_code_unit_plan_markdown(facts),
     )
     path.write_text(content, encoding="utf-8")

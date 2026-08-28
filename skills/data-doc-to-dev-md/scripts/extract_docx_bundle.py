@@ -103,6 +103,10 @@ from docx_bundle_render import (
     write_extracted_markdown,
 )
 from technical_contract import build_contract_v2
+from code_unit_contract import (
+    CONFIRMATION_QUESTION_ID,
+    apply_proposal,
+)
 from requirement_bundle_inputs import (
     annotate_document_context,
     collect_requirement_evidence,
@@ -141,6 +145,13 @@ def run(args: argparse.Namespace) -> int:
         )
     question_groups = build_question_groups_v2(all_paragraphs, all_table_summaries, structured_facts)
     structured_facts["codegen_contract"] = build_codegen_contract(structured_facts, question_groups)
+    apply_proposal(structured_facts)
+    add_open_question(
+        question_groups["blocking_codegen"],
+        CONFIRMATION_QUESTION_ID,
+        "blocking_codegen",
+        "请确认建议的代码单元数量、每个单元覆盖的水线、参数化方案和依赖边界；确认前不得进入完整代码生成。",
+    )
     (dev_doc_dir / "structured_facts.json").write_text(
         json.dumps(structured_facts, ensure_ascii=False, indent=2),
         encoding="utf-8",

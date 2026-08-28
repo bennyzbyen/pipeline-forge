@@ -11,7 +11,7 @@ Build COT/DataEngine synchronization code from `technical_design.md` or equivale
 
 For the standard three-file handoff, read in this order:
 
-1. `structured_facts.json`: inspect `codegen_contract`, routing facts, tables, fields, provenance, and readiness.
+1. `structured_facts.json`: inspect the two-level `project_contract`, `code_unit_plan`, and `code_units[]` first, then the legacy-compatible `codegen_contract`, tables, fields, provenance, and readiness.
 2. `technical_design.md`: use HLD for flow/component boundaries and LLD for rowkeys, incremental fields, write predicates, parameters, retry, and verification behavior.
 3. `questions.md`: stop full generation when `Blocking Code Generation` is non-empty; deployment and non-blocking questions do not prevent scaffolding.
 
@@ -30,8 +30,9 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 2. Read `references/code_comments_and_runtime_logging.md` before generating or reviewing business code.
 3. Read `references/platform_client_usage.md` when code touches Gateway, HBase, or FS.
 4. If `codegen_contract.component_kind` or `component_hints[].component_kind` is `bysku_report_pipeline`, route to `report-codegen`; it is not a COT table-sync shape.
-5. Prefer `scripts/scaffold_cot_sync_project.py --structured-facts <facts> --output-dir <target> [--extracted-tables <dir>]`. Use `assets/minimal_sync_project/` only when the script does not fit the requirement.
+5. For a two-level contract, reject `awaiting_user_confirmation` and select a confirmed sync unit with `scripts/scaffold_cot_sync_project.py --structured-facts <facts> --output-dir <target> --code-unit-id <id> [--extracted-tables <dir>]`. The ID may be omitted only for one confirmed unit. Legacy facts keep the existing command. Each selected unit generates its own entrypoint, config, test, and read-only `CODE_UNIT_CONTRACT.json` snapshot.
 6. If `codegen_contract.ready_for_codegen = false`, return its blockers. Use `--allow-blocked-scaffold` only for an explicitly requested safe scaffold, and do not claim full implementation. A blocked scaffold must include `SAFE_SCAFFOLD.json` with `runtime_enabled=false` and keep every table runtime-disabled; the flag alone must not downgrade an otherwise ready contract.
+   Its generated contract test must assert the blocked snapshot and safe marker, while a ready unit's test must assert readiness and the absence of that marker.
 7. Adapt only confirmed tables, fields, parameters, rowkeys, and exceptions. Keep business-specific variation in config where possible.
 8. Compile generated Python, then run `scripts/verify_cot_manifest_semantics.py --project-dir <target>` to check every table against the manifest, runtime config, fields, and rowkey review surface.
 9. Run `scripts/verify_codegen_observability.py --project-dir <target>` and `scripts/verify_cot_runtime_semantics.py --project-dir <target>` for scaffold projects. The runtime verifier checks empty/manual period semantics and the final HBase request after wrapper defaults. Use the manifest verifier's `--strict-deployment` mode only when the user is preparing a deployment review.

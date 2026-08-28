@@ -21,7 +21,7 @@ Act as the beginner-friendly front door for PipelineForge. Select and sequence t
 
 | User intent or evidence | Route |
 | --- | --- |
-| Requirement Markdown/DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with `data-doc-to-dev-md`, then route to `data-sync-codegen` or `report-codegen` from `codegen_contract`. |
+| Requirement Markdown/DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with **Data Doc To Technical Design** (internal skill id: `data-doc-to-dev-md`), confirm the project-level code-unit plan, then dispatch each confirmed unit by its `codegen_route`. |
 | Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
 | DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
 | Job log, error screenshot, or failed DataEngine/DataHub run | Read `references/specialized-routes.md`, then use `data-job-log-debugger`. |
@@ -62,3 +62,7 @@ Keep updates brief and use this shape when it helps a beginner:
 ```
 
 The final handoff must identify the route, status, artifacts, verification results, unresolved decisions, and next action. Avoid exposing internal skill mechanics unless they help the user act.
+
+For a two-level contract, the Guide owns confirmation and dispatch coordination: show the proposed count and mapping, apply the user's audited merge/split decision, then use `scripts/build_code_unit_dispatch.py` to report ready and blocked units. Generate each ready unit independently; never collapse confirmed units because another unit is blocked.
+
+Dispatch confirmed units with `codegen_route = data-sync-codegen` to the `data-sync-codegen` skill and units with `codegen_route = report-codegen` to the `report-codegen` skill.

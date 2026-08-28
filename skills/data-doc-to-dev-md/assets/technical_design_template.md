@@ -109,6 +109,18 @@ For report docs, include source, target, and field-logic matrices:
 }
 ```
 
+### 3.5 Code Unit Plan
+
+- Lifecycle: proposed / awaiting_user_confirmation / confirmed
+- Proposed count:
+- Confirmed count:
+- Confidence:
+
+| Code Unit | Route / Kind | Covered Waterlines | Parameter Profiles | Dependencies | Split / Merge Reason | Readiness |
+|---|---|---|---|---|---|---|
+
+Record the confirmation audit and per-unit blockers. Waterline count is evidence only; it does not directly determine code count.
+
 ## 4. Verification And Acceptance
 
 - DataSource:
@@ -125,6 +137,9 @@ For report docs, include source, target, and field-logic matrices:
 - Ready for codegen:
 - Deployment validation: ready / review-required
 - Machine-readable contract: `structured_facts.json#codegen_contract`
+- Project contract: `structured_facts.json#project_contract`
+- Code-unit plan: `structured_facts.json#code_unit_plan`
+- Per-unit execution contracts: `structured_facts.json#code_units`
 
 ### Blocking Code Generation
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 - 2026-08-28
+
+- Add evidence-driven project and code-unit contracts with explicit user confirmation before generation.
+- Route confirmed code units independently to report or synchronization generators with unit-scoped plans, blockers, safe scaffolds, and tests.
+- Extract algorithm, parameter, state, write, deployment, failure, and dependency boundaries from mixed Markdown and DOCX requirements.
+- Preserve legacy single-component contracts while adding reference-assisted report parity and provenance gates.
+
 ## 1.2.0 - 2026-08-28
 
 - Add first-class Markdown PRD and waterline inputs with mixed Markdown/DOCX extraction.

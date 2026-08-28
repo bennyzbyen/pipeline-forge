@@ -644,6 +644,56 @@ def write_params_example(target: Path, plan: Dict[str, Any]) -> None:
     (target / "params.example.json").write_text(json.dumps(params, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def write_code_unit_snapshot(target: Path, plan: Dict[str, Any]) -> None:
+    unit = plan.get("code_unit_contract")
+    if not isinstance(unit, dict) or not unit:
+        return
+    snapshot = {
+        "snapshot_mode": "read_only",
+        "code_unit_id": unit.get("code_unit_id", ""),
+        "contract": unit,
+    }
+    (target / "CODE_UNIT_CONTRACT.json").write_text(
+        json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_code_unit_test(target: Path, plan: Dict[str, Any]) -> None:
+    unit = plan.get("code_unit_contract")
+    if not isinstance(unit, dict) or not unit:
+        return
+    tests_dir = target / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    expected_id = json.dumps(str(unit.get("code_unit_id", "")))
+    expected_ready = unit.get("readiness", {}).get("ready_for_codegen") is True
+    readiness_assertion = "is True" if expected_ready else "is False"
+    safety_assertions = (
+        "    assert not (root / \"SAFE_SCAFFOLD.json\").exists()\n"
+        if expected_ready
+        else """    safe = json.loads((root / \"SAFE_SCAFFOLD.json\").read_text(encoding=\"utf-8\"))
+    assert safe[\"status\"] == \"SAFE_SCAFFOLD\"
+    assert safe[\"runtime_enabled\"] is False
+"""
+    )
+    content = f'''import json
+from pathlib import Path
+
+
+def test_confirmed_code_unit_snapshot_and_entrypoint():
+    root = Path(__file__).resolve().parents[1]
+    snapshot = json.loads((root / "CODE_UNIT_CONTRACT.json").read_text(encoding="utf-8"))
+    assert snapshot["snapshot_mode"] == "read_only"
+    assert snapshot["code_unit_id"] == {expected_id}
+    assert snapshot["contract"]["status"] == "confirmed"
+    assert snapshot["contract"]["readiness"]["ready_for_codegen"] {readiness_assertion}
+{safety_assertions.rstrip()}
+    assert (root / "plugin_main.py").exists()
+    assert (root / "params_configs" / "execution_contract.py").exists()
+'''
+    (tests_dir / "test_code_unit_contract.py").write_text(content, encoding="utf-8")
+
+
 def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False) -> None:
     plan = load_json(plan_path)
     codegen_contract = plan.get("codegen_contract", {})
@@ -688,6 +738,8 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
     write_data_storage(target, plan)
     write_implementation_status(target, plan, safe_scaffold=safe_scaffold)
     write_params_example(target, plan)
+    write_code_unit_snapshot(target, plan)
+    write_code_unit_test(target, plan)
     (target / "report_codegen_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

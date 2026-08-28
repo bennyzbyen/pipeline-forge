@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -115,6 +116,17 @@ def main() -> int:
     assert complete["contract_version"] == 2, complete
     assert complete["ready_for_codegen"] is True, complete
     assert complete["validation_result"]["deployment_status"] == "ready", complete["validation_result"]
+    semantic_question_contract = copy.deepcopy(complete)
+    semantic_question_contract["open_questions"] = [
+        {
+            "id": "TC-CG-CODE-UNIT-CONFIRMATION",
+            "category": "blocking_codegen",
+            "text": "Confirm the proposed code-unit mapping.",
+            "status": "open",
+        }
+    ]
+    semantic_validation = validate_contract(semantic_question_contract)
+    assert semantic_validation["status"] == "passed", semantic_validation
 
     conflicting_facts = complete_facts()
     conflicting_facts["conflicts"] = [
@@ -153,7 +165,7 @@ def main() -> int:
         assert "[TC-CG-015]" in rendered, rendered
         assert "[TC-DP-001]" in rendered, rendered
 
-    print(json.dumps({"status": "passed", "case_count": 4}, ensure_ascii=False, indent=2))
+    print(json.dumps({"status": "passed", "case_count": 5}, ensure_ascii=False, indent=2))
     return 0
 
 
