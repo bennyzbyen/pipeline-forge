@@ -21,7 +21,7 @@ PipelineForge 是一套带新手统一入口的数据管线开发工具集合。
 添加公开的 GitHub Marketplace 源：
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.1.2
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.2.0
 ```
 
 然后在支持的入口完成安装：
@@ -77,4 +77,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `1.1.2`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `1.2.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。

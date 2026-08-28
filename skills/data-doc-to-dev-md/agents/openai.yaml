@@ -1,6 +1,6 @@
 interface:
   display_name: "Data Doc To Technical Design"
-  short_description: "Turn data DOCX files into technical designs"
+  short_description: "Turn Markdown or DOCX requirements into technical designs"
   default_prompt: "Use $data-doc-to-dev-md to produce the three-file Technical Design handoff: technical_design.md, structured_facts.json, and questions.md."
 policy:
   allow_implicit_invocation: true

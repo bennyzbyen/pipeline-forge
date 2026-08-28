@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 - 2026-08-28
+
+- Add first-class Markdown PRD and waterline inputs with mixed Markdown/DOCX extraction.
+- Preserve Markdown headings, prose, GFM tables, code fences, and source provenance in the existing three-file technical-design handoff.
+
 ## 1.1.2 - 2026-08-27
 
 - Fail closed on contaminated generation contracts and keep explicit safe scaffolds non-runnable.

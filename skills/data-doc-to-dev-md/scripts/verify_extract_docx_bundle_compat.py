@@ -130,6 +130,9 @@ def main() -> int:
     assert parsed.out == "out"
     assert parsed.project_name == "fixture"
     assert parsed.max_table_rows == 25
+    mixed = parser.parse_args(["--input", "requirements.md", "waterline.docx", "--out", "out"])
+    assert mixed.input == [["requirements.md", "waterline.docx"]]
+    assert mixed.docx is None
     assert list(inspect.signature(extract_docx_bundle.main).parameters) == ["argv"]
 
     entrypoint_path = Path(extract_docx_bundle.__file__)
@@ -140,7 +143,7 @@ def main() -> int:
         check=False,
     )
     assert help_result.returncode == 0, help_result.stderr
-    assert "--docx" in help_result.stdout and "--max-table-rows" in help_result.stdout
+    assert "--input" in help_result.stdout and "--docx" in help_result.stdout and "--max-table-rows" in help_result.stdout
 
     missing_args_result = subprocess.run(
         [sys.executable, str(entrypoint_path)],
@@ -153,7 +156,9 @@ def main() -> int:
 
     entrypoint_lines = len(entrypoint_path.read_text(encoding="utf-8").splitlines())
     assert entrypoint_lines <= 350, entrypoint_lines
-    implementation_paths = sorted(entrypoint_path.parent.glob("docx_bundle_*.py"))
+    implementation_paths = sorted(
+        [*entrypoint_path.parent.glob("docx_bundle_*.py"), *entrypoint_path.parent.glob("requirement_bundle_*.py")]
+    )
     implementation_line_counts = {
         path.name: len(path.read_text(encoding="utf-8").splitlines())
         for path in implementation_paths
