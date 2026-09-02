@@ -9,6 +9,7 @@ PipelineForge 是一套带新手统一入口的数据管线开发工具集合。
 ## 能力范围
 
 - 为新手提供材料识别、路线选择、阻塞问题解释、生成和验证的一条龙向导。
+- 从 DOCX（含内嵌 Excel）、Markdown、PDF 格式的 PRD/HLD 生成可会话修改的水线文档，支持 Markdown、交互式 HTML 和 PDF 输出。
 - 从 PRD、DataEngine、DataHub、水线、COT、HBase、ClickHouse、Superview、报表类文档中抽取开发事实。
 - 诊断 DataEngine/DataHub 同步任务和报表任务日志。
 - 生成和审查可移植的 Python 数据同步项目代码，并逐表校验字段、调度形态、rowkey 与运行配置。
@@ -21,7 +22,7 @@ PipelineForge 是一套带新手统一入口的数据管线开发工具集合。
 添加公开的 GitHub Marketplace 源：
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.3.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.4.0
 ```
 
 然后在支持的入口完成安装：
@@ -52,6 +53,7 @@ pipeline-forge/
 | 模块 | 适用场景 |
 | --- | --- |
 | `pipeline-forge-guide` | 从源文件开始，逐步完成路线选择、阻塞确认、生成和验证。 |
+| `pipeline-doc-generator` | 基于 facts 生成或修改可审阅的水线文档，包含直接展示的表格和 Graphviz 流程图。 |
 | `data-doc-to-dev-md` | 从需求文档抽取结构化事实和开发说明。 |
 | `data-job-log-debugger` | 根据日志或截图诊断数据任务失败原因。 |
 | `data-sync-codegen` | 生成或修改数据同步项目代码，并执行全表契约校验与运行时保护。 |
@@ -77,4 +79,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `1.3.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `1.4.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。

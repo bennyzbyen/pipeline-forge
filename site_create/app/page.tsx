@@ -146,7 +146,7 @@ function HeroPipeline() {
         <span>✓</span> 语义验证通过
       </div>
       <div className="floating-chip chip-bottom glass-panel" aria-hidden="true">
-        <span>7</span> 类工程能力
+        <span>{capabilities.length}</span> 类工程能力
       </div>
     </div>
   );
@@ -236,7 +236,7 @@ export default function Home() {
             <EnableActions />
             <div className="hero-proof" aria-label="产品特性">
               <span><i /> Personal Plugin</span>
-              <span><i /> 1 个向导 + 6 个专业模块</span>
+              <span><i /> 1 个向导 + 7 个专业模块</span>
               <span><i /> 默认离线生成</span>
             </div>
           </div>
@@ -260,7 +260,7 @@ export default function Home() {
           <div className="section-heading reveal">
             <div>
               <span className="section-kicker">CORE CAPABILITIES</span>
-              <h2 id="capabilities-title">一条龙向导，串起六项专业能力。</h2>
+              <h2 id="capabilities-title">一条龙向导，串起七项专业能力。</h2>
             </div>
             <p>新手从向导开始，熟悉后也可以直接调用任一专业模块。</p>
           </div>

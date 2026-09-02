@@ -38,6 +38,7 @@ REQUIRED_SKILLS = {
     "data-job-log-debugger",
     "data-sync-codegen",
     "pipeline-excel-builder",
+    "pipeline-doc-generator",
     "pipeline-forge-guide",
     "report-codegen",
     "db-ddl-generator-skill",
@@ -75,6 +76,32 @@ CODEGEN_CONTRACT_FILES = {
     "db-ddl-generator-skill": {
         "scripts/verify_clickhouse_deployment_profile.py",
     },
+}
+
+
+PIPELINE_DOC_RESOURCES = {
+    "agents/openai.yaml",
+    "scripts/extract_requirement_evidence.py",
+    "scripts/pipeline_doc_authoring.py",
+    "scripts/render_pipeline_doc.py",
+    "scripts/render_pipeline_pdf.py",
+    "scripts/render_waterline_svg.py",
+    "scripts/graphviz_layout.cjs",
+    "scripts/validate_pipeline_doc.py",
+    "scripts/validate_pipeline_pdf.py",
+    "scripts/verify_pipeline_doc_generator.py",
+    "assets/facts.schema.json",
+    "assets/flow-spec.schema.json",
+    "assets/sync_template.md",
+    "assets/report_template.md",
+    "assets/diagram-viewer.js",
+    "assets/diagram-viewer.css",
+    "assets/diagram-viewer.html",
+    "references/evidence-rules.md",
+    "references/profiles.md",
+    "references/facts-and-questions.md",
+    "references/diagram-rendering.md",
+    "references/pdf-output.md",
 }
 
 
@@ -359,6 +386,12 @@ def validate_python_helpers() -> None:
         py_compile.compile(str(path), doraise=True)
 
 
+def validate_pipeline_doc_resources() -> None:
+    skill_root = ROOT / "skills" / "pipeline-doc-generator"
+    for relative in sorted(PIPELINE_DOC_RESOURCES):
+        require((skill_root / relative).is_file(), f"missing pipeline-doc-generator resource: {relative}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -392,6 +425,7 @@ def main() -> int:
     validate_source_sync(args.source_root, source_revision, args.require_source_sync)
     validate_guide_contract()
     validate_codegen_contract_tools()
+    validate_pipeline_doc_resources()
     validate_python_helpers()
     print("PipelineForge package validation passed")
     return 0

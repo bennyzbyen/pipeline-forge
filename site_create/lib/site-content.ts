@@ -21,10 +21,10 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "1.3.0";
+export const PLUGIN_VERSION = "1.4.0";
 export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 export const GITHUB_REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge";
-export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.3.0";
+export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.4.0";
 export const PLUGIN_DOWNLOAD_URL = "/downloads/pipeline-forge.zip";
 export const PLUGIN_CHECKSUM_URL = "/downloads/pipeline-forge.zip.sha256";
 
@@ -38,6 +38,16 @@ export const capabilities: readonly Capability[] = [
     output: "路线 / 产物 / 状态",
     glyph: "导",
     tone: "violet",
+  },
+  {
+    id: "waterline-documents",
+    eyebrow: "PIPELINE DOCUMENTS",
+    title: "可交互水线文档生成",
+    description: "从 PRD / HLD 提炼同步或报表水线，直接展示完整表格与 Graphviz 流程图；支持会话修改、自动变更摘要和缺失信息确认。",
+    input: "DOCX / 内嵌 Excel / Markdown / PDF",
+    output: "Markdown / 交互 HTML / PDF",
+    glyph: "线",
+    tone: "cyan",
   },
   {
     id: "requirements",

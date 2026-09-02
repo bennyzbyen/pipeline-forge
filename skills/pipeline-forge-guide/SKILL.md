@@ -1,6 +1,6 @@
 ---
 name: pipeline-forge-guide
-description: Guide beginners through end-to-end PipelineForge workflows from requirement documents, logs, schemas, or Pipeline Export inputs to verified safe deliverables. Use when the user asks for a one-stop or wizard flow, does not know which module to use, or wants step-by-step document-to-code delivery. Do not use for a narrowly scoped expert request that already targets one module.
+description: Guide beginners through end-to-end PipelineForge workflows from requirement documents, logs, schemas, or Pipeline Export inputs to verified safe deliverables. Use when the user asks for a one-stop or wizard flow, does not know which module to use, or wants step-by-step waterline-document or document-to-code delivery. Do not use for a narrowly scoped expert request that already targets one module.
 ---
 
 # PipelineForge Guide
@@ -21,13 +21,16 @@ Act as the beginner-friendly front door for PipelineForge. Select and sequence t
 
 | User intent or evidence | Route |
 | --- | --- |
-| Requirement Markdown/DOCX, waterline, PRD, or document-to-code request | Read `references/document-to-delivery.md`. Start with **Data Doc To Technical Design** (internal skill id: `data-doc-to-dev-md`), confirm the project-level code-unit plan, then dispatch each confirmed unit by its `codegen_route`. |
+| Generate or revise a reviewable waterline document from PRD/HLD (DOCX with embedded Excel, Markdown, or PDF) | Read `references/specialized-routes.md`, then use `pipeline-doc-generator` for Markdown, HTML, PDF, or a requested combination. |
+| Technical Design handoff or document-to-code request using requirement Markdown/DOCX, waterline, or PRD evidence | Read `references/document-to-delivery.md`. Start with **Data Doc To Technical Design** (internal skill id: `data-doc-to-dev-md`), confirm the project-level code-unit plan, then dispatch each confirmed unit by its `codegen_route`. |
 | Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
 | DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
 | Job log, error screenshot, or failed DataEngine/DataHub run | Read `references/specialized-routes.md`, then use `data-job-log-debugger`. |
 | Existing synchronization or report project review | Use the matching codegen skill and its verifiers; do not regenerate unrelated files. |
 
 When blockers need user input, read `references/beginner-questions.md` before presenting them.
+
+Route by the requested deliverable, not the input filename. If the user provides requirements without saying whether they want a waterline document or implementation artifacts, ask before selecting either route. A document-only request does not authorize downstream code generation.
 
 ## Stage Loop
 

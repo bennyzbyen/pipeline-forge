@@ -36,7 +36,7 @@ The repository owner is the final authority. A session instructed to act as **Pi
 
 ## Source And Release Rules
 
-Keep all seven packaged skills synchronized with `skill_lab`. Do not hand-edit a packaged skill when the same change belongs in the source repository. Update the plugin manifest, website package metadata, displayed version, changelog, tests, ZIP checksum, and other version sources together according to `VERSIONING.md`.
+Keep all eight packaged skills synchronized with `skill_lab`. Do not hand-edit a packaged skill when the same change belongs in the source repository. Update the plugin manifest, website package metadata, displayed version, changelog, tests, ZIP checksum, and other version sources together according to `VERSIONING.md`.
 
 Use a short imperative subject. For non-trivial changes, include `Why`, `Validation`, and `Related` sections in the commit body. Cite the corresponding source commit as `data_pipeline_develop_skills@<sha>` whenever packaged skills or the cross-repository workflow changes. Before committing a release, run package validation with `--source-root`, rebuild and validate the download archive, and run the site tests. Keep user-visible release history in `CHANGELOG.md` and unresolved work in GitHub Issues; do not maintain a duplicate iteration log.
 

@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pipeline-doc-generator/facts.schema.json",
+  "title": "Pipeline waterline facts",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "profile",
+    "document",
+    "requirements",
+    "sources",
+    "targets",
+    "pipelines",
+    "resources",
+    "flow"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "profile": {"enum": ["sync", "report", ""]},
+    "profile_suggestion": {
+      "type": "object",
+      "properties": {
+        "value": {"enum": ["sync", "report", "ambiguous", ""]},
+        "confidence": {"enum": ["high", "medium", "low", ""]},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "document": {
+      "type": "object",
+      "required": ["title", "project_name", "description", "release_history", "team"],
+      "properties": {
+        "title": {"type": "string"},
+        "project_name": {"type": "string"},
+        "description": {"type": "string"},
+        "author": {"type": "string"},
+        "release_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["version", "summary", "author", "date"],
+            "properties": {
+              "version": {"type": "string"},
+              "summary": {"type": "string"},
+              "author": {"type": "string"},
+              "date": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "team": {
+          "type": "object",
+          "required": ["owner", "developer", "operator"],
+          "properties": {
+            "owner": {"type": "string"},
+            "developer": {"type": "string", "const": "数砚工程师"},
+            "operator": {"type": "string", "const": "数砚工程师"}
+          },
+          "additionalProperties": true
+        },
+        "documentation": {"type": "string"},
+        "write_flow": {"type": "array", "items": {"type": "string"}},
+        "sync_logic": {"type": "array", "items": {"type": "string"}},
+        "go_live": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "requirements": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {
+        "summary": {"type": "array", "items": {"type": "string"}},
+        "scope": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "source_connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "environment": {"type": "string"},
+          "host": {"type": "string"},
+          "database": {"type": "string"},
+          "note": {"type": "string"},
+          "source_refs": {"type": "array"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "targets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/target"}
+    },
+    "pipelines": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/pipeline"}
+    },
+    "catalog": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": ["boolean", "null"]},
+        "basic_info": {"type": "array", "items": {"type": "object"}},
+        "dictionary": {"type": "array", "items": {"type": "object"}},
+        "storage": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "required": ["peak_memory", "environment"],
+      "properties": {
+        "peak_memory": {"type": "string"},
+        "environment": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "flow": {"$ref": "flow-spec.schema.json"},
+    "documents": {"type": "array", "items": {"type": "object"}},
+    "questions": {"type": "array", "items": {"$ref": "#/$defs/question"}},
+    "conflicts": {"type": "array", "items": {"type": "object"}},
+    "confirmed_pending_paths": {"type": "array", "items": {"type": "string"}},
+    "render_preferences": {
+      "type": "object",
+      "properties": {
+        "last_format": {"enum": ["markdown", "html", "pdf", "both", "markdown-pdf", "html-pdf", "all", ""]},
+        "pdf_orientation": {"enum": ["auto", "portrait", "landscape"], "default": "auto"},
+        "include_target_category": {"type": ["boolean", "null"]},
+        "include_target_report_type": {"type": ["boolean", "null"]},
+        "include_target_range": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "change_log": {"type": "array", "items": {"type": "object"}},
+    "revision_state": {
+      "type": "object",
+      "properties": {
+        "version": {"type": "string"},
+        "content_hashes": {"type": "object", "additionalProperties": {"type": "string"}},
+        "change_log_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "sourceRef": {
+      "type": "object",
+      "properties": {
+        "document": {"type": "string"},
+        "document_index": {"type": "integer"},
+        "heading": {"type": "string"},
+        "page": {"type": "integer"},
+        "table": {"type": "string"},
+        "sheet": {"type": "string"},
+        "range": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "field": {
+      "type": "object",
+      "required": ["id", "key"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "key": {"type": "string"},
+        "name": {"type": "string"},
+        "source_type": {"type": "string"},
+        "type": {"type": "string"},
+        "source": {"type": "string"},
+        "source_field": {"type": "string"},
+        "logic": {"type": "string"},
+        "sample": {"type": "string"},
+        "history": {"type": "string"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
+      },
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "location", "name"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "location": {"type": "string"},
+        "system": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "range": {"type": "string"},
+        "category": {"type": "string"},
+        "report_type": {"type": "string"},
+        "fields": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"$ref": "#/$defs/field"}]}},
+        "filters": {"type": "array", "items": {"type": "string"}},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
+      },
+      "additionalProperties": true
+    },
+    "target": {
+      "type": "object",
+      "required": ["id", "location", "table", "fields"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "location": {"type": "string"},
+        "database": {"type": "string"},
+        "table": {"type": "string"},
+        "description": {"type": "string"},
+        "category": {"type": "string"},
+        "report_type": {"type": "string"},
+        "grain": {"type": "string"},
+        "schedule": {"type": "string"},
+        "write_mode": {"type": "string"},
+        "logic": {"type": "array", "items": {"type": "string"}},
+        "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
+      },
+      "additionalProperties": true
+    },
+    "pipeline": {
+      "type": "object",
+      "required": ["id", "data_utilization", "name", "task_name", "trigger", "sources", "targets"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "data_utilization": {"type": "string"},
+        "name": {"type": "string"},
+        "task_name": {"type": "string"},
+        "name_confirmation": {
+          "type": "object",
+          "properties": {
+            "proposed_fields": {"type": "array", "uniqueItems": true, "items": {"enum": ["data_utilization", "name", "task_name"]}},
+            "confirmed_values": {
+              "type": "object",
+              "properties": {"data_utilization": {"type": "string"}, "name": {"type": "string"}, "task_name": {"type": "string"}},
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {"type": "string"},
+        "trigger": {"type": "string"},
+        "prefix": {"type": "string"},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "targets": {"type": "array", "items": {"type": "string"}},
+        "steps": {"type": "array", "items": {"type": "string"}},
+        "write_order": {"type": "array", "items": {"type": "string"}},
+        "rerun": {"type": "string"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
+      },
+      "additionalProperties": true
+    },
+    "question": {
+      "type": "object",
+      "required": ["id", "severity", "question", "status"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^PL-(BLOCK|CONF|OPTION)-[A-Z0-9-]+$"},
+        "severity": {"enum": ["block", "confirmation", "optional"]},
+        "question": {"type": "string"},
+        "status": {"enum": ["open", "resolved"]},
+        "answer": {"type": "string"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

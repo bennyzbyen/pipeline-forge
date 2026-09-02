@@ -47,6 +47,7 @@ test("server-renders the complete PipelineForge product story", async () => {
 
   for (const capability of [
     "一条龙开发向导",
+    "可交互水线文档生成",
     "需求文档转技术设计",
     "数据任务日志诊断",
     "数据同步项目代码生成",
@@ -80,7 +81,8 @@ test("server-renders the complete PipelineForge product story", async () => {
   const checksum = await readFile(new URL("../public/downloads/pipeline-forge.zip.sha256", import.meta.url), "utf8");
   assert.ok((await stat(archive)).size > 100_000);
   assert.match(checksum, /^[a-f0-9]{64}\s+pipeline-forge\.zip\s*$/i);
-  assert.match(html, /1 个向导 \+ 6 个专业模块/);
+  assert.match(html, /1 个向导 \+ 7 个专业模块/);
+  assert.match(html, /Markdown \/ 交互 HTML \/ PDF/);
   assert.match(html, new RegExp(escapedPluginVersion));
   assert.match(html, /待确认的代码单元计划/);
   assert.match(html, /确认前不生成完整代码/);
