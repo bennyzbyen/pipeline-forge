@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pipeline Document Generator"
+  short_description: "Generate editable DataEngine waterline documents"
+  default_prompt: "Use $pipeline-doc-generator to generate or revise an editable DataEngine waterline document from my PRD or HLD, and ask whether I want Markdown, HTML, PDF, or a combination."
+policy:
+  allow_implicit_invocation: true

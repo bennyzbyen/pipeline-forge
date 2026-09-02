@@ -9,6 +9,7 @@ PipelineForge is a data pipeline development toolkit with a beginner-friendly fr
 ## What It Covers
 
 - Guided intake, routing, blocker handling, generation, and verification for beginners.
+- Editable waterline documents from PRD/HLD in DOCX (including embedded Excel), Markdown, or PDF, with Markdown, interactive HTML, and PDF output.
 - Requirement document extraction for PRD, DataEngine, DataHub, waterline, COT, HBase, ClickHouse, Superview, and report documents.
 - Job log diagnosis for DataEngine/DataHub synchronization and report jobs.
 - Portable Python synchronization project generation with all-table contract verification and runtime guards.
@@ -21,7 +22,7 @@ PipelineForge is a data pipeline development toolkit with a beginner-friendly fr
 Add the public GitHub marketplace source:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.3.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v1.4.0
 ```
 
 Then finish installation from either supported surface:
@@ -52,6 +53,7 @@ pipeline-forge/
 | Module | Use when you need to |
 | --- | --- |
 | `pipeline-forge-guide` | Move from source files to a verified safe deliverable with step-by-step guidance. |
+| `pipeline-doc-generator` | Generate or revise reviewable waterline documents with canonical facts, direct tables, and Graphviz diagrams. |
 | `data-doc-to-dev-md` | Extract structured facts and development notes from requirement documents. |
 | `data-job-log-debugger` | Diagnose failed data jobs from logs or screenshots. |
 | `data-sync-codegen` | Generate or revise synchronization code with all-table contract checks. |
@@ -77,4 +79,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## Release Notes
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `1.3.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `1.4.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.

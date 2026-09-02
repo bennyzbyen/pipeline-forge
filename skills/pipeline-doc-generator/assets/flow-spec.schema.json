@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pipeline-doc-generator/flow-spec.schema.json",
+  "title": "Waterline SVG flow specification",
+  "type": "object",
+  "required": ["title", "description", "nodes", "edges"],
+  "properties": {
+    "title": {"type": "string"},
+    "description": {"type": "string"},
+    "presentation": {
+      "type": "object",
+      "properties": {
+        "auto_group": {"type": "boolean", "default": true},
+        "preserve_order": {"type": "boolean", "default": false},
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "node_ids"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+              "title": {"type": "string"},
+              "node_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "title": {"type": "string"},
+          "column": {"type": "integer", "minimum": 0},
+          "order": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": true
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "kind"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "label": {"type": "string"},
+          "kind": {
+            "enum": ["database", "blob", "gateway", "pipeline", "hbase", "clickhouse", "table", "process"]
+          },
+          "column": {"type": "integer", "minimum": 0},
+          "order": {"type": "integer", "minimum": 0},
+          "group": {"type": "string"},
+          "details": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "label": {"type": "string"},
+          "kind": {"enum": ["source", "pipeline", "output", "control"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

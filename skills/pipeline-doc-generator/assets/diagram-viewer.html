@@ -1,0 +1,16 @@
+<div id="waterline-diagram-viewer">
+  <dialog class="wl-dialog" aria-labelledby="wl-dialog-title">
+    <div class="wl-toolbar">
+      <h2 id="wl-dialog-title">流程图</h2>
+      <div class="wl-actions" aria-label="视图控制">
+        <button type="button" data-action="zoom-out" aria-label="缩小">−</button>
+        <output class="wl-zoom" aria-label="缩放比例" aria-live="polite">100%</output>
+        <button type="button" data-action="zoom-in" aria-label="放大">＋</button>
+        <button type="button" data-action="fit">适应画布</button>
+        <button type="button" data-action="close" aria-label="关闭聚焦视图">关闭</button>
+      </div>
+    </div>
+    <div class="wl-stage" aria-label="流程图画布，可滚轮缩放、拖动移动"><div class="wl-art"></div></div>
+    <div class="wl-footer">滚轮缩放 · 拖动平移 · 触屏双指缩放 · Esc 退出</div>
+  </dialog>
+</div>

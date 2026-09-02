@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 - 2026-09-02
+
+- Add pipeline-doc-generator for editable waterline documents from PRD/HLD, including embedded Excel, Markdown, and PDF evidence.
+- Generate Markdown, interactive standalone HTML, and searchable PDF with Graphviz flows, inline tables, clarification gates, and automatic revision summaries.
+- Add the waterline-document guide route, proposed Pipeline/Task naming, and validation for all eight packaged skills.
+
 ## 1.3.0 - 2026-08-28
 
 - Add evidence-driven project and code-unit contracts with explicit user confirmation before generation.
