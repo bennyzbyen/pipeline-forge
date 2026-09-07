@@ -38,6 +38,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-pipeline-forge
 
 安装助手只会把本插件复制到个人 Codex 插件目录，并保留个人 marketplace 文件中的其他插件条目。手动安装方式见 [INSTALL.md](INSTALL.md)。
 
+首次绘制水线图或重新设计时，需要**单独安装并启用 Diagram Design 插件**。PipelineForge 不内置、不自动安装该插件，会在绘图前检查并提示缺失依赖。已有有效绑定的确认版 SVG 可以直接复用；其他模块不依赖 Diagram Design。详见[依赖说明](INSTALL.md#diagram-design-dependency)。
+
 ## 仓库结构
 
 ```text
@@ -53,7 +55,7 @@ pipeline-forge/
 | 模块 | 适用场景 |
 | --- | --- |
 | `pipeline-forge-guide` | 从源文件开始，逐步完成路线选择、阻塞确认、生成和验证。 |
-| `pipeline-doc-generator` | 基于 facts 生成或修改可审阅的水线文档，包含直接展示的表格和 Graphviz 流程图。 |
+| `pipeline-doc-generator` | 基于 facts 生成或修改可审阅的水线文档，包含直接展示的表格和 经过确认的 Diagram Design SVG 流程图。 |
 | `data-doc-to-dev-md` | 从需求文档抽取结构化事实和开发说明。 |
 | `data-job-log-debugger` | 根据日志或截图诊断数据任务失败原因。 |
 | `data-sync-codegen` | 生成或修改数据同步项目代码，并执行全表契约校验与运行时保护。 |
