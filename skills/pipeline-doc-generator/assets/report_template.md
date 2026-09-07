@@ -8,9 +8,17 @@
 
 {{requirements_summary}}
 
+## 1.1 数据流图
+
 {{data_flow_svg}}
 
 # 2. 数据源详情
+
+## 2.1 链接信息
+
+{{source_connections}}
+
+## 2.2 数据列表
 
 {{source_table}}
 

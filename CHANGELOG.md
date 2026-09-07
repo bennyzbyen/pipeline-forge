@@ -1,5 +1,13 @@
 # Changelog
 
+**Unreleased changes**
+
+- Remove the Graphviz waterline engine and fallback; require reviewed Diagram Design bindings for every generated flow.
+- Use the separately installed Diagram Design skill for new or redesigned waterline flows, retaining reviewed SVG layouts across document edits.
+- Bind diagrams to canonical flow facts, validate platform ownership and stale assets, and preserve offline Markdown, HTML, and vector PDF delivery.
+
+- Always deliver Markdown, HTML, and PDF together with a concise requirements overview, focused flow diagrams, and canonical content checks.
+
 ## 1.4.0 - 2026-09-02
 
 - Add pipeline-doc-generator for editable waterline documents from PRD/HLD, including embedded Excel, Markdown, and PDF evidence.

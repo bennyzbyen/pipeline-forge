@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render facts.json into profile-locked Markdown and/or standalone HTML."""
+"""Render one canonical waterline into Markdown, standalone HTML, and PDF."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ import xml.etree.ElementTree as ET
 
 from pipeline_doc_common import OUTPUT_FORMATS, apply_fixed_defaults, blocking_questions, bullet_lines, configure_utf8_stdio, load_json, markdown_table, write_json, write_questions
 from pipeline_doc_authoring import checkpoint_revision, prepare_revision
-from render_waterline_svg import render_spec, validate_svg_safety
+from pipeline_doc_presentation import connection_note, is_blob_connection, sas_url, same_prose, unique_paragraphs
+from pipeline_diagram_contract import validate_svg_safety
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -59,7 +60,16 @@ def source_connections(facts: dict) -> str:
         by_environment.setdefault(str(connection.get("environment") or "连接信息"), []).append(connection)
     sections: list[str] = []
     for environment, items in by_environment.items():
-        sections.extend([f"### {environment}", "", markdown_table(["Host / 地址", "Database / 路径", "说明"], [[item.get("host", ""), item.get("database", ""), item.get("note", "")] for item in items])])
+        sections.extend([f"### {environment}", ""])
+        # Mixed connections keep separate schemas instead of empty generic columns.
+        for blob in (True, False):
+            selected = [item for item in items if is_blob_connection(facts, item) == blob]
+            if not selected:
+                continue
+            if blob:
+                sections.append(markdown_table(["SAS URL", "Database / 路径", "备注"], [[sas_url(item), item.get("database", ""), connection_note(item)] for item in selected]))
+            else:
+                sections.append(markdown_table(["Host / 地址", "Database / 路径", "说明"], [[item.get("host", ""), item.get("database", ""), item.get("note", "")] for item in selected]))
     return "\n\n".join(sections)
 
 
@@ -73,7 +83,7 @@ def source_dictionaries(facts: dict) -> str:
                 rows.append([field.get("key", ""), field.get("name", ""), field.get("source_type", ""), field.get("type", ""), field.get("history", "")])
             else:
                 rows.append([field, "", "", "", ""])
-        sections.extend([f"### 2.3.{index} {source.get('name', source.get('id', ''))}", "", markdown_table(["字段", "字段描述", "源字段类型", "目标字段类型", "变更历史"], rows)])
+        sections.extend([f"### 3.3.{index} {source.get('name', source.get('id', ''))}", "", markdown_table(["字段", "字段描述", "源字段类型", "目标字段类型", "变更历史"], rows)])
     return "\n\n".join(sections)
 
 
@@ -145,7 +155,7 @@ def target_table_sync(facts: dict) -> str:
         if include_target_range:
             range_values = []
             for target in related_targets:
-                value = str(target.get("range") or target.get("schedule") or "")
+                value = str(target.get("range") or "")
                 if not value:
                     continue
                 if len(storage_labels) == 1 and len(related_targets) == 1:
@@ -159,6 +169,16 @@ def target_table_sync(facts: dict) -> str:
 
 def target_table_report(facts: dict) -> str:
     return markdown_table(["位置", "数据库", "数据表名", "数据表"], [[target.get("location", ""), target.get("database", ""), target.get("description", ""), target.get("table", "")] for target in facts.get("targets") or []])
+
+
+def target_sync_notes(facts: dict) -> str:
+    """One compact home for write/rowkey facts, never another flow narrative."""
+    return "\n\n".join(
+        f"{physical_target_name(target)}：" + "；".join(
+            value for value in (f"写入方式：{target.get('write_mode', '')}",
+                                f"RowKey：{target['rowkey']}" if target.get("rowkey") else "") if value
+        ) for target in facts.get("targets") or []
+    )
 
 
 def target_logic_sections(facts: dict) -> str:
@@ -178,11 +198,11 @@ def target_logic_sections(facts: dict) -> str:
             sections.extend([f"#### 3.1.{category_index}.{item_index} {target.get('description') or target.get('table')}", ""])
             metadata = [
                 f"数据粒度：{target.get('grain', '')}",
-                f"更新频率：{target.get('schedule', '')}",
                 f"写入方式：{target.get('write_mode', '')}" if target.get("write_mode") else "",
             ]
             sections.append("\n\n".join(line for line in metadata if line))
-            logic = target.get("logic") or []
+            field_logic = [field.get("logic", "") for field in target.get("fields") or []]
+            logic = [value for value in unique_paragraphs(target.get("logic") or []) if not any(same_prose(value, item) for item in field_logic)]
             if logic:
                 sections.extend(["", bullet_lines(logic)])
             rows = [[field.get("key", ""), field.get("name", ""), field.get("type", ""), field.get("source", ""), field.get("source_field", ""), field.get("logic", ""), field.get("sample", "")] for field in target.get("fields") or []]
@@ -197,7 +217,7 @@ def data_utilization_rows(facts: dict) -> list[list[str]]:
         name = str(pipeline.get("data_utilization") or "")
         if name and name not in seen:
             seen.add(name)
-            rows.append([name, pipeline.get("description", "")])
+            rows.append([name, overview_reference(facts, pipeline.get("description", ""))])
     return rows
 
 
@@ -212,19 +232,24 @@ def catalog_basic_info_table(catalog: dict) -> str:
     return markdown_table(headers, rows)
 
 
+def overview_reference(facts: dict, value: str) -> str:
+    return "见第 1 章需求概述。" if any(same_prose(value, paragraph) for paragraph in facts.get("requirements", {}).get("summary", [])) else value
+
+
 def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = "") -> str:
     document = facts["document"]
     team = document["team"]
+    chapter = "5" if profile == "sync" else "4"
     sections = [
-        "## 4.1 创建Project",
+        f"## {chapter}.1 创建Project",
         "",
-        "### 4.1.1 Basic Info",
+        f"### {chapter}.1.1 Basic Info",
         "",
         f"Name: {document.get('project_name', '')}",
         "",
-        f"Description: {document.get('description', '')}",
+        f"Description: {overview_reference(facts, document.get('description', ''))}",
         "",
-        "### 4.1.2 Project Team",
+        f"### {chapter}.1.2 Project Team",
         "",
         f"Owner: {team.get('owner', '')}",
         "",
@@ -232,17 +257,17 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
         "",
         f"Operator: {team.get('operator', '')}",
         "",
-        "### 4.1.3 Project Documentation",
+        f"### {chapter}.1.3 Project Documentation",
         "",
         document.get("documentation") or "本文档",
         "",
-        "## 4.2 Data Pipeline Management",
+        f"## {chapter}.2 Data Pipeline Management",
         "",
-        "### 4.2.1 Data Utilization Management",
+        f"### {chapter}.2.1 Data Utilization Management",
         "",
         markdown_table(["Name", "Description"], data_utilization_rows(facts)),
         "",
-        "### 4.2.2 Target Management",
+        f"### {chapter}.2.2 Target Management",
         "",
     ]
     if profile == "sync":
@@ -253,27 +278,28 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
                 data_utilization_for_target(facts, target.get("id", "")),
                 target_name,
                 target.get("location", ""),
-                target.get("catalog", ""),
             ])
-        sections.append(markdown_table(["Data Utilization Name", "Target Name", "Target Storage", "catalog"], target_rows))
+        sections.append(markdown_table(["Data Utilization Name", "Target Name", "Target Storage"], target_rows))
     else:
         target_rows = [[data_utilization_for_target(facts, target.get("id", "")), target.get("target_name", target.get("table", "")), target.get("description", ""), f"{target.get('location', '')} {target.get('database', '')}.{target.get('table', '')}".strip()] for target in facts.get("targets") or []]
         sections.append(markdown_table(["Data Utilization Name", "Target Name", "Target Description", "Data Storage"], target_rows))
-    sections.extend(["", "### 4.2.3 Pipeline Management", ""])
+    sections.extend(["", f"### {chapter}.2.3 Pipeline Management", ""])
     pipeline_rows = []
     for pipeline in facts.get("pipelines") or []:
-        description = [pipeline.get("description", ""), *(pipeline.get("steps") or []), *(pipeline.get("write_order") or [])]
+        description = [*(pipeline.get("steps") or []), *(pipeline.get("write_order") or [])]
         if pipeline.get("rerun"):
             description.append(f"重跑：{pipeline['rerun']}")
         if profile == "sync":
             pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), pipeline.get("trigger", "")])
         else:
-            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), "\n".join(item for item in description if item), pipeline.get("trigger", "")])
+            described_logic = [item for target in facts.get("targets", []) if target.get("id") in pipeline.get("targets", []) for item in target.get("logic", [])]
+            description = [item for item in unique_paragraphs(description) if not any(same_prose(item, logic) for logic in described_logic)]
+            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), "\n".join(description), pipeline.get("trigger", "")])
     headers = ["Data Utilization Name", "Pipeline Name", "task1 name", "定时同步时间"] if profile == "sync" else ["Data Utilization Name", "Pipeline Name", "task1 name", "Description", "trigger time"]
     sections.append(markdown_table(headers, pipeline_rows))
     catalog = facts.get("catalog") or {}
     if profile == "sync":
-        sections.extend(["", "### 4.2.4 Catalog Basic Info", ""])
+        sections.extend(["", "### 5.2.4 Catalog Basic Info", ""])
         sections.append(catalog_basic_info_table(catalog) if catalog.get("enabled") else "不适用（已确认）")
     else:
         sections.extend(["", "### 4.2.4 登记 Data Catalog", ""])
@@ -287,7 +313,7 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
             sections.extend(["", "### 4.2.7 登记 Data Storage", ""])
             sections.append(markdown_table(["数据项", "存放地", "Field&Type", "Limit（Sample Data）"], [[row.get("data_item", ""), row.get("location", ""), row.get("field_type", ""), row.get("limit", "")] for row in catalog.get("storage") or []]))
         else:
-            sections.append("不适用（已确认）")
+            sections.extend(["不适用（已确认）", "", "### 4.2.5 检查 Catalog Basic Info", "", "不适用（已确认）"])
     return "\n".join(str(item) for item in sections)
 
 
@@ -303,24 +329,23 @@ def render_markdown(facts: dict, data_svg_rel: str, catalog_svg_rel: str = "") -
     if profile == "sync":
         parts = [
             *common_start,
-            "# 1. 数据写入流程与同步调整", "",
-            "## 1.1 数据流图", "", f"![数据流图]({data_svg_rel})", "",
-            "## 1.2 写入流程", "", bullet_lines(document.get("write_flow") or []), "",
-            "## 1.3 同步逻辑说明", "", bullet_lines(document.get("sync_logic") or []), "",
-            "# 2. Source 数据源", "",
-            "## 2.1 链接信息", "", source_connections(facts), "",
-            "## 2.2 数据列表", "", source_table_sync(facts), "",
-            "## 2.3 数据字典", "", source_dictionaries(facts), "",
-            "# 3. Target", "", target_table_sync(facts), "",
-            "# 4. Pipeline", "", project_pipeline_sections(facts, profile), "",
-            "# 5. 资源评估", "", resources_section(facts), "",
-            "# 6. 上线时间", "", document.get("go_live", ""), "",
+            "# 1. 需求概述", "", "\n\n".join(unique_paragraphs(facts["requirements"].get("summary") or [])), "",
+            "# 2. 数据流图", "", f"![数据流图]({data_svg_rel})", "",
+            "# 3. Source 数据源", "",
+            "## 3.1 链接信息", "", source_connections(facts), "",
+            "## 3.2 数据列表", "", source_table_sync(facts), "",
+            "## 3.3 数据字典", "", source_dictionaries(facts), "",
+            "# 4. Target", "", target_table_sync(facts), "", target_sync_notes(facts), "",
+            "# 5. Pipeline", "", project_pipeline_sections(facts, profile), "",
+            "# 6. 资源评估", "", resources_section(facts), "",
+            "# 7. 上线时间", "", document.get("go_live", ""), "",
         ]
     else:
         parts = [
             *common_start,
-            "# 1. 需求概述", "", "\n\n".join(paragraph for paragraph in facts["requirements"].get("summary") or []), "", f"![数据流程图]({data_svg_rel})", "",
-            "# 2. 数据源详情", "", source_table_report(facts), "",
+            "# 1. 需求概述", "", "\n\n".join(unique_paragraphs(facts["requirements"].get("summary") or [])), "", "## 1.1 数据流图", "", f"![数据流程图]({data_svg_rel})", "",
+            "# 2. 数据源详情", "", "## 2.1 链接信息", "", source_connections(facts), "",
+            "## 2.2 数据列表", "", source_table_report(facts), "",
             "# 3. Data Target", "", target_table_report(facts), "",
             "## 3.1 数据底表 & 逻辑说明", "", target_logic_sections(facts), "",
             "# 4. DataHub Pipeline", "", project_pipeline_sections(facts, profile, catalog_svg_rel), "",
@@ -554,13 +579,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
-    parser.add_argument("--format", choices=tuple(OUTPUT_FORMATS), required=True)
+    parser.add_argument("--format", choices=tuple(OUTPUT_FORMATS), default="all", help="All three formats are always generated; legacy choices are accepted as aliases for all.")
     args = parser.parse_args()
     facts_path = args.facts.expanduser().resolve()
     out_dir = args.out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     facts = apply_fixed_defaults(load_json(facts_path))
-    facts.setdefault("render_preferences", {})["last_format"] = args.format
+    from diagram_design_bridge import read_bound_asset, local_asset, require_bindings
+    if not blocking_questions(facts):
+        require_bindings(facts)
+    for slot, config in facts.get("render_preferences", {}).get("diagrams", {}).items():
+        if slot not in {"data_flow", "catalog"} or config.get("engine") != "diagram-design":
+            raise ValueError("Invalid bound diagram slot or engine")
+        spec = facts["flow"] if slot == "data_flow" else catalog_spec()
+        payload = read_bound_asset(spec, config, facts_path.parent)
+        if out_dir != facts_path.parent:
+            destination = local_asset(out_dir, config["svg"])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
+    if args.format != "all":
+        print("Output policy: legacy --format is accepted; generating Markdown, HTML, and PDF together.")
     write_json(facts_path, facts)
     canonical_facts = out_dir / "facts.json"
     if canonical_facts != facts_path:
@@ -583,7 +621,8 @@ def main() -> int:
     data_spec_path = asset_dir / "data_flow.spec.json"
     data_svg_path = asset_dir / "data_flow.svg"
     write_json(data_spec_path, facts["flow"])
-    render_spec(facts["flow"], data_svg_path)
+    from diagram_design_bridge import render_diagram
+    render_diagram(facts["flow"], data_svg_path, facts, facts_path.parent, "data_flow")
     data_svg_rel = f"{asset_dir.name}/{data_svg_path.name}"
 
     catalog_svg_rel = ""
@@ -592,13 +631,13 @@ def main() -> int:
         cat_spec_path = asset_dir / "catalog_registration_flow.spec.json"
         cat_svg_path = asset_dir / "catalog_registration_flow.svg"
         write_json(cat_spec_path, cat_spec)
-        render_spec(cat_spec, cat_svg_path)
+        render_diagram(cat_spec, cat_svg_path, facts, facts_path.parent, "catalog")
         catalog_svg_rel = f"{asset_dir.name}/{cat_svg_path.name}"
 
     markdown = render_markdown(facts, data_svg_rel, catalog_svg_rel)
     markdown_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
-    selected_formats = OUTPUT_FORMATS[args.format]
+    selected_formats = OUTPUT_FORMATS["all"]
     if "pdf" in selected_formats:
         from render_pipeline_pdf import render_pdf
         pdf_path = out_dir / f"{stem}.pdf"

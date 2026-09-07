@@ -85,8 +85,7 @@ PIPELINE_DOC_RESOURCES = {
     "scripts/pipeline_doc_authoring.py",
     "scripts/render_pipeline_doc.py",
     "scripts/render_pipeline_pdf.py",
-    "scripts/render_waterline_svg.py",
-    "scripts/graphviz_layout.cjs",
+    "scripts/pipeline_diagram_contract.py",
     "scripts/validate_pipeline_doc.py",
     "scripts/validate_pipeline_pdf.py",
     "scripts/verify_pipeline_doc_generator.py",
@@ -100,7 +99,6 @@ PIPELINE_DOC_RESOURCES = {
     "references/evidence-rules.md",
     "references/profiles.md",
     "references/facts-and-questions.md",
-    "references/diagram-rendering.md",
     "references/pdf-output.md",
 }
 

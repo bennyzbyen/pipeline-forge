@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from pipeline_doc_authoring import NAME_LABELS, normalize_authoring, pending_names
+from pipeline_doc_presentation import presentation_gaps
 
 
 PENDING_VALUES = {"待定", "待确认", "tbd", "todo", "unknown", "未确认"}
@@ -42,6 +43,11 @@ def apply_fixed_defaults(facts: dict[str, Any]) -> dict[str, Any]:
     team = document.setdefault("team", {})
     team["developer"] = FIXED_ENGINEER_ROLE
     team["operator"] = FIXED_ENGINEER_ROLE
+    facts.setdefault("render_preferences", {})["last_format"] = "all"
+    for item in facts.get("questions") or []:
+        if item.get("id") in {"PL-BLOCK-WRITE-FLOW", "WL-BLOCK-WRITE-FLOW", "PL-BLOCK-SYNC-LOGIC", "WL-BLOCK-SYNC-LOGIC", "PL-BLOCK-OUTPUT-FORMAT", "WL-BLOCK-OUTPUT-FORMAT"}:
+            item["status"] = "resolved"
+            item.setdefault("answer", "当前文档固定三格式输出，不再要求已删除章节的叙述；业务事实仍按对应结构校验。")
     return normalize_authoring(facts)
 
 
@@ -147,8 +153,6 @@ def structural_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
     if profile == "sync":
         for path, question_id, prompt in (
             ("/source_connections", "PL-BLOCK-CONNECTIONS", "请补充 Source 链接信息，或确认本项目不适用。"),
-            ("/document/write_flow", "PL-BLOCK-WRITE-FLOW", "请补充目标写入顺序与落地方式。"),
-            ("/document/sync_logic", "PL-BLOCK-SYNC-LOGIC", "请补充增量/全量、范围、覆盖、去重和重跑逻辑。"),
             ("/document/go_live", "PL-BLOCK-GO-LIVE", "请确认上线时间，或明确确认写为待定。"),
         ):
             if not is_ready(facts, path):
@@ -169,6 +173,7 @@ def structural_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
 
     result.extend(_item_questions(facts))
     result.extend(_reference_questions(facts))
+    result.extend(question(identifier, "block", prompt, path=path) for identifier, path, prompt in presentation_gaps(facts))
     return _dedupe_questions(result)
 
 
@@ -181,7 +186,7 @@ def _item_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
                 result.append(question(f"PL-BLOCK-SOURCE-{index + 1}-{key.upper()}", "block", f"数据源 {index + 1} 缺少{label}。", path=f"{prefix}/{key}"))
     for index, target in enumerate(facts.get("targets") or []):
         prefix = f"/targets/{index}"
-        for key, label in (("id", "稳定 ID"), ("location", "目标存储"), ("table", "物理表名"), ("grain", "数据粒度"), ("schedule", "更新频率"), ("fields", "字段字典")):
+        for key, label in (("id", "稳定 ID"), ("location", "目标存储"), ("table", "物理表名"), ("grain", "数据粒度"), ("write_mode", "写入方式（全量/增量及覆盖方式）"), ("fields", "字段字典")):
             if not is_ready(facts, f"{prefix}/{key}"):
                 result.append(question(f"PL-BLOCK-TARGET-{index + 1}-{key.upper()}", "block", f"目标表 {index + 1} 缺少{label}。", path=f"{prefix}/{key}"))
     for index, pipeline in enumerate(facts.get("pipelines") or []):
@@ -299,7 +304,7 @@ def new_facts(title: str = "") -> dict[str, Any]:
         "conflicts": [],
         "confirmed_pending_paths": [],
         "render_preferences": {
-            "last_format": "",
+            "last_format": "all",
             "include_target_category": None,
             "include_target_report_type": None,
             "include_target_range": None,
@@ -310,12 +315,13 @@ def new_facts(title: str = "") -> dict[str, Any]:
 
 SYNC_HEADINGS = [
     "发布历史",
-    "1. 数据写入流程与同步调整",
-    "2. Source 数据源",
-    "3. Target",
-    "4. Pipeline",
-    "5. 资源评估",
-    "6. 上线时间",
+    "1. 需求概述",
+    "2. 数据流图",
+    "3. Source 数据源",
+    "4. Target",
+    "5. Pipeline",
+    "6. 资源评估",
+    "7. 上线时间",
 ]
 
 REPORT_HEADINGS = [

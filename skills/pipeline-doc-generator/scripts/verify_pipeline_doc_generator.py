@@ -23,7 +23,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
-from render_waterline_svg import graph_model, render_spec, validate_svg, validate_spec, PALETTES
+from pipeline_diagram_contract import validate_svg, validate_spec
+from verify_design_fixtures import write_test_svg, bind_test_diagrams
 from render_pipeline_doc import markdown_to_html, safe_inline_svg, inline_markup
 from validate_pipeline_doc import validate_html
 from pipeline_doc_common import OUTPUT_FORMATS
@@ -36,6 +37,8 @@ VALIDATE = HERE / "validate_pipeline_doc.py"
 
 
 def run(*args: str, expected: int = 0) -> subprocess.CompletedProcess[str]:
+    if Path(args[0]).name == "render_pipeline_doc.py" and expected == 0:
+        bind_test_diagrams(Path(args[args.index("--facts") + 1]))
     environment = dict(os.environ)
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"
@@ -308,9 +311,8 @@ def render_and_validate(root: Path, profile: str, output_format: str) -> dict:
     questions_text = (output / "questions.md").read_text(encoding="utf-8")
     assert "PL-BLOCK-DEVELOPER" not in questions_text
     assert "PL-BLOCK-OPERATOR" not in questions_text
-    assert markdown.exists() is ("markdown" in OUTPUT_FORMATS[output_format])
-    assert html.exists() is ("html" in OUTPUT_FORMATS[output_format])
-    assert pdf.exists() is ("pdf" in OUTPUT_FORMATS[output_format])
+    assert markdown.exists() and html.exists() and pdf.exists()
+    assert normalized_facts["render_preferences"]["last_format"] == "all"
     args = [str(VALIDATE), "--facts", str(facts_path), "--profile", profile]
     if markdown.exists():
         args.extend(["--markdown", str(markdown)])
@@ -319,22 +321,23 @@ def render_and_validate(root: Path, profile: str, output_format: str) -> dict:
         assert "Developer: 数砚工程师" in markdown_text
         assert "Operator: 数砚工程师" in markdown_text
         if profile == "sync":
-            target_section = markdown_text.split("# 3. Target", 1)[1].split("# 4. Pipeline", 1)[0]
+            target_section = markdown_text.split("# 4. Target", 1)[1].split("# 5. Pipeline", 1)[0]
             assert "| 序号 | 数据位置 |" in markdown_text
             assert "| 1 | Data Hub HBase |" in markdown_text
-            assert "# 3. Target" in markdown_text
+            assert "# 4. Target" in markdown_text
             assert "| 序号 | 原表位置 | 原表名 | 业务描述 | HBase表名 |" in target_section
             assert "| 1 | Data Hub HBase | PLANT_PRODUCTION/FULL/<P>/<W>/part-* | 合成源表 | l0_demo_target_daily |" in target_section
             assert "所属类别" not in target_section
             assert "报表类型" not in target_section
             assert "数据范围" not in target_section
-            assert "| Data Utilization Name | Target Name | Target Storage | catalog |" in markdown_text
+            assert "| Data Utilization Name | Target Name | Target Storage |" in markdown_text
+            assert "| catalog |" not in markdown_text
             assert "| Data Utilization Name | Pipeline Name | task1 name | 定时同步时间 |" in markdown_text
             assert "target前缀" not in markdown_text
             assert "pipeline前缀" not in markdown_text
             assert "legacy_target_prefix" not in markdown_text
             assert "legacy_pipeline_prefix" not in markdown_text
-            assert "### 4.2.4 Catalog Basic Info" in markdown_text
+            assert "### 5.2.4 Catalog Basic Info" in markdown_text
             assert "| 数据项 | Title | IT Owner&Email | Biz Owner&Email | FE&Email | IT BP & Email | Data Engineer & Email |" in markdown_text
             assert "ClickHouse" not in markdown_text
     if html.exists():
@@ -352,11 +355,11 @@ def render_and_validate(root: Path, profile: str, output_format: str) -> dict:
         assert "legacy_target_prefix" not in html_text
         assert "legacy_pipeline_prefix" not in html_text
         if profile == "sync":
-            assert "4.2.4 Catalog Basic Info" in html_text
+            assert "5.2.4 Catalog Basic Info" in html_text
         assert "<svg" in html_text and "<style>" in html_text
         assert "<link" not in html_text and html_text.count('<script data-waterline-viewer="1">') == 1
         assert 'Content-Security-Policy' in html_text
-        assert 'data-engine="graphviz"' in html_text
+        assert 'data-engine="diagram-design"' in html_text
         assert "overflow-y:auto;overflow-x:hidden" in html_text
         assert "overflow-wrap:anywhere" in html_text
         if profile == "sync":
@@ -390,7 +393,7 @@ def test_multi_target_mapping(root: Path) -> dict:
     markdown = generated_path(output, title, ".md")
     html = generated_path(output, title, ".html")
     run(str(VALIDATE), "--facts", str(facts_path), "--profile", "sync", "--markdown", str(markdown), "--html", str(html))
-    target_section = markdown.read_text(encoding="utf-8").split("# 3. Target", 1)[1].split("# 4. Pipeline", 1)[0]
+    target_section = markdown.read_text(encoding="utf-8").split("# 4. Target", 1)[1].split("# 5. Pipeline", 1)[0]
     assert "| HBase表名 | ClickHouse表名 |" in target_section
     assert "所属类别" not in target_section
     assert "报表类型" not in target_section
@@ -403,13 +406,16 @@ def test_multi_target_mapping(root: Path) -> dict:
     data["render_preferences"]["include_target_category"] = True
     data["render_preferences"]["include_target_report_type"] = True
     data["render_preferences"]["include_target_range"] = True
+    for target in data["targets"]:
+        target["range"] = "T-1"
     facts_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     run(str(RENDER), "--facts", str(facts_path), "--out-dir", str(output), "--format", "both")
-    target_section_with_range = markdown.read_text(encoding="utf-8").split("# 3. Target", 1)[1].split("# 4. Pipeline", 1)[0]
+    target_section_with_range = markdown.read_text(encoding="utf-8").split("# 4. Target", 1)[1].split("# 5. Pipeline", 1)[0]
     assert "| 所属类别 | 报表类型 | HBase表名 | ClickHouse表名 | 数据范围 |" in target_section_with_range
     assert "HBase数据范围" not in target_section_with_range
     assert "ClickHouse数据范围" not in target_section_with_range
-    assert "HBase：每日 07:00<br>ClickHouse：每日 07:00" in target_section_with_range
+    assert "HBase：T-1<br>ClickHouse：T-1" in target_section_with_range
+    assert "每日 07:00" not in target_section_with_range
     run(str(VALIDATE), "--facts", str(facts_path), "--profile", "sync", "--markdown", str(markdown), "--html", str(html))
     return {"source_rows": len(source_rows), "target_storages": ["HBase", "ClickHouse"], "optional_columns_toggle": True}
 
@@ -470,101 +476,10 @@ def test_conversational_edit(result: dict) -> dict:
     return {"changed_target": "target_daily_v2", "changed_field": "store_id", "changed_trigger": "每日 08:00"}
 
 
-def test_complex_flow_layout(root: Path) -> dict:
-    spec = {
-        "title": "执行为王复杂流程回归",
-        "description": "验证分组标题、跨列连线和连线标签。",
-        "groups": [
-            {"id": "sources", "title": "数据源", "column": 0, "order": 0},
-            {"id": "prepare", "title": "调度 / 准备", "column": 1, "order": 1},
-            {"id": "calculate", "title": "业务计算", "column": 2, "order": 2},
-            {"id": "targets", "title": "Superview ClickHouse", "column": 3, "order": 3},
-        ],
-        "nodes": [
-            {"id": "source", "label": "HBase Source", "kind": "hbase", "column": 0, "order": 0, "group": "sources"},
-            {"id": "manual", "label": "prepare_history_or_manual", "kind": "pipeline", "column": 1, "order": 0, "group": "prepare"},
-            {"id": "daily", "label": "daily_export_sku", "kind": "pipeline", "column": 1, "order": 1, "group": "prepare"},
-            {"id": "npd", "label": "cal_npd_daily", "kind": "pipeline", "column": 2, "order": 0, "group": "calculate"},
-            {"id": "b5", "label": "cal_b5_daily", "kind": "pipeline", "column": 2, "order": 1, "group": "calculate"},
-            {"id": "target_npd", "label": "store_np_sku_details", "kind": "clickhouse", "column": 3, "order": 0, "group": "targets"},
-            {"id": "target_b5", "label": "store_b5_sku_details", "kind": "clickhouse", "column": 3, "order": 1, "group": "targets"},
-            {"id": "target_config", "label": "store_assess_channnel", "kind": "clickhouse", "column": 3, "order": 2, "group": "targets"},
-        ],
-        "edges": [
-            {"id": "source_daily", "from": "source", "to": "daily", "label": "当P增量", "kind": "source"},
-            {"id": "manual_npd", "from": "manual", "to": "npd", "label": "手动重跑", "kind": "control"},
-            {"id": "manual_b5", "from": "manual", "to": "b5", "label": "手动重跑", "kind": "control"},
-            {"id": "daily_npd", "from": "daily", "to": "npd", "label": "触发新品", "kind": "pipeline"},
-            {"id": "daily_b5", "from": "daily", "to": "b5", "label": "触发B5", "kind": "pipeline"},
-            {"id": "npd_target", "from": "npd", "to": "target_npd", "kind": "output"},
-            {"id": "b5_target", "from": "b5", "to": "target_b5", "kind": "output"},
-            {"id": "daily_config", "from": "daily", "to": "target_config", "label": "每日同步配置", "kind": "output"},
-        ],
-    }
-    output = root / "complex_flow.svg"
-    render_spec(spec, output)
-    svg_text = output.read_text(encoding="utf-8")
-    assert "Superview ClickHouse" in svg_text and "阶段 4" not in svg_text
-    document = ET.parse(output).getroot()
-    namespace = {"svg": "http://www.w3.org/2000/svg"}
-    validate_svg(document, spec)
-    assert output.with_suffix(".dot").is_file() and output.with_suffix(".layout.json").is_file()
-    first_bytes = output.read_bytes()
-    render_spec(spec, output)
-    assert output.read_bytes() == first_bytes, "Repeated rendering must be stable"
-    # An explicit parallel-entry card keeps the daily configuration edge at its row port.
-    spec["presentation"] = {"cards": [{"id": "entry_pair", "title": "两个独立入口", "node_ids": ["manual", "daily"]}]}
-    cards, edges, _, _ = graph_model(spec)
-    config_edge = next(edge for edge in edges if any(e["id"] == "daily_config" for e in edge["originals"]))
-    assert config_edge["tailport"] == "p1"
-    render_spec(spec, root / "parallel_flow.svg")
-    validate_svg(ET.parse(root / "parallel_flow.svg").getroot(), spec)
-    return {"edges": len(spec["edges"]), "engine": "graphviz", "stable_rerender": True, "parallel_entry_port": True}
-
-
-def test_graphviz_contract(root: Path) -> dict:
-    spec = {
-        "title": "合成分类配色与完整文本", "description": "验证布局、长标识符与同类聚合。",
-        "nodes": [{"id": "s", "label": "Blob 文件", "kind": "blob", "column": 0,
-                   "details": ["input/" + "long_segment_" * 14 + "/*.csv", "第一行\n第二行\n第三行\n第四行"]},
-                  {"id": "p", "label": "同步任务", "kind": "pipeline", "column": 1}],
-        "edges": [{"id": "read", "from": "s", "to": "p", "label": "读取", "kind": "source"}],
-    }
-    for i in range(3):
-        spec["nodes"].append({"id": f"t{i}", "label": f"demo.target_{i}", "kind": "clickhouse", "column": 2, "details": [f"目标 {i}"]})
-        spec["edges"].append({"id": f"write{i}", "from": "p", "to": f"t{i}", "kind": "output", "label": "写入"})
-    output = root / "categories.svg"
-    render_spec(spec, output)
-    tree = ET.parse(output).getroot()
-    validate_svg(tree, spec)
-    assert len([n for n in tree.iter() if n.get("data-members")]) == 3
-    assert len([n for n in tree.iter() if n.get("data-edge-ids")]) == 2
-    visible = ''.join(n.text or '' for n in tree.iter() if n.tag.endswith('}text'))
-    assert "第四行" in visible and spec["nodes"][0]["details"][0] in visible
-    for card in [n for n in tree.iter() if n.get("data-category")]:
-        band = next(n for n in card if n.get("class") == "node-band")
-        assert band.get("fill") == PALETTES[card.get("data-category")][1]
-    invalid = copy.deepcopy(spec)
-    invalid["presentation"] = {"cards": [{"id": "bad", "node_ids": ["s", "p"]}]}
-    try:
-        validate_spec(invalid)
-        raise AssertionError("Mixed-kind card accepted")
-    except ValueError:
-        pass
-    edited = copy.deepcopy(spec)
-    edited["edges"][0]["label"] = "已修改"
-    try:
-        validate_svg(tree, edited)
-        raise AssertionError("Stale SVG accepted")
-    except ValueError:
-        pass
-    return {"all_text_preserved": True, "auto_group_coverage": True, "category_colors": True, "stale_svg_rejected": True}
-
-
 def test_viewer_security(root: Path) -> dict:
     data = facts("sync", "合成安全检查")
     svg = root / "security.svg"
-    render_spec(data["flow"], svg)
+    write_test_svg(data["flow"], svg)
     markup = markdown_to_html("![流程图](security.svg)", root / "security.md", "安全检查")
     expected = {"flow": data["flow"], "targets": []}
     candidate = root / "security.html"
@@ -603,7 +518,9 @@ def main() -> int:
     with context as temporary:
         root = Path(temporary)
         root.mkdir(parents=True, exist_ok=True)
-        metrics = {"extraction": test_extraction(root), "flow_layout": test_complex_flow_layout(root), "graphviz_contract": test_graphviz_contract(root), "viewer_security": test_viewer_security(root), "html_navigation": test_html_navigation(root), "renders": []}
+        metrics = {"extraction": test_extraction(root), "viewer_security": test_viewer_security(root), "html_navigation": test_html_navigation(root), "renders": []}
+        from verify_diagram_design_bridge import run_regressions
+        metrics["diagram_design_bridge"] = run_regressions(root / "diagram_design")
         edit_candidate = None
         for profile in ("sync", "report"):
             for output_format in OUTPUT_FORMATS:
@@ -618,6 +535,8 @@ def main() -> int:
         metrics["conversational_edit"] = test_conversational_edit(edit_candidate)
         from verify_authoring_policy import run_authoring_regressions
         metrics["authoring_policy"] = run_authoring_regressions(root / "authoring")
+        from verify_presentation_policy import run_presentation_regressions
+        metrics["presentation_policy"] = run_presentation_regressions(root / "presentation")
         from verify_pipeline_pdf import run_pdf_regressions
         metrics["pdf"] = run_pdf_regressions(root / "pdf_special", check_formats=False)
         print(json.dumps({"status": "ok", **metrics}, ensure_ascii=False, indent=2))

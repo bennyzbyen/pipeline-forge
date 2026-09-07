@@ -1,6 +1,6 @@
 # Facts And Questions Contract
 
-`facts.json` is the only editable source for generated Markdown, HTML, PDF, and SVG. Use `assets/facts.schema.json` for the full interface.
+`facts.json` is the canonical semantic source for generated Markdown, HTML, PDF, and SVG. Diagram Design's retained HTML/SVG owns presentation only, with a reviewed binding recorded in facts; see `diagram-design-interface.md`. Use `assets/facts.schema.json` for the full interface.
 
 ## Stable IDs
 
@@ -12,13 +12,14 @@ Use lowercase ASCII IDs with underscores. Keep an existing ID during renames so 
 - `document`: title, project name/description, automatically maintained release rows, Project Owner, documentation reference, and sync go-live when applicable. Ask for a missing document author, not for the version or change summary. Developer and Operator are fixed as `数砚工程师` and are not clarification items.
 - `requirements.summary`.
 - `sources`: confirmed data location/storage type (for example Azure Blob Storage, HBase, MySQL, MSSQL, or another explicit platform), source system, physical table/path, range, fields, and filters/joins. Do not infer the location only from a table or path name; ask when the evidence is absent or ambiguous.
-- `targets`: storage/database/table, description, grain, schedule, ordered fields, and processing logic.
-- `pipelines`: Data Utilization, Pipeline, Task, trigger, source IDs, target IDs, steps/write/retry facts.
+- `targets`: storage/database/table, description, grain, write mode, ordered fields, and processing logic. RowKey remains user-confirmed, never automatically chosen from the sync mode. Legacy target schedules may remain as evidence but are not duplicated in the document.
+- `pipelines`: Data Utilization, Pipeline, Task, concise trigger, source IDs, target IDs, steps/write/retry facts. Keep upstream readiness/operational explanations in `schedule_notes`, outside the trigger cell.
+- `source_connections`: for Blob use `location` or source references, full `sas_url`, `database` path, and expiry from `se` or confirmed `expires_at`; see `presentation-rules.md` for credential boundaries and mixed connections.
 - `resources`: peak-memory estimate and environment.
 - `flow`: accessible title/description, nodes, and valid edges.
-- `catalog`: applicability and registration facts for the report profile.
+- `catalog`: applicability and registration facts for both profiles.
 - `render_preferences` for sync documents: explicit booleans for the three user-confirmed optional Target columns (`include_target_category`, `include_target_report_type`, and `include_target_range`).
-- `render_preferences.last_format`: `markdown`, `html`, `pdf`, `both` (Markdown + HTML), `markdown-pdf`, `html-pdf`, or `all`. Optional `pdf_orientation`: `auto` (default), `portrait`, or `landscape`; reuse on later renders.
+- `render_preferences.last_format`: always `all`; legacy partial values are migrated automatically. Optional `pdf_orientation`: `auto` (default), `portrait`, or `landscape`; reuse on later renders.
 
 ## Questions
 
@@ -31,6 +32,8 @@ Use stable IDs:
 Each question has `id`, `severity`, `question`, `status`, optional `answer`, and `source_refs`. Do not ask a resolved question again. `questions.md` is rendered from these records plus deterministic structural gaps.
 
 Legacy `WL-*` question/conflict IDs are normalized to `PL-*` when the facts are processed, preserving their answers, status, and evidence. Do not globally replace text inside requirement documents or user answers. Obsolete blank-form release/naming questions are superseded by the new author/candidate checks.
+
+The obsolete write-flow/sync-logic narrative and output-choice blockers are superseded by the concise three-format contract. This does not confirm any missing write-mode, source, or schedule facts. A verbose trigger or missing Blob connection/expiry gets a specific structural diagnostic; repair presentation from clear evidence before asking the user for facts already available.
 
 ## Proposed Names
 
@@ -57,5 +60,5 @@ Literal `待定`, `TBD`, or equivalent values are not complete by default. Allow
 1. Identify the stable ID or JSON pointer affected by the user request.
 2. Update the value and append a `change_log` entry with timestamp, summary, and `source = user_confirmation`.
 3. Update affected flow labels/edges when a source, target, or Pipeline relationship changed.
-4. Regenerate the previously selected format from `render_preferences.last_format` unless the user changes it.
-5. Validate all retained formats so older output cannot silently drift.
+4. Regenerate all three formats, even when the previous document used a partial output selection.
+5. Validate Markdown, HTML, and PDF together so older output cannot silently drift.

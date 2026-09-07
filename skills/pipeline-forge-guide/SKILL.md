@@ -21,7 +21,7 @@ Act as the beginner-friendly front door for PipelineForge. Select and sequence t
 
 | User intent or evidence | Route |
 | --- | --- |
-| Generate or revise a reviewable waterline document from PRD/HLD (DOCX with embedded Excel, Markdown, or PDF) | Read `references/specialized-routes.md`, then use `pipeline-doc-generator` for Markdown, HTML, PDF, or a requested combination. |
+| Generate or revise a reviewable waterline document from PRD/HLD (DOCX with embedded Excel, Markdown, or PDF) | Read `references/specialized-routes.md`, then use `pipeline-doc-generator` to deliver Markdown, HTML, and PDF together. |
 | Technical Design handoff or document-to-code request using requirement Markdown/DOCX, waterline, or PRD evidence | Read `references/document-to-delivery.md`. Start with **Data Doc To Technical Design** (internal skill id: `data-doc-to-dev-md`), confirm the project-level code-unit plan, then dispatch each confirmed unit by its `codegen_route`. |
 | Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
 | DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
