@@ -59,8 +59,8 @@
           "additionalProperties": true
         },
         "documentation": {"type": "string"},
-        "write_flow": {"type": "array", "items": {"type": "string"}},
-        "sync_logic": {"type": "array", "items": {"type": "string"}},
+        "write_flow": {"type": "array", "items": {"type": "string"}, "description": "Legacy audit facts only; not a rendered section or a prose blocker."},
+        "sync_logic": {"type": "array", "items": {"type": "string"}, "description": "Legacy audit facts only; not a rendered section or a prose blocker."},
         "go_live": {"type": "string"}
       },
       "additionalProperties": true
@@ -80,6 +80,11 @@
         "type": "object",
         "properties": {
           "environment": {"type": "string"},
+          "location": {"type": "string", "description": "Confirmed storage type; required when mixed sources cannot be disambiguated by source_id."},
+          "source_id": {"type": "string"},
+          "source_ids": {"type": "array", "items": {"type": "string"}},
+          "sas_url": {"type": "string", "description": "Full user-provided HTTPS Blob SAS URL; sensitive, local deliverables only. Never fetch it automatically."},
+          "expires_at": {"type": "string", "description": "Confirmed expiry or policy description when the SAS se parameter cannot supply it."},
           "host": {"type": "string"},
           "database": {"type": "string"},
           "note": {"type": "string"},
@@ -126,8 +131,22 @@
     "confirmed_pending_paths": {"type": "array", "items": {"type": "string"}},
     "render_preferences": {
       "type": "object",
-      "properties": {
-        "last_format": {"enum": ["markdown", "html", "pdf", "both", "markdown-pdf", "html-pdf", "all", ""]},
+        "properties": {
+          "last_format": {"const": "all", "default": "all", "description": "Legacy format preferences migrate to all: Markdown, HTML, and PDF together."},
+          "diagrams": {
+            "type": "object",
+            "propertyNames": {"enum": ["data_flow", "catalog"]},
+            "additionalProperties": {
+              "type": "object",
+              "required": ["engine", "svg", "sha256"],
+              "properties": {
+                "engine": {"const": "diagram-design"},
+                "svg": {"type": "string", "description": "Relative reviewed SVG path within the facts directory"},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              },
+              "additionalProperties": false
+            }
+          },
         "pdf_orientation": {"enum": ["auto", "portrait", "landscape"], "default": "auto"},
         "include_target_category": {"type": ["boolean", "null"]},
         "include_target_report_type": {"type": ["boolean", "null"]},
@@ -209,6 +228,8 @@
         "report_type": {"type": "string"},
         "grain": {"type": "string"},
         "schedule": {"type": "string"},
+        "range": {"type": "string", "description": "Data coverage only, never a fallback copy of the schedule."},
+        "rowkey": {"type": "string", "description": "User-confirmed design; no default inferred from a full refresh."},
         "write_mode": {"type": "string"},
         "logic": {"type": "array", "items": {"type": "string"}},
         "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
@@ -238,6 +259,7 @@
         },
         "description": {"type": "string"},
         "trigger": {"type": "string"},
+        "schedule_notes": {"type": "string", "description": "Upstream readiness and operational evidence; retained in facts, not appended to trigger cells."},
         "prefix": {"type": "string"},
         "sources": {"type": "array", "items": {"type": "string"}},
         "targets": {"type": "array", "items": {"type": "string"}},

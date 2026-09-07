@@ -11,6 +11,7 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import A4, A3, landscape
 
 from render_pipeline_pdf import content_digest, parse_markdown, plain, text_units
+from pipeline_diagram_contract import platform_definitions
 
 
 def compact(value):
@@ -30,6 +31,10 @@ def validate_pdf(path: Path, facts: dict, errors: list, metrics: dict):
             return ""
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
         metadata = reader.metadata or {}
+        if facts.get("render_preferences", {}).get("diagrams"):
+            from diagram_design_bridge import digest
+            if metadata.get("/WaterlineDiagramBindingsSHA256") != digest(facts["render_preferences"]["diagrams"]):
+                errors.append("PDF is stale relative to the reviewed diagram binding")
         if metadata.get("/WaterlineContentSHA256") != content_digest(markdown, facts["flow"]):
             errors.append("PDF is stale relative to the canonical document/flow")
         blocks = parse_markdown(markdown)
@@ -48,14 +53,15 @@ def validate_pdf(path: Path, facts: dict, errors: list, metrics: dict):
         else:
             for index, spec in enumerate(specs):
                 figure_text = compact(reader.pages[-figure_count+index].extract_text() or "")
-                labels = [spec.get("title", ""), spec.get("description", "")]
+                labels = [spec.get("title", "")]
+                labels.extend(platform["title"] for platform in platform_definitions(spec))
                 for node in spec["nodes"]:
                     labels.append(node.get("label", ""))
-                    labels.extend(node.get("details") or [])
+                    labels.extend(node.get("identifiers") or [])
                 labels.extend(edge.get("label", "") for edge in spec["edges"])
                 for label in labels:
                     if compact(label) not in figure_text:
-                        errors.append(f"PDF full-page diagram text missing: {label}")
+                        errors.append(f"PDF full-page diagram {index+1} is missing visible identity/flow text")
         units, _ = text_units(blocks)
         if metadata.get("/WaterlineTextAudit") != "1":
             errors.append("PDF needs regeneration with per-cell text validation")
@@ -123,7 +129,9 @@ def validate_pdf(path: Path, facts: dict, errors: list, metrics: dict):
             # never trust a metadata digest or only check a cell's endpoints.
             values = fragments if unit["header"] else ["".join(fragments)]
             if expected and (not values or any((compact(value).removeprefix("•") if unit["bullet"] else compact(value)) != expected for value in values)):
-                errors.append(f"PDF content differs in text unit {unit_id}: {str(unit['text'])[:90]}")
+                # A connection cell may contain a signed URL. Identify the unit
+                # without copying credentials into logs or test reports.
+                errors.append(f"PDF content differs in text unit {unit_id}")
         if clipped:
             errors.append(f"PDF text extends beyond page bounds: {clipped}")
         metrics.update(pdf_pages=len(reader.pages), pdf_links=links, pdf_embedded_fonts=len(embedded_fonts), pdf_text_units=len(units), pdf_tables=int(metadata.get("/WaterlineTableCount", 0)), pdf_figures=int(metadata.get("/WaterlineFigureCount", 0)), pdf_size=path.stat().st_size)

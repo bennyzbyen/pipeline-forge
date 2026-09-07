@@ -22,13 +22,13 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import BaseDocTemplate, Flowable, Frame, Image, KeepTogether, LongTable, NextPageTemplate, PageBreak, PageTemplate, Paragraph, Spacer, TableStyle
 from reportlab.platypus.tableofcontents import TableOfContents
 
-from render_waterline_svg import validate_svg, validate_svg_safety
+from pipeline_diagram_contract import VISUAL_VERSION, validate_svg, validate_svg_safety
 
 INK, MUTED, BLUE, LINE = "#203148", "#51627a", "#2563eb", "#dce4ed"
 
 
 def content_digest(markdown, flow):
-    return hashlib.sha256(json.dumps({"markdown": markdown, "flow": flow}, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return hashlib.sha256(json.dumps({"markdown": markdown, "flow": flow, "diagram_visual_version": VISUAL_VERSION}, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def register_fonts():
@@ -213,20 +213,28 @@ class VectorFlow(Flowable):
             canvas.roundRect(x, y, w, h, radius, stroke=stroke != "none", fill=fill != "none") if radius and a.get("class") != "node-band" else canvas.rect(x, y, w, h, stroke=stroke != "none", fill=fill != "none")
         elif name == "line":
             canvas.line(*[float(a[k]) for k in ("x1", "y1", "x2", "y2")])
+        elif name in {"ellipse", "circle"}:
+            cx, cy = float(a["cx"]), float(a["cy"])
+            rx, ry = (float(a["r"]), float(a["r"])) if name == "circle" else (float(a["rx"]), float(a["ry"]))
+            canvas.ellipse(cx-rx, cy-ry, cx+rx, cy+ry, stroke=stroke != "none", fill=fill != "none")
+        elif name in {"polygon", "polyline"}:
+            values = [float(v) for v in re.split(r"[ ,]+", a["points"].strip())]
+            polygon = canvas.beginPath()
+            polygon.moveTo(*values[:2])
+            for i in range(2, len(values), 2):
+                polygon.lineTo(*values[i:i+2])
+            if name == "polygon":
+                polygon.close()
+            canvas.drawPath(polygon, fill=fill != "none", stroke=stroke != "none")
         elif name == "path":
-            tokens = re.findall(r"[A-Za-z]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?", a["d"])
-            path, index, points = canvas.beginPath(), 0, []
-            while index < len(tokens):
-                command = tokens[index]; index += 1
-                count = {"M": 2, "L": 2, "C": 6, "Z": 0, "z": 0}.get(command)
-                if count is None:
-                    raise ValueError(f"Unsupported generated SVG command: {command}")
-                values = list(map(float, tokens[index:index+count])); index += count
+            from diagram_design_bridge import path_commands
+            path, points = canvas.beginPath(), []
+            for command, values in path_commands(a["d"]):
                 if command == "M": path.moveTo(*values)
                 elif command == "L": path.lineTo(*values)
                 elif command == "C": path.curveTo(*values)
                 else: path.close()
-                if count:
+                if values:
                     points.extend(zip(values[::2], values[1::2]))
             canvas.drawPath(path, fill=fill != "none", stroke=stroke != "none")
             if a.get("marker-end") and len(points) > 1:
@@ -399,6 +407,9 @@ def render_pdf(markdown, markdown_path, output, facts):
         reader, writer = PdfReader(intermediate), PdfWriter()
         writer.clone_document_from_reader(reader)
         writer.add_metadata({"/Title": facts["document"]["title"], "/Creator": "Pipeline Document Generator", "/WaterlineContentSHA256": content_digest(markdown, facts["flow"]), "/WaterlineTextAudit": "1", "/WaterlineTableCount": str(sum(kind=="table" for kind, _ in blocks)), "/WaterlineFigureCount": str(len(figures)), "/WaterlineProfile": facts["profile"]})
+        if facts.get("render_preferences", {}).get("diagrams"):
+            from diagram_design_bridge import digest
+            writer.add_metadata({"/WaterlineDiagramBindingsSHA256": digest(facts["render_preferences"]["diagrams"])})
         with output.open("wb") as stream:
             writer.write(stream)
     return output

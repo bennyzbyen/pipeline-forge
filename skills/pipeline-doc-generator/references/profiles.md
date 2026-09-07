@@ -6,7 +6,9 @@ Choose a profile from the actual data work. A filename containing “同步”, 
 
 Use `sync` when the main outcome is one-to-one or parameterized table movement, annual table rollover, or incremental/full replication with little business calculation. Follow `assets/sync_template.md` exactly at H1/H2 level.
 
-Required evidence includes each source's confirmed data location/storage type (such as Blob, HBase, or MySQL), source and target physical identities, source range or watermark, field mapping, full/incremental behavior, write order, schedules, Pipeline/Task mapping, resources, and go-live value. The sync source table must display the confirmed data location as its own column. Keep the H1 title as `3. Target`; do not name storage engines in the heading.
+Required evidence includes each source's confirmed data location/storage type (such as Blob, HBase, or MySQL), source and target physical identities, source range or watermark, field mapping, full/incremental write mode, schedules, Pipeline/Task mapping, resources, and go-live value. The sync source table must display the confirmed data location as its own column. Keep the H1 title as `4. Target`; do not name storage engines in the heading.
+
+The numbered chapters are `1. 需求概述`, `2. 数据流图`, `3. Source 数据源`, `4. Target`, `5. Pipeline`, `6. 资源评估`, and `7. 上线时间`. Do not restore the legacy write-flow/sync-logic narrative sections. Keep brief write-mode/RowKey information with the Target, not in the flow overview. See `presentation-rules.md` for content ownership and Blob connection tables.
 
 The Target table is a horizontal source-to-target mapping. Render exactly one row per source, always including `原表位置` and `原表名`. Derive the related targets from stable source/target IDs in Pipeline mappings, explicit target source IDs, or target-field source IDs. Add `HBase表名`, `ClickHouse表名`, `MySQL表名`, or equivalent columns only for target storage types actually present in `facts.json`. When one source maps to several storage types, keep them on that source's single row. When it maps to multiple tables in one storage type, preserve target order and separate the values with `<br>`. Do not emit a generic `目标表` column or an unused storage-specific column.
 
@@ -14,15 +16,15 @@ Before the first formal render of each new sync document, ask the user to confir
 
 Render `所属类别` or `报表类型` only when its corresponding choice is true. When target range is requested, add one storage-neutral `数据范围` column. Never create separate `HBase数据范围` or `ClickHouse数据范围` columns. For several target storage types, prefix each value with its storage label inside the shared cell. Target Management remains storage-neutral. A user-confirmed literal `待定` is acceptable only when its JSON pointer appears in `confirmed_pending_paths`.
 
-Omit `target前缀` from Target Management and `pipeline前缀` from Pipeline Management. They were spreadsheet formula-helper columns and are not part of generated Markdown, HTML, or PDF, even when legacy `prefix`, `target_prefix`, `hbase_prefix`, or `clickhouse_prefix` values remain in `facts.json`.
+Omit `catalog` and `target前缀` from Target Management and `pipeline前缀` from Pipeline Management. Legacy `catalog`, `prefix`, `target_prefix`, `hbase_prefix`, or `clickhouse_prefix` facts do not add display columns.
 
-After sync Pipeline Management, always render `4.2.4 Catalog Basic Info` using the same Basic Info table columns as the report profile. Ask whether Catalog applies through `catalog.enabled`. When enabled, require at least one `catalog.basic_info` record; derive only Data Item and Title from confirmed target facts when appropriate, and leave unconfirmed owner/email values empty. When disabled, keep the section and write `不适用（已确认）`.
+After sync Pipeline Management, always render `5.2.4 Catalog Basic Info` using the same Basic Info table columns as the report profile. Ask whether Catalog applies through `catalog.enabled`. When enabled, require at least one `catalog.basic_info` record; derive only Data Item and Title from confirmed target facts when appropriate, and leave unconfirmed owner/email values empty. When disabled, keep the section and write `不适用（已确认）`.
 
 ## Report Profile
 
 Use `report` when outputs depend on joins, filters, KPI/abnormal rules, aggregation, feedback updates, or multiple processing stages. Follow `assets/report_template.md` exactly at H1/H2 level.
 
-Required evidence includes source range and joins/filters, every physical target, grain, ordered field logic, Pipeline/Task mapping, schedule, Catalog applicability, and resources. Keep runtime, write, and rerun facts inside target logic or Pipeline descriptions rather than adding unapproved H1 sections.
+Required evidence includes source range and joins/filters, every physical target, grain, ordered field logic, Pipeline/Task mapping, schedule, Catalog applicability, and resources. Chapter 1 is `需求概述`, followed by its `1.1 数据流图` subsection. Under `数据源详情`, use `2.1 链接信息` for connections and `2.2 数据列表` for the source matrix; use the Blob-specific schema where applicable. Keep each rule in its appropriate target dictionary or Pipeline description rather than repeating it in the overview, diagram, and schedule cell.
 
 ## Ambiguous Or Mixed Projects
 

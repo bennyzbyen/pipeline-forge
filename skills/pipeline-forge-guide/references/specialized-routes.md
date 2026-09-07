@@ -5,7 +5,7 @@ Use only the section matching the user's primary request.
 ## Reviewable Waterline Document
 
 1. Use `pipeline-doc-generator` for a new or revised DataEngine/DataHub waterline document, not an implementation-oriented Technical Design handoff.
-2. Confirm the requested output directory and format if missing: Markdown, HTML, PDF, or a combination. Preserve the previous format for conversational edits.
+2. Confirm the output directory if missing. Always deliver Markdown, HTML, and PDF together; do not ask for a format choice or preserve a legacy partial-output preference.
 3. Follow the specialist's evidence, facts, and clarification gates. For an existing generated document, update its canonical `facts.json` instead of reparsing every input or editing rendered files.
 4. Validate all selected outputs and report paths plus unresolved questions. Stop at the requested document; propose code or Pipeline Export work only as an optional next step.
 

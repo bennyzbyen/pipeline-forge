@@ -13,7 +13,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 from pipeline_doc_common import apply_fixed_defaults, blocking_questions, configure_utf8_stdio, expected_headings, load_json, write_json
-from render_waterline_svg import graph_model, validate_spec, validate_svg
+from pipeline_diagram_contract import validate_spec, validate_svg
+from render_pipeline_doc import markdown_to_html, render_markdown, split_pipe_row, catalog_spec
 
 
 FORBIDDEN_MARKDOWN = (".xlsx)", "<details>", "</details>", "<summary>", "Microsoft_Excel_Worksheet", "TODO", "TBD", "待确认")
@@ -52,7 +53,6 @@ def validate_facts(facts: dict, profile: str, errors: list[str], warnings: list[
     try:
         flow = facts.get("flow") or {}
         validate_spec(flow)
-        graph_model(flow)
     except Exception as exc:
         errors.append(f"invalid flow spec: {exc}")
     source_ids = {item.get("id") for item in facts.get("sources") or []}
@@ -82,6 +82,15 @@ def validate_markdown(path: Path, facts: dict, profile: str, errors: list[str], 
     expected = [facts["document"]["title"], *expected_headings(profile)]
     if headings != expected:
         errors.append(f"Markdown H1 order mismatch: expected={expected}, actual={headings}")
+    asset_dir = f"{path.stem}_files"
+    catalog_rel = f"{asset_dir}/catalog_registration_flow.svg" if profile == "report" and facts.get("catalog", {}).get("enabled") else ""
+    canonical = render_markdown(facts, f"{asset_dir}/data_flow.svg", catalog_rel)
+    if text.replace("\r\n", "\n") != canonical:
+        errors.append("Markdown differs from canonical facts/presentation; regenerate the full bundle")
+    lines = text.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        if line.startswith("| ") and re.match(r"^\|\s*:?-{3,}", lines[index+1]) and "catalog" in [cell.lower() for cell in split_pipe_row(line)]:
+            errors.append("Target tables must not contain a catalog helper column")
     for token in FORBIDDEN_MARKDOWN:
         if token in text:
             errors.append(f"Markdown contains forbidden token: {token}")
@@ -100,7 +109,7 @@ def validate_markdown(path: Path, facts: dict, profile: str, errors: list[str], 
         elif candidate.suffix.lower() == ".svg":
             try:
                 root = ET.parse(candidate).getroot()
-                validate_svg(root, facts["flow"] if candidate.name == "data_flow.svg" else None)
+                validate_svg(root, facts["flow"] if candidate.name == "data_flow.svg" else catalog_spec())
             except Exception as exc:
                 errors.append(f"invalid SVG XML {candidate}: {exc}")
     normalized = normalize_text(text)
@@ -155,6 +164,8 @@ class HTMLSecurityProbe(HTMLParser):
 def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> str:
     text = path.read_text(encoding="utf-8")
     lower = text.lower()
+    if re.search(r"<th\b[^>]*>\s*catalog\s*</th>", lower):
+        errors.append("Target tables must not contain a catalog helper column")
     if "<style>" not in lower or "<svg" not in lower:
         errors.append("HTML must contain inline CSS and SVG")
     probe = HTMLSecurityProbe()
@@ -170,7 +181,7 @@ def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> 
     svgs = re.findall(r"<svg\b.*?</svg>", text, re.DOTALL)
     for index, svg in enumerate(svgs):
         try:
-            validate_svg(ET.fromstring(svg), facts["flow"] if index == 0 else None)
+            validate_svg(ET.fromstring(svg), facts["flow"] if index == 0 else catalog_spec())
         except Exception as exc:
             errors.append(f"invalid embedded SVG: {exc}")
     for src in re.findall(r"\bsrc=[\"']([^\"']+)", text, re.IGNORECASE):
@@ -198,11 +209,43 @@ def main() -> int:
     parser.add_argument("--pdf", type=Path)
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
+    supplied = args.markdown or args.html or args.pdf
+    if supplied:
+        # Partial validation flags from older callers still validate the whole bundle.
+        for name, suffix in (("markdown", ".md"), ("html", ".html"), ("pdf", ".pdf")):
+            if getattr(args, name) is None:
+                setattr(args, name, supplied.with_suffix(suffix))
     facts = apply_fixed_defaults(load_json(args.facts.resolve()))
     errors: list[str] = []
     warnings: list[str] = []
     metrics: dict[str, int] = {}
     validate_facts(facts, args.profile, errors, warnings)
+    from diagram_design_bridge import read_bound_asset, require_bindings
+    if supplied:
+        try:
+            require_bindings(facts)
+        except ValueError as exc:
+            errors.append(str(exc))
+    from render_pipeline_doc import catalog_spec
+    for slot, config in facts.get("render_preferences", {}).get("diagrams", {}).items():
+        try:
+            if slot not in {"data_flow", "catalog"} or config.get("engine") != "diagram-design":
+                raise ValueError("Invalid diagram binding")
+            spec = facts["flow"] if slot == "data_flow" else catalog_spec()
+            payload = read_bound_asset(spec, config, args.facts.resolve().parent)
+            if args.markdown:
+                from render_pipeline_doc import document_stem
+                asset_name = "data_flow.svg" if slot == "data_flow" else "catalog_registration_flow.svg"
+                emitted = args.markdown.parent / (document_stem(facts["document"]["title"])+"_files") / asset_name
+                if emitted.read_bytes() != payload:
+                    raise ValueError("Rendered SVG differs from the reviewed binding")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append(f"Invalid bound diagram ({slot}): {type(exc).__name__}")
+    for name in ("markdown", "html", "pdf"):
+        path = getattr(args, name)
+        if path is not None and not path.is_file():
+            errors.append(f"Required {name} output is missing; all three formats must be regenerated")
+            setattr(args, name, None)
     markdown_text = validate_markdown(args.markdown.resolve(), facts, args.profile, errors, metrics) if args.markdown else ""
     html_text = validate_html(args.html.resolve(), facts, errors, metrics) if args.html else ""
     if args.pdf:
@@ -213,6 +256,12 @@ def main() -> int:
         if args.html and metrics.get("pdf_tables") != metrics.get("html_tables"):
             errors.append("HTML/PDF table count mismatch")
     if markdown_text and html_text:
+        try:
+            canonical_html = markdown_to_html(markdown_text, args.markdown.resolve(), facts["document"]["title"])
+            if html_text.replace("\r\n", "\n") != canonical_html:
+                errors.append("HTML differs from canonical Markdown/SVG; regenerate the full bundle")
+        except (OSError, ValueError) as exc:
+            errors.append(f"Cannot verify canonical HTML: {type(exc).__name__}")
         if metrics.get("markdown_tables") != metrics.get("html_tables"):
             errors.append(f"Markdown/HTML table count mismatch: {metrics.get('markdown_tables')} != {metrics.get('html_tables')}")
         for heading in expected_headings(args.profile):
