@@ -24,6 +24,10 @@ Generate reviewable waterline documents whose canonical source is `facts.json`.
 - Maintain versions and change summaries automatically. Start a new document at `0.0.1` with `初始版本`; for subsequent content edits, summarize the actual changes and advance the version. Do not ask the user to write the version or summary. Respect explicit corrections; a format-only switch or identical rerender does not add a revision.
 - Propose missing Data Utilization, Pipeline, and Task names from the business purpose and existing conventions. Present the candidates for acceptance rather than asking the user to invent names. Preserve sourced or already-confirmed names, and request alternatives only when the user rejects a proposal.
 
+## Diagram Design dependency
+
+Diagram Design is a separately installed plugin; PipelineForge does not bundle or automatically install it. Before new visual authoring or redesign, discover `diagram-design:diagram-design` in the session skill catalog and read its instructions. If unavailable, tell the user: "首次绘图或重新设计需要单独安装并启用 Diagram Design 插件；PipelineForge 不包含它。" Use an available plugin discovery/install surface to help locate it; never invent a marketplace URL or installation command. Continue independent evidence/facts work, but stop visual authoring until it is available. Already bound, valid SVGs can be reused for prose/table edits and three-format rendering without loading Diagram Design. Other PipelineForge routes do not require this plugin.
+
 ## Workflow
 
 1. Run `scripts/extract_requirement_evidence.py --input <files...> --out <project-dir>`. For PDF pages flagged `requires_visual_review`, inspect the rendered page images and add the recovered facts before resolving that question.

@@ -38,6 +38,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-pipeline-forge
 
 The helper copies only this plugin into your personal Codex plugin directory and preserves existing entries in your personal marketplace file. See [INSTALL.md](INSTALL.md) for the manual setup path.
 
+First-time waterline drawing and visual redesign require **Diagram Design**, installed separately. It is not bundled or automatically installed with PipelineForge. Existing valid SVG bindings can be reused without it; other modules have no such dependency. See [dependency details](INSTALL.md#diagram-design-dependency).
+
 ## Repository Layout
 
 ```text
@@ -53,7 +55,7 @@ pipeline-forge/
 | Module | Use when you need to |
 | --- | --- |
 | `pipeline-forge-guide` | Move from source files to a verified safe deliverable with step-by-step guidance. |
-| `pipeline-doc-generator` | Generate or revise reviewable waterline documents with canonical facts, direct tables, and Graphviz diagrams. |
+| `pipeline-doc-generator` | Generate or revise reviewable waterline documents with canonical facts, direct tables, and reviewed Diagram Design SVGs. |
 | `data-doc-to-dev-md` | Extract structured facts and development notes from requirement documents. |
 | `data-job-log-debugger` | Diagnose failed data jobs from logs or screenshots. |
 | `data-sync-codegen` | Generate or revise synchronization code with all-table contract checks. |

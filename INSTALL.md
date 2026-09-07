@@ -10,6 +10,16 @@ codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.0
 
 Restart the ChatGPT desktop app, open **Plugins > Personal**, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.
 
+## Diagram Design dependency
+
+PipelineForge and Diagram Design are installed and updated separately. PipelineForge does not include or automatically install Diagram Design.
+
+- For a new waterline diagram or visual redesign, separately install and enable **Diagram Design**. The waterline skill checks for it before drawing and explains what is missing.
+- Existing documents with valid, reviewed SVG bindings can reuse those diagrams when prose or tables change, without loading Diagram Design.
+- Other PipelineForge modules do not require Diagram Design.
+
+Use your available plugin installation surface to locate Diagram Design. If it is unavailable there, provide its official installation source so the assistant can help; PipelineForge does not supply a separate installer for it.
+
 ## Windows quick setup
 
 1. Extract the downloaded `pipeline-forge.zip` archive.

@@ -16,7 +16,7 @@ PipelineForge is a guided, modular toolkit for data pipeline development: one-st
 | Module | Purpose |
 | --- | --- |
 | `pipeline-forge-guide` | Guide beginners from source files through routing, blocker handling, generation, and verification. |
-| `pipeline-doc-generator` | Generate and revise reviewable waterline documents in Markdown, interactive HTML, or PDF from PRD/HLD evidence. |
+| `pipeline-doc-generator` | Generate and revise reviewable waterline documents in Markdown, interactive HTML, and PDF together from PRD/HLD evidence. |
 | `data-doc-to-dev-md` | Convert requirement documents into implementation-ready development notes. |
 | `data-job-log-debugger` | Diagnose DataEngine/DataHub job logs and failure evidence. |
 | `data-sync-codegen` | Generate portable synchronization projects with all-table contract verification and runtime guards. |
@@ -43,6 +43,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-pipeline-forge
 See [INSTALL.md](INSTALL.md) for both installation paths.
 
 For a guided workflow, invoke `$pipeline-forge-guide` or start with: `Guide me from these source files to a verified deliverable.`
+
+Waterline drawing requires the separately installed **Diagram Design** plugin. PipelineForge checks for it before creating or redesigning diagrams; valid bound SVGs can be reused without it. See [dependency details](INSTALL.md#diagram-design-dependency).
 
 ## Quality Checks
 
