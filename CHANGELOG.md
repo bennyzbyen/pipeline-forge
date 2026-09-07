@@ -1,12 +1,11 @@
 # Changelog
 
-**Unreleased changes**
+## 2.0.0 - 2026-09-07
 
-- Remove the Graphviz waterline engine and fallback; require reviewed Diagram Design bindings for every generated flow.
-- Use the separately installed Diagram Design skill for new or redesigned waterline flows, retaining reviewed SVG layouts across document edits.
-- Bind diagrams to canonical flow facts, validate platform ownership and stale assets, and preserve offline Markdown, HTML, and vector PDF delivery.
-
-- Always deliver Markdown, HTML, and PDF together with a concise requirements overview, focused flow diagrams, and canonical content checks.
+- BREAKING: remove Graphviz rendering and fallback; Diagram Design is the only supported waterline drawing workflow.
+- Migration: install Diagram Design separately and bind reviewed SVGs for data_flow and enabled report catalog diagrams before updating older documents.
+- Preserve approved SVG layouts across prose edits; reject missing, modified, or stale diagram assets.
+- Always deliver Markdown, interactive HTML, and vector PDF together with concise presentation and canonical content validation.
 
 ## 1.4.0 - 2026-09-02
 
