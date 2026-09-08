@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2026-09-08
+
+- Refine GPT-6 instruction priority and reuse existing authorization for autonomous delivery.
+- Remove redundant code-unit and document presentation confirmations while preserving correctness gates and decision audit trails.
+
 ## 2.0.0 - 2026-09-07
 
 - BREAKING: remove Graphviz rendering and fallback; Diagram Design is the only supported waterline drawing workflow.
