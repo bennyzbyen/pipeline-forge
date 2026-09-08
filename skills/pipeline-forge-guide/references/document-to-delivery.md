@@ -1,3 +1,7 @@
+# GPT-6 適配變更說明
+
+清理重複確認，保留事實、驗證與授權邊界。
+
 # Document-To-Delivery Route
 
 Use this route when the user provides requirement documents or asks to go from a waterline/PRD to tested code.
@@ -26,7 +30,7 @@ Summarize confirmed sources, targets, schedules, fields, and components before g
 
 ## 3. Handle Blockers
 
-If `code_unit_plan.status = awaiting_user_confirmation`, first show the suggested count, unit-to-waterline mapping, parameter profiles, split/merge reasons, dependencies, confidence, and unresolved boundary evidence. Preserve `TC-CG-CODE-UNIT-CONFIRMATION` and stop full code generation. The user may confirm, merge, or split the proposal; validate the override and record it in the contract audit.
+If `code_unit_plan.status = awaiting_user_confirmation`, first show the suggested count, unit-to-waterline mapping, parameter profiles, split/merge reasons, dependencies, confidence, and unresolved boundary evidence. When implementation is already authorized and boundary evidence is sufficient, adopt the mapping with the confirmation CLI using `--actor assistant` and a note recording authorization and evidence, then continue. Preserve `TC-CG-CODE-UNIT-CONFIRMATION` only for unresolved material boundaries or a user-requested checkpoint. Validate all mapping decisions and record the actual actor; never claim the user explicitly confirmed an assistant decision.
 
 If a confirmed unit's `readiness.ready_for_codegen` is false:
 

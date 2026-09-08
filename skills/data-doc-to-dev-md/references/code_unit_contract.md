@@ -1,3 +1,7 @@
+# GPT-6 適配變更說明
+
+清理重複確認，保留事實、驗證與授權邊界。
+
 # Two-Level Code-Unit Contract
 
 Use this contract when a project may contain more than one independently generated or deployed code unit. The formal handoff remains `technical_design.md`, `structured_facts.json`, and `questions.md`.
@@ -5,10 +9,10 @@ Use this contract when a project may contain more than one independently generat
 ## Lifecycle
 
 - `proposed`: an internal proposal exists but has not yet been presented as the blocking review state.
-- `awaiting_user_confirmation`: the proposal is visible and full code generation is forbidden.
-- `confirmed`: the user confirmed or overrode the mapping and the mapping passed boundary validation.
+- `awaiting_user_confirmation`: the mapping has not yet been reviewed and adopted; full code generation waits for that decision, which may use existing implementation authorization without another user turn.
+- `confirmed`: the mapping passed boundary validation and was adopted by the user or by the assistant within existing authorization; `confirmation_audit.actor` and `note` identify which.
 
-Changing waterline boundary evidence changes `boundary_evidence_fingerprint`. A previously confirmed plan then becomes invalid and must be rebuilt and confirmed again.
+Changing waterline boundary evidence changes `boundary_evidence_fingerprint`. Rebuild and reassess the mapping, record a fresh adoption when authorization and evidence still suffice, and ask only about materially unresolved boundaries.
 
 ## Project-Level Contract
 
@@ -69,7 +73,7 @@ Rebuild or invalidate a proposal:
 python .\scripts\manage_code_unit_plan.py --facts <structured_facts.json> --out <structured_facts.json> --technical-design <technical_design.md> --questions <questions.md> propose
 ```
 
-Confirm a user-approved mapping:
+Adopt a mapping after reviewing boundary evidence. For an already authorized implementation, use `--actor assistant --note "Existing implementation authorization; evidence and mapping rationale: ..."`. Use `--actor user` only for an actual user decision. Ask only if a material boundary remains unresolved or the user requested a checkpoint. The CLI validates the mapping; it does not establish authorization by itself. Example for an actual user-approved mapping:
 
 ```powershell
 python .\scripts\manage_code_unit_plan.py --facts <structured_facts.json> --out <structured_facts.json> --technical-design <technical_design.md> --questions <questions.md> confirm --mapping <confirmed_mapping.json> --actor user --note "Merge three proposed units into two"

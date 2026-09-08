@@ -3,6 +3,11 @@ name: data-sync-codegen
 description: Generate, review, or modify portable Python DataEngine/DataHub synchronization projects from development docs, especially COT yearly sync jobs with changing tables, fields, rowkeys, periods, and runtime parameters.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Data Sync Codegen
 
 Build COT/DataEngine synchronization code from `technical_design.md` or equivalent structured requirements. Accept legacy `dev_doc.md` inputs, and prefer `structured_facts.json` when available.
@@ -13,7 +18,7 @@ For the standard three-file handoff, read in this order:
 
 1. `structured_facts.json`: inspect the two-level `project_contract`, `code_unit_plan`, and `code_units[]` first, then the legacy-compatible `codegen_contract`, tables, fields, provenance, and readiness.
 2. `technical_design.md`: use HLD for flow/component boundaries and LLD for rowkeys, incremental fields, write predicates, parameters, retry, and verification behavior.
-3. `questions.md`: stop full generation when `Blocking Code Generation` is non-empty; deployment and non-blocking questions do not prevent scaffolding.
+3. `questions.md`: resolve items from existing evidence first; block full generation only for the affected unit with unresolved correctness requirements. Deployment-only and non-blocking questions do not prevent local implementation and validation of ready units.
 
 Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-plan files. Legacy inputs without `codegen_contract` use the existing evidence checks.
 
@@ -30,7 +35,7 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 2. Read `references/code_comments_and_runtime_logging.md` before generating or reviewing business code.
 3. Read `references/platform_client_usage.md` when code touches Gateway, HBase, or FS.
 4. If `codegen_contract.component_kind` or `component_hints[].component_kind` is `bysku_report_pipeline`, route to `report-codegen`; it is not a COT table-sync shape.
-5. For a two-level contract, reject `awaiting_user_confirmation` and select a confirmed sync unit with `scripts/scaffold_cot_sync_project.py --structured-facts <facts> --output-dir <target> --code-unit-id <id> [--extracted-tables <dir>]`. The ID may be omitted only for one confirmed unit. Legacy facts keep the existing command. Each selected unit generates its own entrypoint, config, test, and read-only `CODE_UNIT_CONTRACT.json` snapshot.
+5. For a two-level contract, resolve `awaiting_user_confirmation` through the audited adoption workflow in `data-doc-to-dev-md/references/code_unit_contract.md` when existing authorization and boundary evidence suffice; otherwise ask only about the unresolved boundary. Select a confirmed sync unit with `scripts/scaffold_cot_sync_project.py --structured-facts <facts> --output-dir <target> --code-unit-id <id> [--extracted-tables <dir>]`. The ID may be omitted only for one confirmed unit. Legacy facts keep the existing command. Each selected unit generates its own entrypoint, config, test, and read-only `CODE_UNIT_CONTRACT.json` snapshot.
 6. If `codegen_contract.ready_for_codegen = false`, return its blockers. Use `--allow-blocked-scaffold` only for an explicitly requested safe scaffold, and do not claim full implementation. A blocked scaffold must include `SAFE_SCAFFOLD.json` with `runtime_enabled=false` and keep every table runtime-disabled; the flag alone must not downgrade an otherwise ready contract.
    Its generated contract test must assert the blocked snapshot and safe marker, while a ready unit's test must assert readiness and the absence of that marker.
 7. Adapt only confirmed tables, fields, parameters, rowkeys, and exceptions. Keep business-specific variation in config where possible.

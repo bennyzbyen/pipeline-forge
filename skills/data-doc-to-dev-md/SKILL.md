@@ -3,9 +3,14 @@ name: data-doc-to-dev-md
 description: Convert one or more Markdown or DOCX PRD, DataEngine, DataHub, waterline, COT, HBase, ClickHouse, Superview, or report requirement documents into AI-readable Technical Design handoffs for data-sync or report code generation.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Data Doc To Technical Design
 
-Extract requirement evidence into a technical-design handoff. Do not generate production code in this skill.
+Extract requirement evidence into a technical-design handoff. For a document-only request, deliver the handoff; for an authorized end-to-end request, continue with the matching codegen skill.
 
 ## Contract
 
@@ -18,7 +23,7 @@ Extract requirement evidence into a technical-design handoff. Do not generate pr
 - Treat `technical_design.md` as one concise design document with explicit HLD and component-LLD sections. Do not create separate HLD, LLD, manifest, or traceability files unless the user asks.
 - Do not claim that the design is complete or invent missing decisions. Put routing, components, blockers, and `ready_for_codegen` in `structured_facts.json.codegen_contract`.
 - For new handoffs, also create the two-level contract described in `references/code_unit_contract.md`: one `project_contract`, one lifecycle-bearing `code_unit_plan`, and independently validatable `code_units[]`. Waterline count is evidence, never a direct code-count rule.
-- Present a code-unit proposal before full generation. Keep it `awaiting_user_confirmation` until the user confirms or overrides the count and mapping. Any changed boundary evidence invalidates the confirmation.
+- Review the code-unit count and mapping before full generation. When implementation is authorized and boundary evidence is sufficient, adopt the evidence-backed mapping through the confirmation CLI with `--actor assistant` and a note identifying the existing authorization and decision evidence; do not ask again. Keep `awaiting_user_confirmation` only for material unresolved boundaries or when the user requested a review checkpoint. Changed boundary evidence requires re-evaluation and a fresh audit, not automatically another question.
 - Give every generated ambiguity a stable semantic ID: `TC-CG-*` for code-generation blockers, `TC-DP-*` for deployment confirmations, and `TC-NB-*` for non-blocking questions. Preserve the same ID in `questions.md`, `codegen_contract.open_questions`, blocker summaries, and user-facing confirmation prompts.
 
 ## Inputs And Outputs
@@ -37,7 +42,7 @@ Write under the user-provided output directory, or `outputs/<project-name>/`:
 1. Run `scripts/extract_docx_bundle.py --input <paths...> --out <output-dir> [--project-name <name>]`. Pass all Markdown and DOCX PRD/waterline documents for the same project in one run. `--docx` remains a legacy DOCX-only alias.
 2. Review extracted evidence and `structured_facts.json`. Check any field-dictionary mapping that fell back to embedded-sheet order.
 3. Build the legacy-compatible `codegen_contract`, enrich schedule-derived waterlines through `scripts/code_unit_evidence.py`, then build the code-unit proposal. Link task identity, Data Utilization ownership, temporal grain, targets, rules, sources, write contracts, and dependency evidence. Render its count, waterline bindings, parameter profiles, route candidates, dependencies, reasons, confidence, and blockers in the three-file handoff.
-4. Put `TC-CG-CODE-UNIT-CONFIRMATION` in `Blocking Code Generation` until the user confirms the proposal. Apply confirmations or audited merge/split overrides with `scripts/manage_code_unit_plan.py`; reject overrides with incompatible state, write, deployment, failure-isolation, or route boundaries.
+4. Resolve `TC-CG-CODE-UNIT-CONFIRMATION` using the existing authorization and sufficient boundary evidence, or ask only about material unresolved boundaries. Use `scripts/manage_code_unit_plan.py` for audited adoption or merge/split decisions; preserve incompatible state, write, deployment, failure-isolation, and route checks.
 5. Use `assets/technical_design_template.md` as the final HLD + LLD document shape. After confirmation, retain the confirmation audit and show real blockers per unit.
 6. Run `scripts/validate_technical_contract.py --facts <structured_facts.json>` for normal review and add `--strict-deployment` only for deployment review. Run `scripts/verify_technical_contract_regression.py`, `scripts/verify_code_unit_contract_regression.py`, and `scripts/verify_schedule_boundary_planning.py --facts <structured_facts.json>` after contract or boundary-enrichment changes.
 

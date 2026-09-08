@@ -3,6 +3,11 @@ name: db-ddl-generator-skill
 description: Generate, parse, convert, and review CREATE TABLE DDL for MySQL, Microsoft SQL Server/MSSQL, ClickHouse, and PostgreSQL/PGSQL from Excel/CSV field lists, docx embedded Excel or tables, existing DDL, and column descriptions. Use when Codex needs to produce auditable table DDL, convert DDL between supported databases, extract a reusable ClickHouse QA/PROD template from production DDL, or explain type mappings, assumptions, and SQL conversion risks. This skill only generates SQL and validation notes; it must not connect to databases, store credentials, or execute SQL.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # DB DDL Generator
 
 ## Scope

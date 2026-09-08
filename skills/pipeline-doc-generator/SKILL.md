@@ -3,6 +3,11 @@ name: pipeline-doc-generator
 description: Generate or revise editable DataEngine/DataHub waterline documents from PRD/HLD in DOCX (including embedded Excel), Markdown, or PDF. Deliver Markdown, interactive standalone HTML, and paginated PDF together, with direct tables, overview SVG flows, audit facts, and clarification gates. Use for the waterline document itself, not a code-generation Technical Design handoff.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Pipeline Document Generator
 
 Generate reviewable waterline documents whose canonical source is `facts.json`.
@@ -15,14 +20,14 @@ Generate reviewable waterline documents whose canonical source is `facts.json`.
 - The first numbered chapter is always `需求概述`: briefly identify the data, its source systems/storage, and its destinations, including all branches of complex work. Follow [the concise presentation rules](references/presentation-rules.md); explain each fact once in its appropriate section instead of repeating operational prose.
 - Preserve Chinese business terms, physical table/field names, formulas, schedules, and provenance. Never invent targets, rowkeys, joins, owners, connection values, write modes, or resource estimates.
 - HLD evidence governs physical tables, fields, storage, schedules, and writes. PRD evidence governs goals, KPI/abnormal rules, and aggregation. User-confirmed values override both. Put unresolved conflicts in `questions.md`.
-- Ask only for Project Owner in Project Team. Always store and render both Developer and Operator as `数砚工程师`; never ask the user to supply those two roles.
-- If a `PL-BLOCK-*` question remains open, stop before formal Markdown/HTML/PDF generation and ask the user for the missing facts.
+- Read Project Owner from existing evidence; ask only if it remains missing and is required for the requested delivery. Always store and render both Developer and Operator as `数砚工程师`; never ask the user to supply those two roles.
+- Resolve `PL-BLOCK-*` items from existing evidence or authorized presentation decisions first. If a required business fact is still missing, pause only dependent formal rendering, explain that gap, and continue independent work. Do not mark missing business facts confirmed to pass validation.
 - Final tables are inline GFM tables. Do not emit workbook links, preview images, `<details>`, or truncated field dictionaries.
-- Before the first formal render of every new sync-profile document, ask whether its Target table needs `所属类别`, `报表类型`, and `数据范围`; record each answer as an explicit boolean in `render_preferences`. Keep one row per source and add only the target-storage table-name columns supported by confirmed facts. Reuse the choices for later edits unless the user changes them.
+- For optional Target columns `所属类别`, `报表类型`, and `数据范围`, reuse explicit preferences; otherwise set each `render_preferences` boolean true only when relevant facts exist, false otherwise. Record these as assistant presentation defaults and proceed without a confirmation round. Keep one row per source and add only the target-storage table-name columns supported by confirmed facts. Reuse the choices for later edits unless the user changes them.
 - Never render `target前缀`, `pipeline前缀`, or a Target/Target Management `catalog` column; keep the separate Catalog Basic Info section.
-- Include `Catalog Basic Info` in both sync and report profiles. Ask whether Catalog applies; when enabled, require at least one Basic Info record, and never invent missing ownership or email values.
+- Include `Catalog Basic Info` in both sync and report profiles. Determine Catalog applicability from the request and source evidence; ask only if it remains unresolved and affects the deliverable; when enabled, require at least one Basic Info record, and never invent missing ownership or email values.
 - Maintain versions and change summaries automatically. Start a new document at `0.0.1` with `初始版本`; for subsequent content edits, summarize the actual changes and advance the version. Do not ask the user to write the version or summary. Respect explicit corrections; a format-only switch or identical rerender does not add a revision.
-- Propose missing Data Utilization, Pipeline, and Task names from the business purpose and existing conventions. Present the candidates for acceptance rather than asking the user to invent names. Preserve sourced or already-confirmed names, and request alternatives only when the user rejects a proposal.
+- Propose missing Data Utilization, Pipeline, and Task names from the business purpose and existing conventions. For new local document names, adopt evidence-backed candidates directly and record `name_confirmation.actor = assistant`, a decision note, and the selected `confirmed_values` for validator compatibility. This records a local naming decision, not user approval or authorization to create platform resources. Preserve sourced names; ask only for actual naming conflicts or an explicit review checkpoint.
 
 ## Diagram Design dependency
 

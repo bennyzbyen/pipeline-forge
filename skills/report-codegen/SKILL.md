@@ -3,6 +3,11 @@ name: report-codegen
 description: Generate, review, or modify portable Python DataEngine/DataHub report projects from development docs, including KPI outputs, ClickHouse writes, HBase/FS/MSSQL sources, and multi-component prepare pipelines.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Report Codegen
 
 Build report code from `technical_design.md`, using `structured_facts.json` when available. Accept legacy `dev_doc.md` inputs, and generate only the requested, evidence-supported components.
@@ -13,7 +18,7 @@ For the standard three-file handoff, read in this order:
 
 1. `structured_facts.json`: inspect the two-level `project_contract`, `code_unit_plan`, and `code_units[]` first, then the legacy-compatible `codegen_contract`, sources, targets, field mappings, provenance, and readiness.
 2. `technical_design.md`: use HLD for pipeline/component boundaries and LLD for join/filter/group order, KPI formulas, null/default behavior, output columns, parameters, and write predicates.
-3. `questions.md`: stop full generation when `Blocking Code Generation` is non-empty; deployment and non-blocking questions do not prevent scaffolding.
+3. `questions.md`: resolve items from existing evidence first; block full generation only for the affected unit with unresolved correctness requirements. Deployment-only and non-blocking questions do not prevent local implementation and validation of ready units.
 
 Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-plan files. Generated report plans remain disposable build artifacts. Legacy inputs without `codegen_contract` use the existing evidence checks.
 
@@ -26,7 +31,7 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 
 ## Workflow And Reference Routing
 
-1. When a two-level contract exists, reject `awaiting_user_confirmation`; select a confirmed report unit with `scripts/build_report_codegen_plan.py --facts <facts> --out <plan-dir> --code-unit-id <id>`. The ID may be omitted only for one confirmed unit. Legacy facts keep the existing command without an ID.
+1. When a two-level contract exists, resolve `awaiting_user_confirmation` through the audited adoption workflow in `data-doc-to-dev-md/references/code_unit_contract.md` when existing authorization and boundary evidence suffice; otherwise ask only about the unresolved boundary. Select a confirmed report unit with `scripts/build_report_codegen_plan.py --facts <facts> --out <plan-dir> --code-unit-id <id>`. The ID may be omitted only for one confirmed unit. Legacy facts keep the existing command without an ID.
    Under a two-level contract, keep sources, targets, schedules, and outputs unit-scoped. If the selected unit has no output binding, render zero outputs plus blockers; never fall back to the legacy project-wide output list.
 2. Load only the matching primary pattern:
    - `references/bysku_report_pipeline_patterns.md` for `component_kind = bysku_report_pipeline`.

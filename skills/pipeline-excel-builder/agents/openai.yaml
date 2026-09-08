@@ -1,3 +1,4 @@
+# GPT-6 適配變更說明：預設提示詞只描述交付目標；自主執行與授權規則由 Skill 和項目 AGENTS.md 統一管理，保留既有啟用策略。
 interface:
   display_name: "Pipeline Excel Builder"
   short_description: "Fill DataHub Pipeline Export Excel files"

@@ -3,6 +3,11 @@ name: pipeline-excel-builder
 description: Generate, fill, or validate DataHub/DataEngine Pipeline Export Excel workbooks from an exported template plus structured waterline or report facts.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Pipeline Excel Builder
 
 Create a locally reviewable Pipeline Export workbook. This skill does not connect to DataHub, create platform objects, or import the workbook.
