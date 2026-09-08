@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# GPT-6 適配變更說明：確認輸出改為如實記錄 mapping adoption 的 actor/note，不把已授權的 assistant 決策冒充用戶再次確認；保留契約驗證。
 """Propose, confirm, rebuild, or validate a two-level code-unit contract."""
 
 from __future__ import annotations
@@ -61,10 +62,16 @@ def render_questions_audit(facts: dict) -> str:
     if plan.get("status") != "confirmed":
         lines.extend(["", f"- {CONFIRMATION_BLOCKER}"])
         return "\n".join(lines) + "\n"
+    audit = plan.get("confirmation_audit") or []
+    resolution = (
+        "resolved by explicit user confirmation"
+        if audit and audit[-1].get("actor") == "user"
+        else "resolved by audited mapping adoption"
+    )
     lines.extend(
         [
             "",
-            f"- `{CONFIRMATION_QUESTION_ID}`: resolved by explicit user confirmation.",
+            f"- `{CONFIRMATION_QUESTION_ID}`: {resolution}; see actor and note below.",
             f"- Confirmed count: {plan.get('confirmed_count')}",
         ]
     )
@@ -95,7 +102,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--questions", type=Path, help="Optional questions.md to update in place.")
     subparsers = result.add_subparsers(dest="command", required=True)
     subparsers.add_parser("propose", help="Rebuild a proposal and invalidate any earlier confirmation.")
-    confirm = subparsers.add_parser("confirm", help="Apply an explicit user-confirmed mapping.")
+    confirm = subparsers.add_parser("confirm", help="Apply an authorized, evidence-reviewed mapping and record its actual actor.")
     confirm.add_argument("--mapping", type=Path, required=True, help="JSON with a units array.")
     confirm.add_argument("--actor", default="user", help="Audit actor label.")
     confirm.add_argument("--note", default="", help="Audit note describing a merge/split override.")
@@ -134,7 +141,7 @@ def main() -> int:
         if facts.get("code_unit_plan", {}).get("status") == "confirmed":
             resolve_confirmation_line(
                 args.questions,
-                f"- [{CONFIRMATION_QUESTION_ID}] Resolved by explicit user confirmation; see the audit below.",
+                f"- [{CONFIRMATION_QUESTION_ID}] Resolved by audited mapping adoption; see actor and note in the audit below.",
             )
         replace_marked_section(
             args.questions,

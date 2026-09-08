@@ -3,9 +3,14 @@ name: data-job-log-debugger
 description: Diagnose DataEngine/DataHub Python job failures from logs or screenshots, including platform params, Gateway, HBase, FS, ClickHouse, source-data, rerun, and deployment-stage problems.
 ---
 
+## GPT-6 適配變更說明
+
+**用戶當前指令優先級最高**（相對本 Skill、引用指南和預設提示詞；平台 system/developer 指令與工具權限仍適用）。已授權、信息足夠即直接完成；沿用既有授權，自行處理範圍內可逆選擇。僅就無法從現有證據解決且影響正確性或授權的缺項提問，同時完成獨立工作。保留業務事實與安全驗證，不虛構確認。
+
+
 # Data Job Log Debugger
 
-Diagnose the failure and recommend the smallest evidence-backed next step. Do not modify code unless the user also asks for a fix.
+Diagnose the failure and recommend the smallest evidence-backed next step. When the current request or prior session instruction authorizes a fix, inspect the related code, apply the smallest supported correction, and verify it directly. For diagnosis-only requests, report the findings.
 
 ## Inputs
 

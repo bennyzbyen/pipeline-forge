@@ -1,3 +1,7 @@
+# GPT-6 適配變更說明
+
+清理重複確認，保留事實、驗證與授權邊界。
+
 # Waterline Profiles
 
 Choose a profile from the actual data work. A filename containing “同步”, “报表”, or “PRD” is supporting evidence only.
@@ -12,13 +16,13 @@ The numbered chapters are `1. 需求概述`, `2. 数据流图`, `3. Source 数�
 
 The Target table is a horizontal source-to-target mapping. Render exactly one row per source, always including `原表位置` and `原表名`. Derive the related targets from stable source/target IDs in Pipeline mappings, explicit target source IDs, or target-field source IDs. Add `HBase表名`, `ClickHouse表名`, `MySQL表名`, or equivalent columns only for target storage types actually present in `facts.json`. When one source maps to several storage types, keep them on that source's single row. When it maps to multiple tables in one storage type, preserve target order and separate the values with `<br>`. Do not emit a generic `目标表` column or an unused storage-specific column.
 
-Before the first formal render of each new sync document, ask the user to confirm the three independent optional Target columns: `所属类别`, `报表类型`, and `数据范围`. Record the answers as explicit booleans in `render_preferences.include_target_category`, `render_preferences.include_target_report_type`, and `render_preferences.include_target_range`. Missing or null choices block formal output through `PL-BLOCK-TARGET-OPTIONAL-COLUMNS`; later edits reuse the recorded choices unless the user changes them.
+Before rendering a new sync document, reuse explicit preferences for the three independent optional Target columns: `所属类别`, `报表类型`, and `数据范围`. Otherwise choose each column based on whether relevant facts exist (true when present, false otherwise), record the assistant decision in `change_log`, and write explicit booleans in `render_preferences.include_target_category`, `render_preferences.include_target_report_type`, and `render_preferences.include_target_range`. Missing or null choices block formal output through `PL-BLOCK-TARGET-OPTIONAL-COLUMNS`; later edits reuse the recorded choices unless the user changes them.
 
 Render `所属类别` or `报表类型` only when its corresponding choice is true. When target range is requested, add one storage-neutral `数据范围` column. Never create separate `HBase数据范围` or `ClickHouse数据范围` columns. For several target storage types, prefix each value with its storage label inside the shared cell. Target Management remains storage-neutral. A user-confirmed literal `待定` is acceptable only when its JSON pointer appears in `confirmed_pending_paths`.
 
 Omit `catalog` and `target前缀` from Target Management and `pipeline前缀` from Pipeline Management. Legacy `catalog`, `prefix`, `target_prefix`, `hbase_prefix`, or `clickhouse_prefix` facts do not add display columns.
 
-After sync Pipeline Management, always render `5.2.4 Catalog Basic Info` using the same Basic Info table columns as the report profile. Ask whether Catalog applies through `catalog.enabled`. When enabled, require at least one `catalog.basic_info` record; derive only Data Item and Title from confirmed target facts when appropriate, and leave unconfirmed owner/email values empty. When disabled, keep the section and write `不适用（已确认）`.
+After sync Pipeline Management, always render `5.2.4 Catalog Basic Info` using the same Basic Info table columns as the report profile. Set `catalog.enabled` from the request or source evidence; ask only when applicability remains materially unresolved. When enabled, require at least one `catalog.basic_info` record; derive only Data Item and Title from confirmed target facts when appropriate, and leave unconfirmed owner/email values empty. When disabled, keep the section and write `不适用（已确认）`.
 
 ## Report Profile
 
@@ -28,7 +32,7 @@ Required evidence includes source range and joins/filters, every physical target
 
 ## Ambiguous Or Mixed Projects
 
-If the same project combines substantial calculation and independent table replication, ask whether the user wants one report-profile document or separate report/sync documents. Do not silently merge the two templates or add top-level sections.
+If the same project combines substantial calculation and independent table replication, infer one or separate report/sync documents from the requested outcome and existing document boundaries; ask only if the choice remains materially ambiguous. Do not silently merge the two templates or add top-level sections.
 
 ## Stable Section Policy
 

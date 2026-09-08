@@ -1,3 +1,7 @@
+# GPT-6 適配變更說明
+
+輸出目錄可由現有上下文與項目默認值直接決定；修復請求沿用已有授權，不再逐階段詢問。
+
 # Specialized Routes
 
 Use only the section matching the user's primary request.
@@ -5,7 +9,7 @@ Use only the section matching the user's primary request.
 ## Reviewable Waterline Document
 
 1. Use `pipeline-doc-generator` for a new or revised DataEngine/DataHub waterline document, not an implementation-oriented Technical Design handoff.
-2. Confirm the output directory if missing. Always deliver Markdown, HTML, and PDF together; do not ask for a format choice or preserve a legacy partial-output preference.
+2. Reuse the requested output directory, or choose `outputs/<project-name>/` when none is specified; report the chosen path without pausing. Always deliver Markdown, HTML, and PDF together; do not ask for a format choice or preserve a legacy partial-output preference.
 3. For first-time waterline drawing or visual redesign, check that the separately installed Diagram Design plugin is available; explain the missing dependency before drawing. PipelineForge does not bundle or automatically install it. Reusing a valid bound SVG or using other specialist routes does not require it. Follow the specialist's evidence, facts, and clarification gates. For an existing generated document, update its canonical `facts.json` instead of reparsing every input or editing rendered files.
 4. Validate all selected outputs and report paths plus unresolved questions. Stop at the requested document; propose code or Pipeline Export work only as an optional next step.
 
@@ -32,7 +36,7 @@ If the source is a requirement DOCX with embedded Excel fields, extract the stru
 1. Inspect the complete available log or screenshot before questioning the user.
 2. Use `data-job-log-debugger` to classify the failure stage and distinguish root cause from secondary errors.
 3. Return evidence, likely cause, the safest next check, and rerun/deployment implications.
-4. Diagnose only unless the user also asks to modify code or configuration. Route an authorized code change to the matching codegen skill.
+4. For diagnosis-only requests, report findings. When the current request or prior session instruction authorizes a code/configuration fix, apply it through the matching skill without asking again.
 
 Never claim success because a retry started; require the relevant completion evidence.
 

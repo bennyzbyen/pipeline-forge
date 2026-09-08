@@ -1,3 +1,7 @@
+# GPT-6 適配變更說明
+
+清理重複確認，保留事實、驗證與授權邊界。
+
 # Facts And Questions Contract
 
 `facts.json` is the canonical semantic source for generated Markdown, HTML, PDF, and SVG. Diagram Design's retained HTML/SVG owns presentation only, with a reviewed binding recorded in facts; see `diagram-design-interface.md`. Use `assets/facts.schema.json` for the full interface.
@@ -12,13 +16,13 @@ Use lowercase ASCII IDs with underscores. Keep an existing ID during renames so 
 - `document`: title, project name/description, automatically maintained release rows, Project Owner, documentation reference, and sync go-live when applicable. Ask for a missing document author, not for the version or change summary. Developer and Operator are fixed as `数砚工程师` and are not clarification items.
 - `requirements.summary`.
 - `sources`: confirmed data location/storage type (for example Azure Blob Storage, HBase, MySQL, MSSQL, or another explicit platform), source system, physical table/path, range, fields, and filters/joins. Do not infer the location only from a table or path name; ask when the evidence is absent or ambiguous.
-- `targets`: storage/database/table, description, grain, write mode, ordered fields, and processing logic. RowKey remains user-confirmed, never automatically chosen from the sync mode. Legacy target schedules may remain as evidence but are not duplicated in the document.
+- `targets`: storage/database/table, description, grain, write mode, ordered fields, and processing logic. RowKey requires explicit source or user evidence; never choose it from the sync mode alone. Legacy target schedules may remain as evidence but are not duplicated in the document.
 - `pipelines`: Data Utilization, Pipeline, Task, concise trigger, source IDs, target IDs, steps/write/retry facts. Keep upstream readiness/operational explanations in `schedule_notes`, outside the trigger cell.
 - `source_connections`: for Blob use `location` or source references, full `sas_url`, `database` path, and expiry from `se` or confirmed `expires_at`; see `presentation-rules.md` for credential boundaries and mixed connections.
 - `resources`: peak-memory estimate and environment.
 - `flow`: accessible title/description, nodes, and valid edges.
 - `catalog`: applicability and registration facts for both profiles.
-- `render_preferences` for sync documents: explicit booleans for the three user-confirmed optional Target columns (`include_target_category`, `include_target_report_type`, and `include_target_range`).
+- `render_preferences` for sync documents: explicit booleans for the three optional Target columns selected from explicit preferences or documented assistant presentation defaults (`include_target_category`, `include_target_report_type`, and `include_target_range`).
 - `render_preferences.last_format`: always `all`; legacy partial values are migrated automatically. Optional `pdf_orientation`: `auto` (default), `portrait`, or `landscape`; reuse on later renders.
 
 ## Questions
@@ -39,8 +43,8 @@ The obsolete write-flow/sync-logic narrative and output-choice blockers are supe
 
 - First use names explicitly supplied by the user or established in source material. Do not rename an existing platform resource just to fit a new convention.
 - Otherwise propose clear lowercase snake_case Data Utilization, Pipeline, and Task names using project/business purpose, processing action, and source/target identity. The helper fills missing names deterministically, but the assistant should improve generic candidates before presenting them.
-- For every assistant-proposed name, record its key in `pipelines[].name_confirmation.proposed_fields` (`data_utilization`, `name`, or `task_name`). Present a compact candidate list and ask whether to adopt it. Do not ask an open-ended "what should it be called?" question.
-- When accepted, copy the exact accepted values into `name_confirmation.confirmed_values`. Rejecting a proposal means revise it and confirm the replacement. Changed proposed values invalidate the previous acceptance; accepted unchanged values are not asked again. Formal generation waits on `PL-BLOCK-PIPELINE-NAMES-<stable-id>` until acceptance.
+- For every assistant-proposed name, record its key in `pipelines[].name_confirmation.proposed_fields` (`data_utilization`, `name`, or `task_name`). For new local document names, adopt the candidates directly under the document-generation request. Record `name_confirmation.actor = assistant` and a `note` explaining the evidence and naming decision; show the selected names in the delivered result. Ask only about actual conflicts or a user-requested naming checkpoint.
+- Copy the exact adopted values into `name_confirmation.confirmed_values` for validator compatibility; this means a recorded naming decision, not necessarily human approval. Explicit user acceptance uses actor `user`; assistant decisions use actor `assistant`. Reassess changed names and update their audit; do not ask again for unchanged decisions. Resolve `PL-BLOCK-PIPELINE-NAMES-<stable-id>` through this audited adoption before rendering.
 - Stable IDs are not display names. Preserve IDs and input/output relationships through renames; update affected flow labels explicitly.
 
 ## Automatic Release History
@@ -58,7 +62,7 @@ Literal `待定`, `TBD`, or equivalent values are not complete by default. Allow
 ## Conversational Revision
 
 1. Identify the stable ID or JSON pointer affected by the user request.
-2. Update the value and append a `change_log` entry with timestamp, summary, and `source = user_confirmation`.
+2. Update the value and append a `change_log` entry with timestamp, summary, and `source = user_confirmation` for actual user answers, or `source = assistant_decision` for authorized local presentation/naming choices; never mislabel inferred business facts as user answers.
 3. Update affected flow labels/edges when a source, target, or Pipeline relationship changed.
 4. Regenerate all three formats, even when the previous document used a partial output selection.
 5. Validate Markdown, HTML, and PDF together so older output cannot silently drift.

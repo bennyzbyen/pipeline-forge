@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# GPT-6 適配變更說明：驗證已授權 assistant mapping 決策可通過契約，且審計不冒充用戶確認。
 """Deterministic regression coverage for dynamic code-unit planning."""
 
 from __future__ import annotations
@@ -172,6 +173,21 @@ def main() -> int:
     assert validate_code_unit_contract(merged)["status"] == "passed"
     assert "### Confirmation Audit" in render_code_unit_plan_markdown(merged)
     assert "resolved by explicit user confirmation" in render_questions_audit(merged).lower()
+
+    # Existing implementation authorization may cover an evidence-reviewed mapping.
+    delegated = copy.deepcopy(override_base)
+    confirm_code_unit_plan(
+        delegated,
+        {"units": merged["code_units"]},
+        actor="assistant",
+        note="User requested end-to-end implementation; compatible fixture boundaries reviewed.",
+        timestamp="2026-09-08T00:00:00+00:00",
+    )
+    assert validate_code_unit_contract(delegated)["status"] == "passed"
+    adopted_audit = render_questions_audit(delegated)
+    assert "actor=assistant" in adopted_audit
+    assert "explicit user confirmation" not in adopted_audit.lower()
+    assert delegated["code_unit_plan"]["confirmation_audit"][-1]["note"].startswith("User requested")
 
     # 5b. The same proposal can be split into four execution slices with audited duplicate binding.
     split = copy.deepcopy(override_base)
