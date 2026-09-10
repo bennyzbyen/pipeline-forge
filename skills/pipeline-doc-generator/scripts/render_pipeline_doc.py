@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pipeline_doc_report import storage_tables, target_reference, field_logic
+
 import argparse
 import base64
 import hashlib
@@ -168,7 +170,13 @@ def target_table_sync(facts: dict) -> str:
 
 
 def target_table_report(facts: dict) -> str:
-    return markdown_table(["位置", "数据库", "数据表名", "数据表"], [[target.get("location", ""), target.get("database", ""), target.get("description", ""), target.get("table", "")] for target in facts.get("targets") or []])
+    targets = facts.get("targets") or []
+    labels = list(dict.fromkeys(label for target in targets for label in storage_tables(target)))
+    labels.sort(key=lambda label: (0 if label == "HBase" else 1 if label == "ClickHouse" else 2))
+    return markdown_table(["层级", "数据项", *(f"{label}表名" for label in labels)],
+                          [[target.get("category", ""), target.get("description", ""),
+                            *(storage_tables(target).get(label, "不适用") for label in labels)]
+                           for target in targets])
 
 
 def target_sync_notes(facts: dict) -> str:
@@ -182,31 +190,25 @@ def target_sync_notes(facts: dict) -> str:
 
 
 def target_logic_sections(facts: dict) -> str:
-    targets = facts.get("targets") or []
-    category_order: list[str] = []
-    for target in targets:
-        category = str(target.get("category") or "数据底表")
-        if category not in category_order:
-            category_order.append(category)
     sections: list[str] = []
-    target_counter = 0
-    for category_index, category in enumerate(category_order, start=1):
-        grouped = [target for target in targets if str(target.get("category") or "数据底表") == category]
-        sections.extend([f"### 3.1.{category_index} {category}", ""])
-        for item_index, target in enumerate(grouped, start=1):
-            target_counter += 1
-            sections.extend([f"#### 3.1.{category_index}.{item_index} {target.get('description') or target.get('table')}", ""])
-            metadata = [
-                f"数据粒度：{target.get('grain', '')}",
-                f"写入方式：{target.get('write_mode', '')}" if target.get("write_mode") else "",
-            ]
-            sections.append("\n\n".join(line for line in metadata if line))
-            field_logic = [field.get("logic", "") for field in target.get("fields") or []]
-            logic = [value for value in unique_paragraphs(target.get("logic") or []) if not any(same_prose(value, item) for item in field_logic)]
-            if logic:
-                sections.extend(["", bullet_lines(logic)])
-            rows = [[field.get("key", ""), field.get("name", ""), field.get("type", ""), field.get("source", ""), field.get("source_field", ""), field.get("logic", ""), field.get("sample", "")] for field in target.get("fields") or []]
-            sections.extend(["", markdown_table(["字段key", "字段名称", "字段类型", "数据源", "数据源字段", "计算逻辑", "数据样例"], rows), ""])
+    source_names = {source.get("id"): source.get("name", "") for source in facts.get("sources") or []}
+    for index, target in enumerate(facts.get("targets") or [], 1):
+        sections.extend([f"### 3.1.{index} {target.get('table', '')}", ""])
+        metadata = [["业务描述", target.get("description", "")],
+                    ["存储", target.get("location", "")], ["数据粒度", target.get("grain", "")],
+                    ["写入方式", target.get("write_mode", "")]]
+        if target.get("rowkey"):
+            metadata.append(["RowKey", target["rowkey"]])
+        sections.extend([markdown_table(["项目", "内容"], metadata), ""])
+        fields = target.get("fields") or []
+        logic = [value for value in unique_paragraphs(target.get("logic") or [])
+                 if not any(same_prose(value, field.get("logic", "")) for field in fields)]
+        if logic:
+            sections.extend([bullet_lines(logic), ""])
+        rows = [[field.get("key", ""), field.get("name", ""), field.get("type", ""),
+                 source_names.get(field.get("source"), field.get("source", "")), field_logic(field)]
+                for field in fields]
+        sections.extend([markdown_table(["字段名", "字段名称", "字段类型", "数据源/来源表", "字段生成逻辑"], rows), ""])
     return "\n".join(sections).strip()
 
 
@@ -259,7 +261,7 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
         "",
         f"### {chapter}.1.3 Project Documentation",
         "",
-        document.get("documentation") or "本文档",
+        "本文档",
         "",
         f"## {chapter}.2 Data Pipeline Management",
         "",
@@ -309,9 +311,9 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
             sections.extend(["", "### 4.2.5 检查 Catalog Basic Info", ""])
             sections.append(catalog_basic_info_table(catalog))
             sections.extend(["", "### 4.2.6 登记 Data Dictionary", ""])
-            sections.append(markdown_table(["数据项", "Column", "Type"], [[row.get("data_item", ""), row.get("column", ""), row.get("type", "")] for row in catalog.get("dictionary") or []]))
+            sections.append(markdown_table(["数据项", "Column", "Type"], [[row.get("data_item", ""), target_reference(facts, row), target_reference(facts, row)] for row in catalog.get("dictionary") or []]))
             sections.extend(["", "### 4.2.7 登记 Data Storage", ""])
-            sections.append(markdown_table(["数据项", "存放地", "Field&Type", "Limit（Sample Data）"], [[row.get("data_item", ""), row.get("location", ""), row.get("field_type", ""), row.get("limit", "")] for row in catalog.get("storage") or []]))
+            sections.append(markdown_table(["数据项", "存放地", "Field&Type", "Limit（Sample Data）"], [[row.get("data_item", ""), row.get("location", ""), target_reference(facts, row), row.get("limit", "")] for row in catalog.get("storage") or []]))
         else:
             sections.extend(["不适用（已确认）", "", "### 4.2.5 检查 Catalog Basic Info", "", "不适用（已确认）"])
     return "\n".join(str(item) for item in sections)
@@ -319,7 +321,7 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
 
 def resources_section(facts: dict) -> str:
     resources = facts["resources"]
-    return f"- 估计峰值：{resources.get('peak_memory', '')}\n\n- 资源环境：{resources.get('environment', '')}"
+    return f"估计峰值{resources.get('peak_memory', '')}\n\n资源环境：{resources.get('environment', '')}"
 
 
 def render_markdown(facts: dict, data_svg_rel: str, catalog_svg_rel: str = "") -> str:
@@ -344,8 +346,7 @@ def render_markdown(facts: dict, data_svg_rel: str, catalog_svg_rel: str = "") -
         parts = [
             *common_start,
             "# 1. 需求概述", "", "\n\n".join(unique_paragraphs(facts["requirements"].get("summary") or [])), "", "## 1.1 数据流图", "", f"![数据流程图]({data_svg_rel})", "",
-            "# 2. 数据源详情", "", "## 2.1 链接信息", "", source_connections(facts), "",
-            "## 2.2 数据列表", "", source_table_report(facts), "",
+            "# 2. 数据源详情", "", "## 2.1 数据列表", "", source_table_report(facts), "",
             "# 3. Data Target", "", target_table_report(facts), "",
             "## 3.1 数据底表 & 逻辑说明", "", target_logic_sections(facts), "",
             "# 4. DataHub Pipeline", "", project_pipeline_sections(facts, profile, catalog_svg_rel), "",

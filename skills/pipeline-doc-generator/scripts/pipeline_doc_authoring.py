@@ -87,6 +87,14 @@ def normalize_authoring(facts):
     normalize_question_ids(facts)
     document = facts.setdefault("document", {})
     history = document.setdefault("release_history", [])
+    if not document.get("author"):
+        document["author"] = next((row["author"] for row in reversed(history) if row.get("author")), "张本彦")
+    document.setdefault("release_mode", "versioned" if history else "initial_draft")
+    if document["release_mode"] == "initial_draft" and history:
+        if len(history) > 1 or history[0].get("version") != "0.0.1":
+            document.setdefault("release_history_archive", []).extend(history)
+        history[:] = [{"version": "0.0.1", "summary": "初始版本", "author": document["author"],
+                       "date": history[0].get("date") or date.today().strftime("%Y/%m/%d")}]
     if not history:
         history.append({"version": "0.0.1", "summary": "初始版本", "author": document.get("author", ""), "date": date.today().strftime("%Y/%m/%d")})
     else:
@@ -129,6 +137,8 @@ def semantic_hashes(facts):
 
 def prepare_revision(facts):
     """Append one revision per real edit, not per renderer attempt or format."""
+    if facts.get("document", {}).get("release_mode") == "initial_draft":
+        return  # Iteration stays in change_log until a versioned release is requested.
     state = facts.get("revision_state") or {}
     previous = state.get("content_hashes")
     current = semantic_hashes(facts)

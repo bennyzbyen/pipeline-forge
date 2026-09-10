@@ -1,6 +1,6 @@
 ---
 name: pipeline-doc-generator
-description: Generate or revise editable DataEngine/DataHub waterline documents from PRD/HLD in DOCX (including embedded Excel), Markdown, or PDF. Deliver Markdown, interactive standalone HTML, and paginated PDF together, with direct tables, overview SVG flows, audit facts, and clarification gates. Use for the waterline document itself, not a code-generation Technical Design handoff.
+description: Generate or revise editable DataEngine/DataHub waterline documents from PRD/HLD/LLD in DOCX (including embedded Excel), Markdown, or PDF. Deliver Markdown, interactive standalone HTML, and paginated PDF together, with direct tables, overview SVG flows, audit facts, and clarification gates. Use for the waterline document itself, not a code-generation Technical Design handoff.
 ---
 
 ## GPT-6 適配變更說明
@@ -19,14 +19,15 @@ Generate reviewable waterline documents whose canonical source is `facts.json`.
 - Update `facts.json` first for every semantic revision, then update the diagram when flow facts changed and regenerate all three formats. Diagram Design layout-only revisions update the retained design HTML/SVG and its binding in facts; unrelated prose edits reuse the reviewed SVG. Do not hand-edit generated document Markdown, HTML, or PDF as the canonical change.
 - The first numbered chapter is always `需求概述`: briefly identify the data, its source systems/storage, and its destinations, including all branches of complex work. Follow [the concise presentation rules](references/presentation-rules.md); explain each fact once in its appropriate section instead of repeating operational prose.
 - Preserve Chinese business terms, physical table/field names, formulas, schedules, and provenance. Never invent targets, rowkeys, joins, owners, connection values, write modes, or resource estimates.
-- HLD evidence governs physical tables, fields, storage, schedules, and writes. PRD evidence governs goals, KPI/abnormal rules, and aggregation. User-confirmed values override both. Put unresolved conflicts in `questions.md`.
+- HLD and applicable detailed LLD evidence govern physical tables, fields, storage, schedules, and writes; reconcile their scope/version before declaring a conflict. PRD evidence governs goals, KPI/abnormal rules, and aggregation. User-confirmed values override both. Put unresolved conflicts in `questions.md`.
 - Read Project Owner from existing evidence; ask only if it remains missing and is required for the requested delivery. Always store and render both Developer and Operator as `数砚工程师`; never ask the user to supply those two roles.
 - Resolve `PL-BLOCK-*` items from existing evidence or authorized presentation decisions first. If a required business fact is still missing, pause only dependent formal rendering, explain that gap, and continue independent work. Do not mark missing business facts confirmed to pass validation.
+- Keep publication prose self-contained: Project Documentation is exactly `本文档`; provenance belongs in `facts.json`/`evidence.md`, not local PRD/HLD/LLD links in the body. Expand the actual rule instead of saying “参见模型 LLD”. Do not erase an unresolved business gap just to remove a citation.
 - Final tables are inline GFM tables. Do not emit workbook links, preview images, `<details>`, or truncated field dictionaries.
-- For optional Target columns `所属类别`, `报表类型`, and `数据范围`, reuse explicit preferences; otherwise set each `render_preferences` boolean true only when relevant facts exist, false otherwise. Record these as assistant presentation defaults and proceed without a confirmation round. Keep one row per source and add only the target-storage table-name columns supported by confirmed facts. Reuse the choices for later edits unless the user changes them.
+- For optional sync Target columns `所属类别`, `报表类型`, and `数据范围`, reuse explicit preferences; otherwise set each `render_preferences` boolean true only when relevant facts exist, false otherwise. Record these as assistant presentation defaults and proceed without a confirmation round. Keep one row per source and add only the target-storage table-name columns supported by confirmed facts. Reuse the choices for later edits unless the user changes them.
 - Never render `target前缀`, `pipeline前缀`, or a Target/Target Management `catalog` column; keep the separate Catalog Basic Info section.
 - Include `Catalog Basic Info` in both sync and report profiles. Determine Catalog applicability from the request and source evidence; ask only if it remains unresolved and affects the deliverable; when enabled, require at least one Basic Info record, and never invent missing ownership or email values.
-- Maintain versions and change summaries automatically. Start a new document at `0.0.1` with `初始版本`; for subsequent content edits, summarize the actual changes and advance the version. Do not ask the user to write the version or summary. Respect explicit corrections; a format-only switch or identical rerender does not add a revision.
+- Use the standing author default `张本彦` for new documents unless the user specifies otherwise; preserve historical authors. New documents remain at a single `0.0.1 / 初始版本` during initial drafting (`document.release_mode = initial_draft`); keep edit summaries in `change_log`. Advance versions only in `versioned` mode for established releases or when requested. Calling a document 正式版 does not by itself authorize a version bump.
 - Propose missing Data Utilization, Pipeline, and Task names from the business purpose and existing conventions. For new local document names, adopt evidence-backed candidates directly and record `name_confirmation.actor = assistant`, a decision note, and the selected `confirmed_values` for validator compatibility. This records a local naming decision, not user approval or authorization to create platform resources. Preserve sourced names; ask only for actual naming conflicts or an explicit review checkpoint.
 
 ## Diagram Design dependency
@@ -46,7 +47,7 @@ Diagram Design is a separately installed plugin; PipelineForge does not bundle o
 
 - Locate the affected stable source, target, field, pipeline, or flow-node ID in `facts.json`.
 - Apply the smallest fact change and preserve its `source_refs` plus any user-confirmation record.
-- Summarize the actual edit in `change_log`; the renderer uses this summary for the new release row. Version/summary maintenance is automatic, while the author comes from confirmed information. See the naming and revision rules in `references/facts-and-questions.md`.
+- Summarize the actual edit in `change_log`; only `versioned` mode creates a new release row. Preserve the initial drafting pin and the user’s author override. See the naming and revision rules in `references/facts-and-questions.md`.
 - Regenerate Markdown, HTML, and PDF together; migrate `render_preferences.last_format` to `all`.
 - Validate the full bundle. Report changed facts and output paths, not an implementation diary.
 
@@ -65,7 +66,7 @@ For Diagram Design, reuse the user's approved style. Blob may use a compact cont
 ## Reference Routing
 
 - Read `references/profiles.md` whenever choosing or changing the document profile or section layout.
-- Read `references/presentation-rules.md` when authoring/revising overview prose, schedules, Blob connections, or diagram identities.
+- Read `references/presentation-rules.md` when authoring/revising document scope, field/Catalog tables, publication wording, schedules, or diagrams.
 - Read `references/evidence-rules.md` for DOCX, embedded Excel, Markdown, PDF, mixed-document, provenance, or direct-table behavior.
 - Read `references/facts-and-questions.md` when populating facts, resolving gaps/conflicts, or processing a conversational revision.
 - Use `assets/sync_template.md` or `assets/report_template.md` as the exact top-level section contract; use the JSON schemas when changing a facts or flow interface.

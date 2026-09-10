@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.3 - 2026-09-10
+
+- Apply FMOS-validated report waterline document corrections for concise publication layout, full field dictionaries, and stable target-bound Catalog references.
+- Preserve new report documents at 0.0.1 during initial drafting and use the standing author default while retaining established release histories.
+- Reconcile detailed LLD evidence, dual-storage table identities, and missing evidence before raising clarification blockers.
+
 ## 2.0.2 - 2026-09-10
 
 - Preserve independent code units and revalidate affected contracts when requirements change during Astra workflows.

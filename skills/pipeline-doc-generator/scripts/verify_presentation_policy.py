@@ -115,7 +115,8 @@ def test_bundle(root, profile):
     assert text.count(data["requirements"]["summary"][0]) == 1
     assert "写入流程" not in text and "同步逻辑说明" not in text
     assert "| catalog |" not in text and "legacy_catalog_not_for_display" not in text
-    assert "Catalog Basic Info" in text and "SAS URL" in text
+    assert "Catalog Basic Info" in text
+    assert ("SAS URL" in text) == (profile == "sync")
     assert text.count("06:00") == 1 and "05:30" not in text and "每日 07:00" not in text
     svg_path = output / f"{title}_files/data_flow.svg"
     tree = ET.parse(svg_path).getroot()
