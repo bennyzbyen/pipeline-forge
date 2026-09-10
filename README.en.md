@@ -22,7 +22,7 @@ PipelineForge is a data pipeline development toolkit with a beginner-friendly fr
 Add the public GitHub marketplace source:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.1
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.2
 ```
 
 Then finish installation from either supported surface:
@@ -81,4 +81,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## Release Notes
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.0.1`; see [CHANGELOG.md](CHANGELOG.md) for release notes.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.0.2`; see [CHANGELOG.md](CHANGELOG.md) for release notes.

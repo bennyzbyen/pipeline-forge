@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2 - 2026-09-10
+
+- Preserve independent code units and revalidate affected contracts when requirements change during Astra workflows.
+
 ## 2.0.1 - 2026-09-08
 
 - Refine GPT-6 instruction priority and reuse existing authorization for autonomous delivery.
