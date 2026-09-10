@@ -26,7 +26,9 @@ def test_initial_and_migration(root):
     assert row["version"] == "0.0.1" and row["summary"] == "初始版本" and row["date"]
     questions = effective_questions(data)
     assert all(q["id"].startswith("PL-") for q in questions)
-    assert any(q["id"] == "PL-BLOCK-RELEASE-AUTHOR" for q in questions)
+    assert not any(q["id"] == "PL-BLOCK-RELEASE-AUTHOR" for q in questions)
+    assert row["author"] == "张本彦"
+    assert data["document"]["release_mode"] == "initial_draft"
     assert not any(q["id"] == "PL-BLOCK-RELEASE" for q in questions)
     assert data["questions"][1]["answer"] == "保留 WL- 原始证据文字"
     assert data["questions"][1]["status"] == "resolved" and data["questions"][1]["source_refs"]
@@ -36,7 +38,7 @@ def test_initial_and_migration(root):
     assert not any(q["id"] == "PL-BLOCK-RELEASE-AUTHOR" for q in effective_questions(data))
     write_questions(root / "questions.md", data)
     assert "[WL-" not in (root / "questions.md").read_text(encoding="utf-8")
-    return {"initial_metadata_automatic": True, "author_not_invented": True, "legacy_ids_migrated": True, "answers_preserved": True}
+    return {"initial_metadata_automatic": True, "standing_author_default": True, "legacy_ids_migrated": True, "answers_preserved": True}
 
 
 def test_names(root):

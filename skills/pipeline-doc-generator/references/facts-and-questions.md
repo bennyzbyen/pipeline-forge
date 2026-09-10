@@ -13,15 +13,15 @@ Use lowercase ASCII IDs with underscores. Keep an existing ID during renames so 
 ## Required Facts
 
 - `profile`: `sync` or `report`.
-- `document`: title, project name/description, automatically maintained release rows, Project Owner, documentation reference, and sync go-live when applicable. Ask for a missing document author, not for the version or change summary. Developer and Operator are fixed as `数砚工程师` and are not clarification items.
+- `document`: title, project name/description, automatically maintained release rows, Project Owner, documentation reference, and sync go-live when applicable. Default a new document’s author to the owner’s standing value `张本彦`; preserve existing historical authors and explicit overrides. Project Documentation renders as `本文档`. Developer and Operator are fixed as `数砚工程师` and are not clarification items.
 - `requirements.summary`.
 - `sources`: confirmed data location/storage type (for example Azure Blob Storage, HBase, MySQL, MSSQL, or another explicit platform), source system, physical table/path, range, fields, and filters/joins. Do not infer the location only from a table or path name; ask when the evidence is absent or ambiguous.
-- `targets`: storage/database/table, description, grain, write mode, ordered fields, and processing logic. RowKey requires explicit source or user evidence; never choose it from the sync mode alone. Legacy target schedules may remain as evidence but are not duplicated in the document.
+- `targets`: storage/database/table, description, grain, write mode, ordered fields, and processing logic. Expand shared fields into each target’s ordered `fields` before rendering; do not replace a dictionary with an upstream-document index. For different names in dual storage, set `storage_tables` to confirmed storage-label/full-table-name pairs. RowKey requires explicit source or user evidence; never choose it from the sync mode alone. Legacy target schedules may remain as evidence but are not duplicated in the document.
 - `pipelines`: Data Utilization, Pipeline, Task, concise trigger, source IDs, target IDs, steps/write/retry facts. Keep upstream readiness/operational explanations in `schedule_notes`, outside the trigger cell.
-- `source_connections`: for Blob use `location` or source references, full `sas_url`, `database` path, and expiry from `se` or confirmed `expires_at`; see `presentation-rules.md` for credential boundaries and mixed connections.
+- `source_connections`: required by the sync connection layout, not by the default report body. For displayed Blob connections use `location` or source references, full `sas_url`, `database` path, and expiry from `se` or confirmed `expires_at`; see `presentation-rules.md` for credential boundaries and mixed connections.
 - `resources`: peak-memory estimate and environment.
 - `flow`: accessible title/description, nodes, and valid edges.
-- `catalog`: applicability and registration facts for both profiles.
+- `catalog`: applicability and registration facts for both profiles. Report `dictionary[]` and `storage[]` rows should bind `target_id` to a stable target ID; legacy `data_item` may resolve only when it uniquely identifies an ID or physical table. The renderer derives `参见 3.1.x` from target order, never from manually typed chapter numbers.
 - `render_preferences` for sync documents: explicit booleans for the three optional Target columns selected from explicit preferences or documented assistant presentation defaults (`include_target_category`, `include_target_report_type`, and `include_target_range`).
 - `render_preferences.last_format`: always `all`; legacy partial values are migrated automatically. Optional `pdf_orientation`: `auto` (default), `portrait`, or `landscape`; reuse on later renders.
 
@@ -49,10 +49,10 @@ The obsolete write-flow/sync-logic narrative and output-choice blockers are supe
 
 ## Automatic Release History
 
-- For a new document with no history, initialize `version = 0.0.1`, `summary = 初始版本`, and the current local date. Obtain the author from confirmed `document.author` or the existing release author; never invent a person's identity.
-- For each subsequent content update, the assistant writes a concise factual summary to `change_log`. The renderer increments the last numeric version component (for example `0.0.1` to `0.0.2`) and appends one release row. It uses fresh change-log summaries, or a deterministic summary of changed sections when none was supplied. No version/summary question is needed; the user can correct either afterward.
+- For a new document with no history, initialize `version = 0.0.1`, `summary = 初始版本`, the current local date, and `document.release_mode = initial_draft`. Use an explicit author or the standing default `张本彦`. While initial drafting continues, keep one release row and record corrections in `change_log`; document status and release numbering are separate.
+- For an established released document or an explicit versioning request, set `document.release_mode = versioned`. Existing histories without a mode retain versioned behavior. For each subsequent content update, the assistant writes a concise factual summary to `change_log`. In this mode the renderer increments the last numeric version component (for example `0.0.1` to `0.0.2`) and appends one release row. It uses fresh change-log summaries, or a deterministic summary of changed sections when none was supplied. No version/summary question is needed; the user can correct either afterward.
 - `revision_state` stores semantic hashes, the last rendered version, and the consumed change-log count inside `facts.json`. Commit it only after all selected outputs succeed. Repeated rendering, retries, evidence/question-state changes, and switching Markdown/HTML/PDF alone do not create duplicate revisions. Target-column or flow changes count as document edits.
-- Preserve existing historical rows. If the assistant/user has already added the current revision, do not append another. For legacy facts without `revision_state`, the first render establishes a baseline without inventing past changes. When revising a legacy document before that first render, compare its original facts in the session and record the real revision yourself using the same automatic version/summary policy.
+- Preserve existing historical rows. Only an explicit request to reset/pin an existing history permits switching it to `initial_draft`; the renderer retains replaced rows in `document.release_history_archive`. If the assistant/user has already added the current revision, do not append another. For legacy facts without `revision_state`, the first render establishes a baseline without inventing past changes. When revising a legacy document before that first render, compare its original facts in the session and record the real revision yourself using the same automatic version/summary policy.
 - This is document versioning only, not permission to publish, email, install, or deploy anything.
 
 ## Confirmed Pending Values
@@ -63,6 +63,6 @@ Literal `待定`, `TBD`, or equivalent values are not complete by default. Allow
 
 1. Identify the stable ID or JSON pointer affected by the user request.
 2. Update the value and append a `change_log` entry with timestamp, summary, and `source = user_confirmation` for actual user answers, or `source = assistant_decision` for authorized local presentation/naming choices; never mislabel inferred business facts as user answers.
-3. Update affected flow labels/edges when a source, target, or Pipeline relationship changed.
+3. Update affected flow labels/edges, pipeline inputs/outputs, writing responsibilities and Catalog references when a source, target, or Pipeline relationship changed. Preserve previously accepted exclusions and terminology; do not restore deleted sections during regeneration.
 4. Regenerate all three formats, even when the previous document used a partial output selection.
 5. Validate Markdown, HTML, and PDF together so older output cannot silently drift.

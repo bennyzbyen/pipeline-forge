@@ -96,8 +96,8 @@ def presentation_gaps(facts):
     """Return safe diagnostics: never include a signed URL in an error message."""
     gaps = []
     sources = facts.get("sources") or []
-    connections = facts.get("source_connections") or []
-    has_blob = any("blob" in str(source.get("location", "")).lower() for source in sources)
+    connections = (facts.get("source_connections") or []) if facts.get("profile") != "report" else []
+    has_blob = facts.get("profile") != "report" and any("blob" in str(source.get("location", "")).lower() for source in sources)
     if has_blob and not any(is_blob_connection(facts, connection) for connection in connections):
         gaps.append(("PL-BLOCK-BLOB-CONNECTIONS", "/source_connections", "请提供 Blob SAS URL、目录和有效期；不要把凭据写入技能源码。"))
     for index, connection in enumerate(connections):

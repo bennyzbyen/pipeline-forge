@@ -21,10 +21,10 @@ export type ReliabilityPoint = Readonly<{
   description: string;
 }>;
 
-export const PLUGIN_VERSION = "2.0.2";
+export const PLUGIN_VERSION = "2.0.3";
 export const OFFICIAL_PLUGIN_GUIDE_URL = "https://learn.chatgpt.com/docs/plugins";
 export const GITHUB_REPOSITORY_URL = "https://github.com/bennyzbyen/pipeline-forge";
-export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.2";
+export const MARKETPLACE_ADD_COMMAND = "codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3";
 export const PLUGIN_DOWNLOAD_URL = "/downloads/pipeline-forge.zip";
 export const PLUGIN_CHECKSUM_URL = "/downloads/pipeline-forge.zip.sha256";
 

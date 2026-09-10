@@ -12,6 +12,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
+from pipeline_doc_report import target_reference
 from pipeline_doc_common import apply_fixed_defaults, blocking_questions, configure_utf8_stdio, expected_headings, load_json, write_json
 from pipeline_diagram_contract import validate_spec, validate_svg
 from render_pipeline_doc import markdown_to_html, render_markdown, split_pipe_row, catalog_spec
@@ -64,6 +65,12 @@ def validate_facts(facts: dict, profile: str, errors: list[str], warnings: list[
             errors.append(f"pipeline {pipeline.get('id')} has unknown references: sources={sorted(unknown_sources)}, targets={sorted(unknown_targets)}")
     if profile == "report" and (facts.get("catalog") or {}).get("enabled"):
         catalog = facts.get("catalog") or {}
+        for collection in ("dictionary", "storage"):
+            for row in catalog.get(collection) or []:
+                try:
+                    target_reference(facts, row)
+                except ValueError as exc:
+                    errors.append(f"Catalog {collection}: {exc}")
         if not catalog.get("basic_info"):
             warnings.append("Catalog is enabled but basic_info is empty")
         if not catalog.get("dictionary"):

@@ -34,6 +34,7 @@
         "project_name": {"type": "string"},
         "description": {"type": "string"},
         "author": {"type": "string"},
+        "release_mode": {"enum": ["initial_draft", "versioned"], "description": "New documents stay at 0.0.1 during initial drafting. Preserve existing versioned histories."},
         "release_history": {
           "type": "array",
           "items": {
@@ -219,6 +220,7 @@
       "type": "object",
       "required": ["id", "location", "table", "fields"],
       "properties": {
+        "storage_tables": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Confirmed storage label to full physical table name; use when dual-write table names differ."},
         "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
         "location": {"type": "string"},
         "database": {"type": "string"},

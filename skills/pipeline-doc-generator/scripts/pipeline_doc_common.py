@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 from pipeline_doc_authoring import NAME_LABELS, normalize_authoring, pending_names
 from pipeline_doc_presentation import presentation_gaps
+from pipeline_doc_report import target_reference
 
 
 PENDING_VALUES = {"待定", "待确认", "tbd", "todo", "unknown", "未确认"}
@@ -172,6 +173,15 @@ def structural_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
         result.append(question("PL-BLOCK-CATALOG-BASIC-INFO", "block", "请补充 Catalog Basic Info，至少提供数据项和 Title。", path="/catalog/basic_info"))
 
     result.extend(_item_questions(facts))
+    if profile == "report" and (facts.get("catalog") or {}).get("enabled"):
+        for collection in ("dictionary", "storage"):
+            for index, row in enumerate(facts["catalog"].get(collection) or []):
+                try:
+                    target_reference(facts, row)
+                except ValueError:
+                    result.append(question(f"PL-BLOCK-CATALOG-{collection.upper()}-{index + 1}-TARGET", "block",
+                                           "Catalog 章节引用需绑定唯一的目标表 target_id。",
+                                           path=f"/catalog/{collection}/{index}/target_id"))
     result.extend(_reference_questions(facts))
     result.extend(question(identifier, "block", prompt, path=path) for identifier, path, prompt in presentation_gaps(facts))
     return _dedupe_questions(result)

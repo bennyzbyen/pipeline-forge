@@ -1,6 +1,6 @@
 {
   "name": "pipeline-forge",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Use a guided workflow for data requirement documents, job logs, Pipeline Export workbooks, pipeline code, and database DDL tasks.",
   "author": {
     "name": "bennyzbyen",

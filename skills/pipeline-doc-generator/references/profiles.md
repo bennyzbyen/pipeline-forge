@@ -28,7 +28,7 @@ After sync Pipeline Management, always render `5.2.4 Catalog Basic Info` using t
 
 Use `report` when outputs depend on joins, filters, KPI/abnormal rules, aggregation, feedback updates, or multiple processing stages. Follow `assets/report_template.md` exactly at H1/H2 level.
 
-Required evidence includes source range and joins/filters, every physical target, grain, ordered field logic, Pipeline/Task mapping, schedule, Catalog applicability, and resources. Chapter 1 is `需求概述`, followed by its `1.1 数据流图` subsection. Under `数据源详情`, use `2.1 链接信息` for connections and `2.2 数据列表` for the source matrix; use the Blob-specific schema where applicable. Keep each rule in its appropriate target dictionary or Pipeline description rather than repeating it in the overview, diagram, and schedule cell.
+Required evidence includes source range and joins/filters, every physical target, grain, ordered field logic, Pipeline/Task mapping, schedule, Catalog applicability, and resources. Chapter 1 is `需求概述`, followed by its `1.1 数据流图` subsection. Under `数据源详情`, render only `2.1 数据列表` by default; omit connection registration and local sample-review sections. Keep actual HBase/Gateway/other entry identities in the source matrix. Sync connection requirements do not automatically apply to report documents. Keep each rule in its appropriate target dictionary or Pipeline description rather than repeating it in the overview, diagram, and schedule cell.
 
 ## Ambiguous Or Mixed Projects
 
@@ -37,6 +37,6 @@ If the same project combines substantial calculation and independent table repli
 ## Stable Section Policy
 
 - Preserve the selected profile’s H1 order and numbering.
-- Target-specific and business-group headings may repeat as needed below the approved parent section.
-- Omit no required H1. If the user confirms a section is not applicable, retain it and write `不适用（已确认）`.
+- Report target dictionaries use `3.1.1 <physical table>`, `3.1.2 <physical table>`, etc., directly below `3.1`; do not insert a category heading or use the business description as the title. Keep category and description in table metadata.
+- Preserve required H1 sections by default; explicit user deletion/restructuring overrides the template. When merely marked inapplicable, write `不适用（已确认）`.
 - Do not reproduce spelling errors from source spreadsheets when the canonical platform term is clear; use `Pipeline Name` consistently.

@@ -539,6 +539,8 @@ def main() -> int:
         metrics["presentation_policy"] = run_presentation_regressions(root / "presentation")
         from verify_pipeline_pdf import run_pdf_regressions
         metrics["pdf"] = run_pdf_regressions(root / "pdf_special", check_formats=False)
+        from verify_report_document_policy import run_report_policy
+        metrics["report_document_policy"] = run_report_policy(root / "report_policy")
         print(json.dumps({"status": "ok", **metrics}, ensure_ascii=False, indent=2))
     return 0
 

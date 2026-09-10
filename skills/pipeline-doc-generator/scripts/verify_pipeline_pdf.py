@@ -51,7 +51,8 @@ def test_pdf_long_table(root):
         data["targets"][0]["fields"].append(field)
     long_logic = "\n".join(f"规则{index:03d}：保留原值和金额精度，校验 source_a | source_b 后写入目标表。" for index in range(160))
     data["targets"][0]["fields"][1]["logic"] = long_logic
-    data["targets"][0]["fields"][-1]["sample"] = "END_OF_DICTIONARY"
+    data["targets"][0]["fields"][1]["source_field"] = ""
+    data["targets"][0]["fields"][-1]["logic"] += " END_OF_DICTIONARY"
     path = output / "facts.json"
     save(path, data)
     run(str(RENDER), "--facts", str(path), "--out-dir", str(output), "--format", "all")
@@ -64,7 +65,7 @@ def test_pdf_long_table(root):
     assert abs(float(reader.pages[0].mediabox.width)-A4[0]) < 1
     assert abs(float(reader.pages[-1].mediabox.width)-landscape(A3)[0]) < 1
     text = "\n".join(page.extract_text() for page in reader.pages)
-    assert compact(text).count("字段key") > 3 and "END_OF_DICTIONARY" in compact(text)
+    assert compact(text).count("字段名") > 3 and "END_OF_DICTIONARY" in compact(text)
     assert compact('<script>alert("not executed")</script>') in compact(text)
     # Corrupt visible content in a middle fragment, retaining matching metadata.
     # The validator must not accept the digest alone or only inspect endpoints.
