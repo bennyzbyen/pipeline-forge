@@ -136,6 +136,15 @@ jobs:
             throw 'Checksum negative control unexpectedly passed.'
           }
 
+      - name: Stage validated downloads for website tests
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $downloads = 'site_create/public/downloads'
+          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'pipeline-forge-download/pipeline-forge.zip') -Destination (Join-Path $downloads 'pipeline-forge.zip')
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'pipeline-forge-download/pipeline-forge.zip.sha256') -Destination (Join-Path $downloads 'pipeline-forge.zip.sha256')
+
       - name: Install website dependencies
         working-directory: pipeline-forge/site_create
         run: npm ci

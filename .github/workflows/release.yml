@@ -67,18 +67,6 @@ jobs:
           python skills/report-codegen/scripts/verify_scaffold_structure.py
           python scripts/validate_package.py --source-root ../skill_lab --require-source-sync --release-tag $env:GITHUB_REF_NAME
 
-      - name: Install website dependencies
-        working-directory: pipeline-forge/site_create
-        run: npm ci
-
-      - name: Test website
-        working-directory: pipeline-forge/site_create
-        run: npm test
-
-      - name: Lint website
-        working-directory: pipeline-forge/site_create
-        run: npm run lint
-
       - name: Build, reproduce, and validate release assets
         shell: pwsh
         working-directory: pipeline-forge
@@ -105,6 +93,27 @@ jobs:
           "PIPELINE_FORGE_ASSET_ROOT=$releaseDirectory" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_ARCHIVE=$archivePath" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_CHECKSUM=$checksumPath" >> $env:GITHUB_ENV
+
+      - name: Stage validated downloads for website tests
+        shell: pwsh
+        working-directory: pipeline-forge
+        run: |
+          $downloads = 'site_create/public/downloads'
+          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+          Copy-Item -LiteralPath $env:PIPELINE_FORGE_ARCHIVE -Destination (Join-Path $downloads 'pipeline-forge.zip')
+          Copy-Item -LiteralPath $env:PIPELINE_FORGE_CHECKSUM -Destination (Join-Path $downloads 'pipeline-forge.zip.sha256')
+
+      - name: Install website dependencies
+        working-directory: pipeline-forge/site_create
+        run: npm ci
+
+      - name: Test website
+        working-directory: pipeline-forge/site_create
+        run: npm test
+
+      - name: Lint website
+        working-directory: pipeline-forge/site_create
+        run: npm run lint
 
       - name: Publish validated GitHub release
         shell: pwsh
