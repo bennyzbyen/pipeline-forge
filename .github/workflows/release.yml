@@ -16,6 +16,11 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
+      # The pinned source predates .gitattributes; preserve its committed LF bytes.
+      - name: Preserve repository line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
+
       - name: Checkout tagged package
         uses: actions/checkout@v4
         with:
