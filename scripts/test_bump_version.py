@@ -60,11 +60,23 @@ class VersionFixtureTests(unittest.TestCase):
         marketplace = json.loads(
             (self.root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(marketplace["plugins"][0]["source"]["ref"], f"v{self.next_version}")
+        self.assertEqual(marketplace["plugins"][0]["source"], {"source": "local", "path": "./"})
         self.assertIn(
             f"--ref v{self.next_version}",
             (self.root / "INSTALL.md").read_text(encoding="utf-8"),
         )
+
+    def test_marketplace_cannot_escape_or_fetch_another_checkout(self) -> None:
+        path = self.root / ".agents/plugins/marketplace.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+        for source in ({"source": "local", "path": "../"},
+                       {"source": "url", "url": "https://example.invalid/plugin.git"},
+                       {"source": "local", "path": "./", "ref": "v0.0.0"}):
+            with self.subTest(source=source):
+                original["plugins"][0]["source"] = source
+                path.write_text(json.dumps(original), encoding="utf-8")
+                with self.assertRaisesRegex(release_versions.VersionError, "same repository root"):
+                    release_versions.validate_version_consistency(self.root)
 
     def test_drift_is_rejected(self) -> None:
         readme = self.root / "README.md"

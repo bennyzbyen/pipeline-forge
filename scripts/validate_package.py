@@ -160,12 +160,12 @@ def validate_marketplace(version: str) -> None:
     entry = plugins[0]
     require(entry.get("name") == "pipeline-forge", "marketplace plugin name mismatch")
     source = entry.get("source", {})
-    require(source.get("source") == "url", "root-hosted Git plugin must use url source")
-    require(source.get("url") == REPOSITORY_GIT_URL, "marketplace repository URL mismatch")
     require(
-        source.get("ref") == f"v{version}",
-        "marketplace source ref must pin the immutable plugin version tag",
+        source == {"source": "local", "path": "./"},
+        "marketplace source must reference the same repository root",
     )
+    require((ROOT / source["path"] / ".codex-plugin" / "plugin.json").is_file(),
+            "marketplace plugin manifest must resolve inside this checkout")
     require(entry.get("policy", {}).get("installation") == "AVAILABLE", "marketplace installation policy mismatch")
     require(entry.get("policy", {}).get("authentication") == "ON_INSTALL", "marketplace authentication policy mismatch")
     require(entry.get("category") == "Productivity", "marketplace category mismatch")

@@ -1,14 +1,52 @@
 # Install PipelineForge
 
-## GitHub marketplace setup
+## Recommended: repository marketplace
 
-Add the public PipelineForge marketplace source:
+PipelineForge uses the same single-repository layout as [Diagram Design](https://github.com/cathrynlavery/diagram-design/blob/main/.agents/plugins/marketplace.json): `.agents/plugins/marketplace.json` points to `./`, where `.codex-plugin/plugin.json`, assets, and all eight skills live. The local path is relative to the fetched repository root, not your home directory. No separate marketplace repository is needed.
+
+Share [bennyzbyen/pipeline-forge](https://github.com/bennyzbyen/pipeline-forge) with other users. With Git and a Codex CLI that supports `plugin marketplace` installed, run:
+
+```powershell
+codex plugin marketplace add bennyzbyen/pipeline-forge
+```
+
+This follows the repository default branch. Adding a market registers its catalog; installing the plugin is a separate step. In Codex desktop, open **Plugins**, select the **PipelineForge** marketplace, and install PipelineForge. Restart the app if the source has not appeared, then start a new task after installation.
+
+For a reproducible installation of the published stable release instead:
 
 ```powershell
 codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3
 ```
 
-Restart the ChatGPT desktop app, open **Plugins > Personal**, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.
+Restart Codex, open **Plugins**, select the **PipelineForge** marketplace, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.
+
+## Updates
+
+For a default-branch marketplace:
+
+```powershell
+codex plugin marketplace upgrade pipeline-forge
+```
+
+Then check PipelineForge in **Plugins** and install the offered update; start a new task to pick up its skills. Refreshing a marketplace alone is not proof that the installed plugin was updated. A market pinned with `--ref` stays on that tag; to follow the default branch, remove and add its registration again:
+
+```powershell
+codex plugin marketplace remove pipeline-forge
+codex plugin marketplace add bennyzbyen/pipeline-forge
+```
+
+## Use a local clone
+
+```powershell
+git clone https://github.com/bennyzbyen/pipeline-forge.git
+codex plugin marketplace add ./pipeline-forge
+```
+
+Install from the PipelineForge marketplace as above. This route reads the clone and does not require the personal ZIP installer. Update the clone with `git pull --ff-only`, refresh the marketplace, and check the plugin update in the app.
+
+## Moving from the Personal installation
+
+`pipeline-forge@personal` and `pipeline-forge@pipeline-forge` are different installed identities. Add the repository market, install its PipelineForge entry, disable the Personal copy in the app, and start a new task to verify the repository version. Keep only one enabled entry to avoid duplicate skills. The old ZIP helper remains available for Personal installations and does not migrate them automatically. Do not modify Codex's installation cache by hand.
 
 ## Diagram Design dependency
 

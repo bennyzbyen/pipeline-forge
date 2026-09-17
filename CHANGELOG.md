@@ -1,5 +1,9 @@
 # Changelog
 
+**Unreleased local changes**
+
+- Match Diagram Design’s repository marketplace layout with a same-checkout local source. Document default-branch and pinned installation, marketplace refresh, local clones, and migration from Personal; preserve relative source semantics across version bumps.
+
 ## 2.0.3 - 2026-09-10
 
 - Apply FMOS-validated report waterline document corrections for concise publication layout, full field dictionaries, and stable target-bound Catalog references.

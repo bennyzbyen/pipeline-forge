@@ -26,13 +26,19 @@ PipelineForge is a guided, modular toolkit for data pipeline development: one-st
 
 ## Quick Start
 
-Add the public GitHub marketplace source:
+Add the public GitHub repository as a marketplace (tracks the default branch):
+
+```powershell
+codex plugin marketplace add bennyzbyen/pipeline-forge
+```
+
+For a reproducible installation of the published stable release instead:
 
 ```powershell
 codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3
 ```
 
-Then restart the ChatGPT desktop app, open **Plugins > Personal**, and install PipelineForge. Codex CLI users can enter `/plugins` after restarting the session.
+Then restart the ChatGPT desktop app, open **Plugins**, choose the **PipelineForge** marketplace, and install PipelineForge. Codex CLI users can enter `/plugins` after restarting the session.
 
 Alternatively, download the current plugin package directly from the [PipelineForge website](https://pipeline-forge.bennyzby.chatgpt.site/downloads/pipeline-forge.zip), extract it, and run the included setup helper:
 

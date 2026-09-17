@@ -11,6 +11,10 @@ PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR
 
 Version components do not use decimal carrying. For example, the patch release after `1.0.9` is `1.0.10`, not `1.1.0`.
 
+## Repository marketplace
+
+The catalog uses `{"source": "local", "path": "./"}`, following Diagram Design's single-repository structure. It ships the plugin from the same checkout; version bumps must not add a second Git source or an inner `ref`. Users can pin the outer marketplace with `--ref v<version>` for reproducible releases, or omit it to follow the default branch. Release commands in the documentation remain version-checked. Validate a local marketplace in an isolated Codex home before publishing catalog changes.
+
 ## Release Checklist
 
 1. Classify the release by compatibility and choose the next version.
