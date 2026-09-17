@@ -145,12 +145,10 @@ def read_authoritative_versions(root: Path = ROOT) -> dict[str, str]:
         or not isinstance(marketplace_plugins[0].get("source"), dict)
     ):
         raise VersionError("marketplace must contain exactly one plugin source")
-    marketplace_ref = str(marketplace_plugins[0]["source"].get("ref", ""))
-    if not marketplace_ref.startswith("v"):
-        raise VersionError("marketplace source ref must use a v-prefixed immutable version tag")
+    if marketplace_plugins[0]["source"] != {"source": "local", "path": "./"}:
+        raise VersionError("marketplace source must reference the same repository root")
 
     versions = {
-        "marketplace source ref": marketplace_ref.removeprefix("v"),
         "plugin manifest": str(manifest.get("version", "")),
         "website package": str(package.get("version", "")),
         "website lockfile": str(lock.get("version", "")),
@@ -235,8 +233,8 @@ def prepare_bump(root: Path, new_version: str, release_date: str, notes: list[st
     source = plugins[0].get("source")
     if not isinstance(source, dict):
         raise VersionError("marketplace plugin source is missing")
-    source["ref"] = f"v{new_version}"
-    updates[marketplace_path] = json.dumps(marketplace, ensure_ascii=False, indent=2) + "\n"
+    # The marketplace uses this checkout; the outer marketplace ref pins releases.
+    # Keep its relative source unchanged when bumping the plugin version.
 
     manifest_path = root / ".codex-plugin/plugin.json"
     manifest = _read_json(manifest_path)
