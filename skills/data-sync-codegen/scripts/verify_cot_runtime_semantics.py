@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import sys
@@ -14,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 
 MODULE_NAMES = [
+    "delivery_contract",
     "loguru",
     "plugin_common",
     "sync_with_period",
@@ -334,7 +336,7 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
 
     class COT_REPORT_WITH_P:
         def __init__(self, params: dict):
-            events.append(("with_init", params))
+            events.append(("with_init", {key: value for key, value in params.items() if key not in {"upstream_probe", "upstream_notify"}}))
             self.params = params
 
         def run(self):
@@ -343,7 +345,7 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
 
     class COT_REPORT_WITHOUT_P:
         def __init__(self, params: dict):
-            events.append(("without_init", params))
+            events.append(("without_init", {key: value for key, value in params.items() if key not in {"upstream_probe", "upstream_notify"}}))
             self.params = params
 
         def run(self):
@@ -369,6 +371,21 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
         assert module.WITHOUT_PERIOD, "generated project must configure at least one without-period table"
         with_table = module.WITH_PERIOD[0]
         without_table = module.WITHOUT_PERIOD[0]
+        before = len(events)
+        try:
+            module.calc_single({'source_table': 'fixture_unknown'})
+        except ValueError as error:
+            assert 'not configured' in str(error)
+        else:
+            raise AssertionError('unknown table must fail before source reads')
+        assert len(events) == before
+        gate_params = {'source_table': with_table, 'upstream_readiness': {'enabled': True, 'manual_bypass': True, 'timeout_seconds': 1},
+                       'upstream_probe': lambda timeout: 'timeout', 'upstream_notify': lambda result: (_ for _ in ()).throw(RuntimeError('notify'))}
+        timeout_result = module.calc_single(gate_params)
+        assert timeout_result['status'] == 'skipped_upstream_timeout' and timeout_result['watermark_advanced'] is False
+        assert timeout_result['metrics'][0]['notification_failed'] is True and len(events) == before
+        gate_params['source_informations']['period'] = ['2026P01', '2026P02']
+        assert module.calc_single(gate_params)['branch'] == 'with'
         with_result = module.calc_single({"source_informations": {"mysql_table": with_table}})
         without_result = module.calc_single({"source_informations": {"mysql_table": without_table}})
 
@@ -418,6 +435,57 @@ def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
     return {"case": "hbase_final_request", "row_prefix_count": len(final_request["row_prefixs"]), "status": "passed"}
 
 
+def test_target_failure_watermark(project_dir: Path) -> Dict[str, Any]:
+    for periods in (None, ['2026P01', '2026P02']):
+        events = []
+        overrides = {'plugin_common': fake_common(events)}
+        overrides.update(make_with_period_modules(events, [('2026P01', 'full'), ('2026P02', 'full')], '2026-06-01'))
+        def fail(*args):
+            events.append(('write_hbase_failed',))
+            raise ValueError('fixture second target failure')
+        overrides['cot_sync_with_period.hbase_operation'].hbase_op = fail
+        with isolated_imports(project_dir, overrides):
+            module = import_from_path('sync_with_period', project_dir / 'sync_with_period.py')
+            try:
+                module.COT_REPORT_WITH_P(with_period_params(periods)).run()
+            except RuntimeError as error:
+                assert isinstance(error.__cause__, ValueError)
+            else:
+                raise AssertionError('failed second target must propagate')
+        assert 'update_timestamp' not in [event[0] for event in events]
+        assert_event_order(events, ['write_clickhouse', 'write_hbase_failed', 'clean_files'])
+    return {'case': 'target_failure_watermark', 'status': 'passed'}
+
+
+def test_delta_and_rowkey(project_dir: Path) -> Dict[str, Any]:
+    import pandas as pd
+    import tempfile
+    source = (project_dir / 'cot_sync_with_period/ck_operation.py').read_text(encoding='utf-8')
+    parsed = ast.parse(source)
+    functions = [node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in {'get_store_code', 'delete_delta'}]
+    scope = {'pd': pd, 'logger': NoopLogger(), 'cluster': ''}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), 'generated_ck_operation', 'exec'), scope)
+    commands = []
+    client = types.SimpleNamespace(command=commands.append)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / 'rows.csv'
+        path.write_text('code\n001\n', encoding='utf-8')
+        scope['delete_delta']('fixture', 'P1', 'period', 'code', [str(path)], client, '')
+    assert len(commands) == 1 and "code IN ('001') AND period = 'P1'" in commands[0], commands
+    key_scope = {}
+    exec(compile((project_dir / 'hbase/rowkey.py').read_text(encoding='utf-8'), 'rowkey', 'exec'), key_scope)
+    build = key_scope['build_prefixed_rowkey']
+    assert build(['P1', '001']) == '1P1001'
+    assert build(['P1', '00X']) == 'XP100X'
+    try:
+        build(['', None])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('empty rowkey must fail')
+    return {'case': 'delta_and_rowkey', 'status': 'passed', 'non_numeric_scan': 'requires_explicit_contract_not_numeric_default'}
+
+
 def run_verification(project_dir: Path) -> Dict[str, Any]:
     cases = [
         test_plugin_main_defaults,
@@ -427,6 +495,8 @@ def run_verification(project_dir: Path) -> Dict[str, Any]:
         test_with_period_no_changes,
         test_without_period_changed,
         test_without_period_no_changes,
+        test_target_failure_watermark,
+        test_delta_and_rowkey,
     ]
     results = []
     for case in cases:

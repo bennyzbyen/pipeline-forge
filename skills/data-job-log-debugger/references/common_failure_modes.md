@@ -2,6 +2,15 @@
 
 Use this reference after basic traceback analysis when platform-specific behavior affects the diagnosis.
 
+## Lifecycle and completion evidence
+
+- `skipped_upstream_timeout` means sync did not start; it is not an empty successful sync. Notification failure does not change that status. Manual bypass must be declared in the readiness contract.
+- A worker traceback with continuing main-thread logs can mean swallowed parallel failure. Check all futures/joins and block transform/write when any required source fails; preserve failed-source names and exception cause.
+- Distinguish missing source, no increment and complete empty snapshot. QAS-like daily clear may be correct for the exact period/date; vehicle skip may be correct for its contract. Do not recommend universal skip or truncate.
+- Feedback dry-run produces a candidate watermark only. Writer submission is not mutation completion; do not recommend advancing past pending/failed updates. Same-time updates require a confirmed tie cursor.
+- A partial replacement must retain cleared-target and completed/failed-batch evidence without claiming rollback or advancing progress. Re-run/recovery scope comes from the declared strategy.
+- Manifest publication, upload, downstream activation and receiver completion are separate evidence. A helper definition or log before the call is not completion proof. Reject mixed factory/batch snapshots and unknown transfer modes; resolve latest to a concrete batch.
+
 ## Runtime Parameter Contracts
 
 - DataEngine may wrap params under `algorithm_io_mode == "SINGLE"`; `body.params` may itself be a JSON string that requires parsing.

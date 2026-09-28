@@ -10,6 +10,7 @@ from pathlib import Path
 
 from technical_contract import validate_contract
 from code_unit_contract import validate_code_unit_contract
+from knowledge_reference_contract import validate_knowledge_references
 
 
 def main() -> int:
@@ -23,6 +24,19 @@ def main() -> int:
     if not isinstance(contract, dict):
         raise ValueError("structured facts must contain an object at codegen_contract")
     result = validate_contract(contract)
+    knowledge_result = validate_knowledge_references(payload)
+    result['knowledge_references'] = knowledge_result
+    for message in knowledge_result['errors']:
+        result['errors'].append({'code': 'KNOWLEDGE_REFERENCE_INVALID', 'severity': 'ERROR',
+                                 'path': 'knowledge_references', 'message': message})
+    for message in knowledge_result['warnings']:
+        result['warnings'].append({'code': 'LEGACY_KNOWLEDGE_REFERENCE', 'severity': 'WARNING',
+                                   'path': 'knowledge_references', 'message': message})
+    result['error_count'] = len(result['errors'])
+    result['warning_count'] = len(result['warnings'])
+    if knowledge_result['errors']:
+        result['status'] = 'failed'
+        result['deployment_status'] = 'review_required'
     code_unit_result = validate_code_unit_contract(payload)
     result["code_unit_contract"] = code_unit_result
     if code_unit_result["status"] == "failed":

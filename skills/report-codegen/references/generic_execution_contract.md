@@ -147,7 +147,7 @@ Example:
 }
 ```
 
-Supported write modes are `append` and `replace_where`. A replace predicate must use one confirmed identifier and a runtime value from `time_range.<key>` or `params.<key>`. Generated storage validates identifiers, escapes values, and never deletes existing rows when the output DataFrame is empty.
+Supported write modes are `append` and `replace_where`. Predicates use one equality or a non-empty `all` list with confirmed identifiers and `time_range.<key>` or `params.<key>` values. Empty output defaults to preserving rows (`block_destructive_replace`/`skip`); `reject` raises; `clear_slice` requires `empty_snapshot_confirmed=true` and bounded replacement predicates. Missing outputs are errors. See `lifecycle_contracts.md` for completion and recovery semantics.
 
 `DELETE` followed by `INSERT` is non-atomic. Strict deployment blocks it unless the contract supplies an atomic/recoverable strategy or explicitly acknowledges the non-atomic risk. For `insert_file`, staging must use explicit ordered columns, UTF-8 without BOM or header, `\\N` nulls, integer-safe formatting, and second-precision datetimes.
 

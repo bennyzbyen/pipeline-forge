@@ -28,7 +28,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 For a reproducible installation of the published stable release instead:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.1.0
 ```
 
 Then finish installation from either supported surface:
@@ -87,4 +87,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## Release Notes
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.0.3`; see [CHANGELOG.md](CHANGELOG.md) for release notes.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.1.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.

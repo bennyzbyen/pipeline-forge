@@ -332,6 +332,7 @@ def validate_source_sync(
     explicit_root: Optional[Path],
     expected_revision: str,
     require_source_sync: bool,
+    skill_scope=None,
 ) -> None:
     repository_root = discover_source_repository(explicit_root)
     if repository_root is None:
@@ -346,7 +347,8 @@ def validate_source_sync(
         validate_clean_source_skills(repository_root)
     source_root = repository_root / "skills"
 
-    for skill in sorted(SOURCE_SKILLS):
+    require(not (require_source_sync and skill_scope), 'release validation cannot narrow source parity')
+    for skill in sorted(skill_scope or SOURCE_SKILLS):
         source_files = relevant_files(source_root / skill)
         packaged_files = relevant_files(ROOT / "skills" / skill)
         require(source_files.keys() == packaged_files.keys(), f"source/package file set mismatch for {skill}")
@@ -410,7 +412,11 @@ def main() -> int:
         "--release-tag",
         help="Require this v-prefixed release tag to exactly match manifest and changelog versions.",
     )
+    parser.add_argument('--skill-scope', nargs='+', choices=sorted(SOURCE_SKILLS),
+                        help='Local development parity subset; forbidden for release validation.')
     args = parser.parse_args()
+    require(not (args.skill_scope and (args.require_source_sync or args.release_tag)),
+            'release validation cannot narrow source parity')
     version = validate_metadata()
     validate_version_consistency(version)
     if args.release_tag:
@@ -420,12 +426,19 @@ def main() -> int:
     validate_distribution_files()
     source_revision = validate_source_revision()
     validate_skills()
-    validate_source_sync(args.source_root, source_revision, args.require_source_sync)
+    validate_source_sync(args.source_root, source_revision, args.require_source_sync, args.skill_scope)
     validate_guide_contract()
     validate_codegen_contract_tools()
     validate_pipeline_doc_resources()
     validate_python_helpers()
-    print("PipelineForge package validation passed")
+    compiled_knowledge = subprocess.run(
+        [sys.executable, str(ROOT / 'skills/pipeline-forge-guide/scripts/build_builtin_knowledge.py'), '--check'],
+        capture_output=True, text=True, encoding='utf-8',
+    )
+    require(compiled_knowledge.returncode == 0,
+            'built-in knowledge integrity check failed: ' + compiled_knowledge.stdout + compiled_knowledge.stderr)
+    print("PipelineForge package validation passed" +
+          ("; local source parity scope: " + ', '.join(args.skill_scope) if args.skill_scope else ''))
     return 0
 
 

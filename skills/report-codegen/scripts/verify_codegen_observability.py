@@ -39,7 +39,9 @@ def direct_name(arg: ast.AST) -> str | None:
 
 
 def verify(project_dir: Path) -> dict:
-    errors: list[str] = []
+    from verify_generated_safety import verify as verify_safety
+    safety = verify_safety(project_dir)
+    errors: list[str] = [f"{item['path']}:{item['line']}: {item['rule']}" for item in safety["findings"]]
     parsed: dict[Path, tuple[str, ast.Module]] = {}
     logger_calls = 0
 

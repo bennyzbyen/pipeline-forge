@@ -24,6 +24,11 @@ def vehicle_output_targets(plan: Dict[str, Any]) -> Dict[str, str]:
 
 def write_vehicle_data_process(target: Path, plan: Dict[str, Any]) -> None:
     targets = vehicle_output_targets(plan)
+    profile = plan.get('vehicle_profile') or {'version': 'legacy_period'}
+    if profile.get('version') not in {'legacy_period', 'realtime_eo'}:
+        raise ValueError('unknown vehicle profile')
+    if profile['version'] == 'realtime_eo' and profile.get('confirmed') is not True:
+        raise ValueError('realtime vehicle profile requires evidence-backed confirmation')
     content = f'''# coding: utf-8
 from common_utils.all_modules import Dict, logger, np, pd
 from params_configs.col_config import rename_map, target_table_columns
@@ -32,6 +37,7 @@ from params_configs.col_config import rename_map, target_table_columns
 DETAIL_TARGET = {targets["detail"]!r}
 PRESALE_TARGET = {targets["presale"]!r}
 INSTOCK_TARGET = {targets["instock"]!r}
+VEHICLE_PROFILE = {profile!r}
 ''' + r'''
 
 
@@ -110,10 +116,20 @@ class DataProcess:
 
     def data_clean(self):
         logger.info("transform_start step=vehicle_source_clean")
-        eo_line = self._source("l0_dtr_order.t5_eo_erp_sales_order_line_p")
+        realtime = VEHICLE_PROFILE['version'] == 'realtime_eo'
+        order_table = 'l0_dtr_order.t5_eo_erp_sales_order_line' if realtime else 'l0_dtr_order.t5_eo_erp_sales_order_line_p'
+        eo_line = self._source(order_table)
         eo_input_rows = len(eo_line)
+        if realtime:
+            required = {'order_source', 'order_status', 'bmp_eo_order_category', 'created_dtr_interconnect_type', 'pt_sum_p'}
+            if not required.issubset(eo_line.columns):
+                raise ValueError('realtime vehicle source columns do not match selected profile')
+            mask = (eo_line['order_source'].astype(str).str.strip() == 'EO订单') & pd.to_numeric(eo_line['order_status'], errors='coerce').isin([4516, 4508, 4])
+            mask &= (eo_line['bmp_eo_order_category'].astype(str).str.strip() == 'NDT') | (pd.to_numeric(eo_line['created_dtr_interconnect_type'], errors='coerce') == 4)
+            eo_line = eo_line.loc[mask].copy()
+            eo_line['pt_sum'] = eo_line['pt_sum_p']
         if not eo_line.empty:
-            if {"order_status", "bmp_eo_order_category"}.issubset(eo_line.columns):
+            if not realtime and {"order_status", "bmp_eo_order_category"}.issubset(eo_line.columns):
                 # Requirement: only delivered/received NDT orders enter vehicle reconciliation.
                 eo_line = eo_line[
                     eo_line["order_status"].astype(str).isin(["4516", "4508"])

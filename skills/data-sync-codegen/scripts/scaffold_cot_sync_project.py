@@ -185,14 +185,14 @@ def build_field_map(facts: Dict[str, Any], extracted_tables: Optional[Path]) -> 
     return field_map
 
 
-def normalize_cot_table_name(doc_table: str) -> str:
-    return COT_TABLE_NAME_OVERRIDES.get(doc_table, doc_table)
+def normalize_cot_table_name(doc_table: str, historical_profile: bool = False) -> str:
+    return COT_TABLE_NAME_OVERRIDES.get(doc_table, doc_table) if historical_profile else doc_table
 
 
-def is_with_period(row: Dict[str, Any], source_table: str, fields: List[str]) -> bool:
-    if source_table in COT_WITH_PERIOD_TABLE_OVERRIDES:
+def is_with_period(row: Dict[str, Any], source_table: str, fields: List[str], historical_profile: bool = False) -> bool:
+    if historical_profile and source_table in COT_WITH_PERIOD_TABLE_OVERRIDES:
         return True
-    if source_table in COT_WITHOUT_PERIOD_TABLE_OVERRIDES:
+    if historical_profile and source_table in COT_WITHOUT_PERIOD_TABLE_OVERRIDES:
         return False
 
     report_type = clean_text(row.get("report_type"))
@@ -225,10 +225,10 @@ def build_target_mapping(facts: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
-def classify_source_group(source_table: str, with_period: bool) -> str:
-    if source_table in COT_STORE_REPORT_GENERATOR_TABLES:
+def classify_source_group(source_table: str, with_period: bool, historical_profile: bool = False) -> str:
+    if historical_profile and source_table in COT_STORE_REPORT_GENERATOR_TABLES:
         return "store_report_generator"
-    if source_table in COT_STORE_REPORT_TABLES:
+    if historical_profile and source_table in COT_STORE_REPORT_TABLES:
         return "store_report"
     if with_period:
         return "report_ps_p"
@@ -253,6 +253,8 @@ def find_table_contract_issues(config: Dict[str, Any]) -> List[str]:
     required_columns.extend(clean_text(value) for value in config.get("rowkey_rule_columns", []))
 
     issues: List[str] = []
+    if not config.get('rowkey_evidence'):
+        issues.append('rowkey_evidence_missing')
     if any(not column for column in required_columns):
         issues.append("missing_required_column_name")
     for column in unique(required_columns):
@@ -267,6 +269,9 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
     target_map = build_target_mapping(facts)
     configs: Dict[str, Dict[str, Any]] = {}
     questions: List[str] = []
+    profile = facts.get('cot_historical_profile') or {}
+    historical_profile = (isinstance(profile, dict) and profile.get('name') == 'cot_2026'
+                          and profile.get('confirmed') is True and bool(clean_text(profile.get('evidence'))))
 
     for row in facts.get("cot_report_tables", []):
         clickhouse_full = clean_text(row.get("clickhouse_table"))
@@ -274,9 +279,9 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
         if not doc_source_table:
             continue
 
-        source_table = normalize_cot_table_name(doc_source_table)
+        source_table = normalize_cot_table_name(doc_source_table, historical_profile)
         fields = field_map.get(doc_source_table, [])
-        with_period = is_with_period(row, source_table, fields)
+        with_period = is_with_period(row, source_table, fields, historical_profile)
         update_column = select_column(fields, DEFAULT_UPDATE_COLUMNS, "inksaa_last_modified_timestamp")
         period_column = select_column(fields, ["period"], "period") if with_period else ""
         code_column = select_column(fields, DEFAULT_CODE_COLUMNS, "code")
@@ -286,6 +291,12 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
             rowkey_rule_columns = [period_column, code_column]
         else:
             rowkey_rule_columns = [key_column]
+        declared_rowkey = row.get('rowkey_contract') or {}
+        if declared_rowkey.get('confirmed') is True and declared_rowkey.get('prefix') == 'last_char' and declared_rowkey.get('columns'):
+            rowkey_rule_columns = list(declared_rowkey['columns'])
+            rowkey_evidence = clean_text(declared_rowkey.get('evidence'))
+        else:
+            rowkey_evidence = ''
 
         if not fields:
             questions.append(f"{source_table}: field dictionary was not available; verify update column and rowkey columns.")
@@ -296,12 +307,18 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
 
         mapping = target_map.get(doc_source_table, {})
         schedule = schedule_map.get(doc_source_table, {})
-        hbase_table = COT_HBASE_TABLE_OVERRIDES.get(source_table, clean_text(row.get("source_hbase_table")))
+        hbase_table = clean_text(row.get("source_hbase_table"))
+        if historical_profile:
+            hbase_table = COT_HBASE_TABLE_OVERRIDES.get(source_table, hbase_table)
+        truncate = row.get('truncate_contract') or {}
+        truncate_confirmed = isinstance(truncate, dict) and truncate.get('confirmed') is True and bool(clean_text(truncate.get('evidence')))
         config = {
             "business_desc": clean_text(row.get("business_desc")),
             "report_type": clean_text(row.get("report_type")),
             "source_range": clean_text(row.get("source_range")),
-            "source_group": classify_source_group(source_table, with_period),
+            "source_group": classify_source_group(source_table, with_period, historical_profile),
+            "historical_profile": 'cot_2026' if historical_profile else '',
+            "truncate_targets": [target for target in ('clickhouse', 'hbase') if truncate_confirmed and target in (truncate.get('targets') or [])],
             "sync_mode": "with_period" if with_period else "without_period",
             "document_table": doc_source_table,
             "mysql_table": source_table,
@@ -311,6 +328,7 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
             "key_column": key_column,
             "hbase_table": hbase_table,
             "rowkey_rule_columns": rowkey_rule_columns,
+            "rowkey_evidence": rowkey_evidence,
             "hbase_delete_request_contract": (
                 {
                     "row_start": "{period}",
@@ -380,8 +398,8 @@ def render_plugin_config(
     ck_legacy_database_tables = [
         item["clickhouse_table"] for item in configs.values() if item["clickhouse_database"] == "cot_report"
     ]
-    ck_truncate_list = [name for name in ck_legacy_database_tables if name in COT_CLICKHOUSE_TRUNCATE_TABLES]
-    hbase_truncate_list = [name for name in COT_HBASE_TRUNCATE_TABLES if name in {item["hbase_table"] for item in configs.values()}]
+    ck_truncate_list = [item['clickhouse_table'] for item in configs.values() if 'clickhouse' in item.get('truncate_targets', [])]
+    hbase_truncate_list = [item['hbase_table'] for item in configs.values() if 'hbase' in item.get('truncate_targets', [])]
     runtime_table_configs = {
         name: {
             "mysql_table": item["mysql_table"],
@@ -452,7 +470,7 @@ mysql_store_report_params = {{
     "charset": "utf8",
 }}
 
-cluster = environment_profile.get("clickhouse_cluster", "") if environment_connection_matrix else ("" if env in {{"qa", "uat"}} else "<CLICKHOUSE_CLUSTER>")
+cluster = environment_profile.get("clickhouse_cluster", "<CLICKHOUSE_CLUSTER>")
 
 table_configs = {py_literal(runtime_table_configs)}
 
@@ -518,7 +536,7 @@ def render_rowkey_config(configs: Dict[str, Dict[str, Any]]) -> str:
             },
             "date_format": "",
             "example": "",
-            "confirmed": False,
+            "confirmed": bool(item.get('rowkey_evidence')),
             "fill_notes": [
                 "COT scaffold inferred columns from the field dictionary and sync mode.",
                 "Confirm columns with requirement docs, production code, or deployment logs before production.",
@@ -666,7 +684,14 @@ def scaffold_project(args: argparse.Namespace) -> None:
     if safe_scaffold:
         mark_safe_scaffold(configs, questions)
 
+    entry = codegen_contract.get("entry_contract")
+    profile = "cot"
+    if entry is not None:
+        if not isinstance(entry, dict) or entry.get("profile") not in {"cot", "q3", "direct"} or entry.get("confirmed") is not True or not entry.get("evidence"):
+            raise ValueError("entry_contract requires profile, confirmed=true and evidence")
+        profile = entry["profile"]
     copy_template_tree(template_root, args.output_dir, args.force)
+    (args.output_dir / "entry_contract.py").write_text(f"ENTRY_PROFILE = {profile!r}\n", encoding="utf-8")
     if safe_scaffold:
         write_safe_scaffold_marker(args.output_dir)
     config_path = args.output_dir / "cot_config" / "plugin_config.py"

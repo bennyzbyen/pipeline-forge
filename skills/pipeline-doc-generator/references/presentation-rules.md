@@ -59,3 +59,11 @@ Neither Target nor Target Management has a `catalog` column, even if legacy targ
 - Treat corrections cumulatively. A later removal of `源字段/计算规则` supersedes its earlier requested inclusion; a later pipeline merge supersedes the original count. Do not promote the assistant’s abandoned design or explanation into standing policy.
 - When asked to reuse a reference document’s Owner or Catalog contacts, read and copy that specific record; do not ask for it again or hardcode those people/emails globally. The standing author preference is `张本彦`; project names, contacts, memory estimates, calendar ownership, formulas and pipeline counts remain project-specific.
 - Use a stable output stem throughout edits where practical. When explicitly asked to remove obsolete draft artifacts, first validate the current three-format bundle and its referenced assets, then remove only identified superseded outputs within the document directory. Do not make automatic recursive draft deletion a universal workflow or delete canonical facts, evidence, current SVGs or reusable scripts.
+
+## HTML Reading Navigation
+
+Use a light neutral sidebar, restrained separators, system fonts and a compact sidebar icon outside the text area. Keep full physical table names readable. Use a persistent blue selection state for the section currently being read, including while scrolling through long tables; hover and last-click states are not substitutes. Reopening the directory reveals the active item. Use only the bundled offline navigation script and its CSP hash; hide navigation when printing and preserve keyboard access.
+
+For theme switching in long documents, animate only the small sun/moon icons using transform and opacity. Switch document colors directly; do not attach color/background/border transitions to every table cell, code span, or heading. Limit compositor hints to the icon pair, never all document elements.
+
+Never add the Data Catalog applicability/registration chapter or its process diagram. Keep the actual Basic Info, Dictionary and Storage tables, with contiguous numbering after removal. This is a standing presentation preference, not a decision to disable Catalog registration.

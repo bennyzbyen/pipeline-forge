@@ -158,10 +158,9 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
       <div className="button-row">
         <a
           className="primary-button"
-          href={PLUGIN_DOWNLOAD_URL}
-          download
+          href="#enable"
         >
-          下载 PipelineForge
+          通过插件市场安装
           <span aria-hidden="true">↓</span>
         </a>
         {compact ? (
@@ -178,7 +177,7 @@ function EnableActions({ compact = false }: { compact?: boolean }) {
       </div>
       {!compact && (
         <div className="manual-fallback">
-          <span>完整插件 ZIP · v{PLUGIN_VERSION} · 无需登录即可下载</span>
+          <span>插件市场 · v{PLUGIN_VERSION} · 内置通用知识 · ZIP 备用</span>
         </div>
       )}
     </div>
@@ -356,8 +355,8 @@ export default function Home() {
             <span className="section-kicker">READY TO FORGE?</span>
             <h2 id="enable-title">让下一项数据工程任务，<br />从确定性开始。</h2>
             <p>
-              推荐直接添加公开的 GitHub Marketplace 源；也可以从本站下载完整插件包。
-              两条路线都无需进入 OpenAI 官方目录，源码在 GitHub 公开可查。
+              推荐通过 PipelineForge 插件市场安装 v{PLUGIN_VERSION}，换电脑后添加同一市场即可。
+              内置通用知识随插件提供，私人 Obsidian 知识库可选；各功能依赖按需准备。
             </p>
             <div className="marketplace-package glass-panel" aria-label="通过 GitHub Marketplace 安装 PipelineForge">
               <div className="package-copy">
@@ -369,7 +368,7 @@ export default function Home() {
             </div>
             <div className="download-package glass-panel" aria-label="PipelineForge 插件下载">
               <div className="package-copy">
-                <span>DIRECT DOWNLOAD</span>
+                <span>ALTERNATIVE · ZIP</span>
                 <strong>pipeline-forge.zip</strong>
                 <small>完整插件包 · v{PLUGIN_VERSION} · ZIP</small>
               </div>
@@ -382,28 +381,29 @@ export default function Home() {
                 </a>
               </div>
             </div>
-            <div className="install-guide" aria-label="PipelineForge 下载与安装步骤">
+            <div className="install-guide" aria-label="PipelineForge 插件市场安装与更新步骤">
               <article className="install-card glass-panel">
-                <span className="install-label">DOWNLOAD</span>
-                <h3>下载完整插件包</h3>
+                <span className="install-label">01 · MARKETPLACE</span>
+                <h3>通过插件市场安装</h3>
                 <ol>
-                  <li>点击上方 <b>直接下载 ZIP</b>。</li>
-                  <li>解压后打开其中的 <code>pipeline-forge</code> 文件夹。</li>
-                  <li>可先对照本站公布的 SHA-256 校验下载完整性。</li>
-                  <li>包内含插件清单、全部技能、脚本、参考资料和图标。</li>
+                  <li>准备 Git 和支持插件市场命令的 Codex CLI，运行上方命令。</li>
+                  <li>在 Codex 打开 <b>Plugins → PipelineForge</b>，点击安装。</li>
+                  <li>CLI 用户输入 <code>/plugins</code>，选择 PipelineForge 安装。</li>
+                  <li>市场未出现时重启应用；安装后开启新任务使用八个技能。</li>
                 </ol>
               </article>
               <article className="install-card glass-panel">
-                <span className="install-label">INSTALL ON WINDOWS</span>
-                <h3>安装到 Codex</h3>
+                <span className="install-label">02 · UPDATE</span>
+                <h3>更新与旧版迁移</h3>
                 <ol>
-                  <li>在解压目录中运行 <code>install-pipeline-forge.ps1</code>。</li>
-                  <li>脚本只写入个人 Codex 插件目录，并保留已有插件条目。</li>
-                  <li>重启 ChatGPT 桌面端，打开 <b>Plugins → Personal</b> 安装。</li>
-                  <li>Codex CLI 用户重启会话后输入 <code>/plugins</code>。</li>
+                  <li>上方命令固定 v{PLUGIN_VERSION}；后续升级需重新注册目标版本。</li>
+                  <li>跟随默认分支的市场可运行 <code>codex plugin marketplace upgrade pipeline-forge</code>。</li>
+                  <li>刷新市场后，在 <b>Plugins</b> 安装提供的更新并开启新任务。</li>
+                  <li>原 Personal 用户安装市场版后，停用 Personal 旧副本，保留一个入口。</li>
                 </ol>
               </article>
             </div>
+            <p>备用 ZIP：解压后运行 <code>install-pipeline-forge.ps1</code>，从 <b>Plugins → Personal</b> 安装。<a href={`${GITHUB_REPOSITORY_URL}/blob/main/INSTALL.md`} target="_blank" rel="noreferrer">查看完整安装与版本切换说明 ↗</a></p>
             <EnableActions compact />
             <a className="official-guide-link" href={OFFICIAL_PLUGIN_GUIDE_URL} target="_blank" rel="noreferrer">
               查看 OpenAI 官方插件说明 ↗

@@ -67,7 +67,10 @@ test("server-renders the complete PipelineForge product story", async () => {
     html,
     new RegExp(`codex plugin marketplace add bennyzbyen/pipeline-forge --ref v${escapedPluginVersion}`),
   );
-  assert.match(html, /下载 PipelineForge/);
+  assert.match(html, /通过插件市场安装/);
+  assert.match(html, /Plugins → PipelineForge/);
+  assert.match(html, /codex plugin marketplace upgrade pipeline-forge/);
+  assert.match(html, /私人 Obsidian 知识库可选/);
   assert.match(html, /href="\/downloads\/pipeline-forge\.zip"[^>]*download/);
   assert.match(html, /完整插件包/);
   assert.match(html, /install-pipeline-forge\.ps1/);

@@ -1,0 +1,2 @@
+"""Entry profile selected from the reviewed project contract during generation."""
+ENTRY_PROFILE = 'cot'

@@ -1,5 +1,15 @@
 # Install PipelineForge
 
+## What needs to move to a new computer
+
+Install the same plugin version. Its built-in generic rules, evidence hashes and validators travel with the plugin. Obsidian, historical projects and a private Vault are not required. Private business schemas and project-specific rules are not included; provide them with a task or optionally configure a private knowledge source.
+
+The knowledge helpers require Python 3.10+ and only its standard library; use an available host runtime. Without Python, the assistant can read the bundled rule catalog directly but cannot claim automated integrity checks passed. Excel, PDF, diagram generation and code regression tests have separate dependencies, checked only when that feature is used. Do not install the full source-regression environment for basic knowledge use.
+
+After installation, run `python <installed-plugin>/skills/pipeline-forge-guide/scripts/knowledge_lookup.py doctor` to check built-in and optional private knowledge separately. `dependency_doctor.py --feature knowledge` in the same script directory checks the basic helper runtime; `excel`, `pdf`, and `codegen-tests` select other feature checks. These commands do not install software or contact a service.
+
+To use additional private knowledge, configure only its current location with `knowledge_lookup.py configure --vault <directory>`. Its original source directories are optional when verified frozen snapshots exist. No private knowledge is copied into the public plugin by the built-in compiler.
+
 ## Recommended: repository marketplace
 
 PipelineForge uses the same single-repository layout as [Diagram Design](https://github.com/cathrynlavery/diagram-design/blob/main/.agents/plugins/marketplace.json): `.agents/plugins/marketplace.json` points to `./`, where `.codex-plugin/plugin.json`, assets, and all eight skills live. The local path is relative to the fetched repository root, not your home directory. No separate marketplace repository is needed.
@@ -15,7 +25,7 @@ This follows the repository default branch. Adding a market registers its catalo
 For a reproducible installation of the published stable release instead:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.1.0
 ```
 
 Restart Codex, open **Plugins**, select the **PipelineForge** marketplace, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.

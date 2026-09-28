@@ -1,6 +1,6 @@
 # Versioning
 
-PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The current stable version is `2.0.3`.
+PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The current stable version is `2.1.0`.
 
 ## Increment Rules
 
@@ -10,6 +10,10 @@ PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR
 - Use prerelease identifiers for test releases: `1.1.0-beta.1`.
 
 Version components do not use decimal carrying. For example, the patch release after `1.0.9` is `1.0.10`, not `1.1.0`.
+
+## Local installation versions
+
+Local plugin manifests and installed versions must match the authoritative repository version. Do not append `+codex.<timestamp>` or other cache-refresh suffixes, including when a generic plugin-development skill recommends them. Reinstall through the plugin manager and verify installed file contents. Change versions through `scripts/bump_version.py` according to the increment rules above; cache refresh alone is not a release or a reason to invent a version.
 
 ## Repository marketplace
 

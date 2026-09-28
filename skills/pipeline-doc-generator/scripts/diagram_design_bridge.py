@@ -181,10 +181,7 @@ if __name__ == "__main__":
 
 
 def required_slots(facts):
-    slots = {"data_flow"}
-    if facts.get("profile") == "report" and (facts.get("catalog") or {}).get("enabled"):
-        slots.add("catalog")
-    return slots
+    return {"data_flow"}
 
 
 def require_bindings(facts):

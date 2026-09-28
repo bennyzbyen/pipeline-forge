@@ -31,7 +31,7 @@ def run_regression() -> dict[str, object]:
         )
         result = run_verification(project_dir)
         assert result["status"] == "ok", result
-        assert result["case_count"] == 7, result
+        assert result["case_count"] == 9, result
         cases = result["cases"]
         assert isinstance(cases, list), result
         case_names = {case["case"] for case in cases}
@@ -43,6 +43,8 @@ def run_regression() -> dict[str, object]:
             "with_period_no_changes",
             "without_period_changed",
             "without_period_no_changes",
+            "target_failure_watermark",
+            "delta_and_rowkey",
         }, result
 
     return {

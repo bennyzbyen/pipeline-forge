@@ -267,6 +267,22 @@ def write_col_config(target: Path, plan: Dict[str, Any]) -> None:
     supervisor_plan = plan_is_supervisor_portal(plan)
     hbase_prepare_plan = plan_is_hbase_prepare_pipeline(plan)
     hbase_sources = plan["sources"].get("hbase", [])
+    if vehicle_plan:
+        profile = plan.get('vehicle_profile') or {'version': 'legacy_period'}
+        version = profile.get('version')
+        names = {source_key(item) for item in hbase_sources}
+        realtime = 'l0_dtr_order.t5_eo_erp_sales_order_line'
+        legacy = realtime + '_p'
+        if version not in {'legacy_period', 'realtime_eo'} or (realtime in names and version != 'realtime_eo'):
+            raise ValueError('vehicle source/version mismatch; select an evidence-backed profile')
+        if version == 'realtime_eo':
+            if profile.get('confirmed') is not True or not profile.get('evidence') or realtime not in names or legacy in names:
+                raise ValueError('realtime vehicle profile requires confirmed evidence and an unmixed source matrix')
+            source = next(item for item in hbase_sources if source_key(item) == realtime)
+            required = set(VEHICLE_HBASE_FIELD_OVERRIDES[legacy]) - {'pt_sum'}
+            required |= {'pt_sum_p', 'created_dtr_interconnect_type'}
+            if not required.issubset(split_fields(source.get('fields', []))):
+                raise ValueError('realtime vehicle profile requires complete source fields')
     mssql_sources = plan["sources"].get("mssql", [])
     fs_sources = plan["sources"].get("fs", [])
     hbase_export_cols = {
@@ -696,6 +712,8 @@ def test_confirmed_code_unit_snapshot_and_entrypoint():
 
 def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False) -> None:
     plan = load_json(plan_path)
+    from implementation_contract import require_bundled_layout
+    require_bundled_layout(plan)
     codegen_contract = plan.get("codegen_contract", {})
     if codegen_contract and codegen_contract.get("project_type") != "report":
         raise ValueError(
@@ -725,10 +743,17 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
             or execution_validation.get("status") == "failed"
         )
     )
+    entry = codegen_contract.get("entry_contract")
+    profile = "cot"
+    if entry is not None:
+        if not isinstance(entry, dict) or entry.get("profile") not in {"cot", "q3", "direct"} or entry.get("confirmed") is not True or not entry.get("evidence"):
+            raise ValueError("entry_contract requires profile, confirmed=true and evidence")
+        profile = entry["profile"]
     clean_target(target)
     if safe_scaffold:
         write_safe_scaffold_marker(target)
     copy_minimal_project(target)
+    (target / "entry_contract.py").write_text(f"ENTRY_PROFILE = {profile!r}\n", encoding="utf-8")
     write_col_config(target, plan)
     write_execution_contract_config(target, plan)
     write_rowkey_config(target, plan)

@@ -1,0 +1,132 @@
+"""Offline-testable lifecycle primitives; adapters own platform operations."""
+from concurrent.futures import ThreadPoolExecutor
+
+
+class SourceReadError(RuntimeError):
+    def __init__(self, failures):
+        self.failed_sources = list(failures)
+        super().__init__('source reads failed: ' + ', '.join(self.failed_sources))
+
+
+class PartialWriteError(RuntimeError):
+    def __init__(self, cleared, completed_batches):
+        self.cleared = cleared
+        self.completed_batches = completed_batches
+        super().__init__('replacement failed; cleared=%s completed_batches=%s' % (cleared, completed_batches))
+
+
+def replace_batches(batches, *, replacement_confirmed, clear, write, commit):
+    """For explicitly accepted non-atomic replacements; never claim rollback."""
+    if replacement_confirmed is not True:
+        raise ValueError('replacement needs explicit contract confirmation')
+    cleared, completed = False, 0
+    try:
+        clear()
+        cleared = True
+        for batch in batches:
+            write(batch)
+            completed += 1
+        commit()
+    except Exception as error:
+        raise PartialWriteError(cleared, completed) from error
+    return {'status': 'completed', 'completed_batches': completed}
+
+
+def read_all(readers):
+    """Join every worker; never return a partial frame set as success."""
+    if not readers:
+        return {}
+    results, failures = {}, {}
+    with ThreadPoolExecutor(max_workers=min(8, len(readers))) as pool:
+        pending = {name: pool.submit(reader) for name, reader in readers.items()}
+        for name, future in pending.items():
+            try:
+                results[name] = future.result()
+            except Exception as error:
+                failures[name] = error
+    if failures:
+        raise SourceReadError(failures) from next(iter(failures.values()))
+    return results
+
+
+def readiness_gate(contract, *, manual, probe, notify=None):
+    """The probe adapter owns bounded polling; only explicit ready proceeds."""
+    if not contract or contract.get('enabled') is False:
+        return {'status': 'bypassed'}
+    if contract.get('enabled') is not True:
+        raise ValueError('readiness enabled must be boolean')
+    if manual and contract.get('manual_bypass') is True:
+        return {'status': 'bypassed_manual'}
+    timeout = contract.get('timeout_seconds')
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+        raise ValueError('readiness requires positive timeout_seconds')
+    if not callable(probe):
+        raise ValueError('readiness requires a bounded probe adapter')
+    state = probe(timeout)
+    if state not in {'ready', 'timeout'}:
+        raise ValueError('probe must return ready or timeout')
+    result = {'status': 'ready' if state == 'ready' else 'skipped_upstream_timeout'}
+    if state == 'timeout' and notify is not None:
+        try:
+            notify(result.copy())
+        except Exception:
+            result['notification_failed'] = True
+    return result
+
+
+def preflight_snapshot(contract, manifest, frames):
+    """Reject incomplete/mixed snapshots before any writer is called."""
+    tables = contract.get('tables')
+    if not isinstance(tables, dict) or not tables:
+        raise ValueError('snapshot requires expected table contracts')
+    if set(tables) != set(frames) or set(manifest.get('tables', [])) != set(tables):
+        raise ValueError('snapshot table coverage mismatch')
+    for key in ('factory', 'batch_id'):
+        if not contract.get(key) or manifest.get(key) != contract[key]:
+            raise ValueError('snapshot identity mismatch: ' + key)
+    if manifest.get('source_mode') != 'full_snapshot' or manifest.get('complete') is not True:
+        raise ValueError('source snapshot is incomplete')
+    for name, spec in tables.items():
+        frame = frames[name]
+        keys = spec.get('keys') or []
+        required = set(keys) | set(spec.get('required_columns') or [])
+        if frame is None or not keys or not required.issubset(frame.columns):
+            raise ValueError('snapshot required fields missing: ' + name)
+        if frame.empty and spec.get('allow_empty') is not True:
+            raise ValueError('empty snapshot not authorized: ' + name)
+        if frame[keys].isna().any().any() or frame.duplicated(keys).any():
+            raise ValueError('snapshot key quality failed: ' + name)
+        for column in ('factory', 'batch_id'):
+            if column in frame and not frame[column].eq(contract[column]).all():
+                raise ValueError('mixed snapshot identity: ' + name)
+    return manifest['batch_id']
+
+
+def publish_snapshot(contract, manifest, frames, *, reserve_batch, write_data, write_manifest):
+    """Reserve must atomically reject existing batches; manifest uses create-only storage."""
+    batch = preflight_snapshot(contract, manifest, frames)
+    if reserve_batch(contract['factory'], batch) is not True:
+        raise ValueError('batch already exists or cannot be reserved')
+    for name, frame in frames.items():
+        write_data(batch, name, frame)
+    write_manifest(batch, dict(manifest))
+    return {'status': 'published', 'batch_id': batch}
+
+
+def resolve_batch(requested, lookup_latest):
+    batch = lookup_latest() if requested == 'latest' else requested
+    if not isinstance(batch, str) or not batch.strip() or batch == 'latest':
+        raise ValueError('an explicit batch identity is required')
+    return batch
+
+
+def deliver_files(items, *, source_mode, coverage_mode, upload, delete, commit):
+    """Modes are independent; adapters acknowledge operations before watermark commit."""
+    if source_mode not in {'full_snapshot', 'incremental'} or coverage_mode not in {'replace', 'merge'}:
+        raise ValueError('unknown source or receiver coverage mode')
+    if any(item.get('operation') not in {'upsert', 'delete'} for item in items):
+        raise ValueError('unknown file operation')
+    for item in items:
+        (delete if item['operation'] == 'delete' else upload)(item, coverage_mode)
+    commit()
+    return {'status': 'transfer_committed', 'receiver_completion': 'not_verified'}

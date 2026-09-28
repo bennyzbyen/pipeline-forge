@@ -60,7 +60,7 @@ def run_regressions(directory):
         rejected(lambda: render_diagram(spec, sentinel, {'render_preferences': preferences}, directory, 'data_flow'))
         assert sentinel.read_text(encoding='utf-8') == 'approved'
     rejected(lambda: require_bindings({'profile': 'sync'}))
-    rejected(lambda: require_bindings({'profile': 'report', 'catalog': {'enabled': True}, 'render_preferences': {'diagrams': {'data_flow': {}}}}))
+    require_bindings({'profile': 'report', 'catalog': {'enabled': True}, 'render_preferences': {'diagrams': {'data_flow': {}}}})
     validate_design(root, spec)
     for attribute, replacement in [('data-node-id', 'unknown'), ('data-to', 'sync'), ('data-platform-members', 'sync'), ('data-bounds', '700 112 224 128')]:
         changed = copy.deepcopy(root)

@@ -101,9 +101,12 @@ def assert_html_navigation(markup: str) -> NavigationProbe:
     assert not any(node["tag"] in {"link", "details", "summary"} for node in probe.nodes)
     scripts = [node for node in probe.nodes if node["tag"] == "script"]
     for script in scripts:
-        assert script["attrs"] == {"data-waterline-viewer": "1"}
-        assert script["text"] == (HERE.parent / "assets/diagram-viewer.js").read_text(encoding="utf-8")
-    assert len(scripts) <= 1
+        assets = {"data-waterline-viewer": "diagram-viewer.js", "data-waterline-navigation": "document-navigation.js"}
+        assert len(script["attrs"]) == 1
+        key = next(iter(script["attrs"]))
+        assert key in assets and script["attrs"][key] == "1"
+        assert script["text"] == (HERE.parent / "assets" / assets[key]).read_text(encoding="utf-8")
+    assert 1 <= len(scripts) <= 2
     return probe
 
 
@@ -117,7 +120,7 @@ def test_html_navigation(root: Path) -> dict:
     assert title not in chapter_labels
     assert f"1.1.1 {path} 字段清单" in chapter_labels
     assert any(node["attrs"].get("class") == "toc-document-title" and node["text"] == title for node in probe.nodes)
-    assert not any(node["tag"] in {"script", "w"} for node in probe.nodes)
+    assert not any(node["tag"] in {"w"} for node in probe.nodes)
     # A partial document without a matching H1 title must not lose its first chapter.
     assert_html_navigation(markdown_to_html("# 1. 数据源\n\n# 2. Target\n", root / "partial.md", "项目标题"))
     (root / "navigation_long_title.html").write_text(markup, encoding="utf-8")

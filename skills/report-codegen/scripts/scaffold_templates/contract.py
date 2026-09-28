@@ -189,6 +189,7 @@ class DataSource:
 
 def write_contract_data_storage(target: Path) -> None:
     content = '''# coding: utf-8
+import math
 import re
 import tempfile
 from pathlib import Path
@@ -228,13 +229,15 @@ class DataStorage:
         return values[key]
 
     def _literal(self, value) -> str:
-        if value is None:
-            raise ValueError("replace predicate value cannot be null")
+        if value is None or isinstance(value, (list, dict, tuple, set)) or str(value).strip() == "":
+            raise ValueError("replace predicate value must be a non-empty scalar")
         if isinstance(value, bool):
             return "1" if value else "0"
         if isinstance(value, (int, float)):
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("replace predicate must be finite")
             return str(value)
-        return "'" + str(value).replace("'", "''") + "'"
+        return "'" + str(value).replace(chr(92), chr(92) * 2).replace("'", "''") + "'"
 
     def _command(self, client, sql: str):
         logger.info("target_command storage=clickhouse operation={} statement_length={}", sql.split(maxsplit=1)[0], len(sql))
@@ -310,19 +313,38 @@ class DataStorage:
 
     def _write_one(self, client, output_name: str, df: pd.DataFrame, write: dict):
         table = self._identifier(write.get("table"))
-        if df is None or df.empty:
+        if df is None:
+            raise ValueError("missing source/output is not an empty snapshot")
+        policy = write.get("empty_output_policy", "block_destructive_replace")
+        if not isinstance(policy, str) or policy not in {"block_destructive_replace", "skip", "reject", "clear_slice"}:
+            raise ValueError("unknown empty output policy")
+        if policy == "clear_slice" and (write.get("mode") != "replace_where" or write.get("empty_snapshot_confirmed") is not True):
+            raise ValueError("clear_slice requires confirmed snapshot replacement")
+        if df.empty and policy == "reject":
+            raise ValueError("empty output rejected by target contract")
+        if df.empty and policy != "clear_slice":
             logger.info("stage_skip stage=data_storage output={} reason=empty_output", output_name)
             return {"output": output_name, "target": table, "rows": 0, "status": "skipped_empty"}
         prepared = self._prepare(output_name, df, write)
         mode = write.get("mode")
         if mode == "replace_where":
             predicate = write.get("predicate") or {}
-            column = self._identifier(predicate.get("column"))
-            value = self._value_from(predicate.get("value_from"))
-            sql = f"ALTER TABLE {table} DELETE WHERE {column} = {self._literal(value)}"
+            terms = predicate.get("all") if "all" in predicate else [predicate]
+            if not isinstance(terms, list) or not terms or ("all" in predicate and set(predicate) != {"all"}):
+                raise ValueError("replacement requires non-empty equality predicates")
+            clauses = []
+            for term in terms:
+                if not isinstance(term, dict) or set(term) != {"column", "value_from"}:
+                    raise ValueError("unsupported replacement predicate")
+                column = self._identifier(term.get("column"))
+                value = self._value_from(term.get("value_from"))
+                clauses.append(f"{column} = {self._literal(value)}")
+            sql = f"ALTER TABLE {table} DELETE WHERE " + " AND ".join(clauses)
             self._command(client, sql)
         elif mode != "append":
             raise ValueError(f"unsupported write mode: {mode}")
+        if df.empty:
+            return {"output": output_name, "target": table, "rows": 0, "status": "clear_submitted", "mode": mode}
         logger.info("target_insert storage=clickhouse output={} target={} rows={}", output_name, table, len(df))
         if write.get("transport") == "insert_file":
             self._insert_file(client, table, prepared, write)

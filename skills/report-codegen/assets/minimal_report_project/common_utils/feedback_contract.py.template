@@ -1,0 +1,53 @@
+"""Feedback is preserved by confirmed keys; watermark commits follow completed writes."""
+
+
+def after_cursor(rows, *, time_column, key_column, cursor):
+    """Use only for a confirmed timestamp + stable-key cursor with comparable types."""
+    columns = [time_column, key_column]
+    if time_column == key_column or not set(columns).issubset(rows.columns):
+        raise ValueError('cursor requires distinct time and stable-key columns')
+    if rows[columns].isna().any().any() or rows.duplicated(columns).any():
+        raise ValueError('cursor values must be non-null and unique')
+    ordered = rows.sort_values(columns, kind='stable')
+    if cursor is None:
+        return ordered.copy()
+    if not isinstance(cursor, (tuple, list)) or len(cursor) != 2:
+        raise ValueError('cursor must contain time and stable key')
+    timestamp, key = cursor
+    return ordered.loc[(ordered[time_column] > timestamp) | ((ordered[time_column] == timestamp) & (ordered[key_column] > key))].copy()
+
+
+def merge_feedback(current, existing, *, keys, feedback_columns):
+    if not keys or not feedback_columns or set(keys) & set(feedback_columns):
+        raise ValueError('declare distinct business keys and feedback columns')
+    for frame in (current, existing):
+        if not set(keys).issubset(frame.columns) or frame[keys].isna().any().any() or frame.duplicated(keys).any():
+            raise ValueError('feedback business keys missing, null, or duplicated')
+    if not set(feedback_columns).issubset(existing.columns):
+        raise ValueError('existing feedback columns missing')
+    result = current.copy().set_index(keys)
+    old = existing.set_index(keys)
+    for column in feedback_columns:
+        if column not in result:
+            result[column] = None
+        matched = result.index.isin(old.index)
+        result.loc[matched, column] = old.reindex(result.index[matched])[column].to_numpy()
+    return result.reset_index()
+
+
+def apply_feedback_updates(rows, *, keys, allowed_columns, writer, commit, candidate, dry_run=False):
+    if not keys or not allowed_columns or set(keys) & set(allowed_columns):
+        raise ValueError('invalid feedback update contract')
+    if not set(keys + allowed_columns).issubset(rows.columns):
+        raise ValueError('feedback update columns missing')
+    if rows[keys].isna().any().any() or rows.duplicated(keys).any():
+        raise ValueError('feedback update keys must be non-null and unique')
+    result = {'watermark_candidate': candidate, 'watermark_advanced': False}
+    if dry_run:
+        return result
+    # Writer owns mutation completion, not merely asynchronous submission.
+    if writer(rows.loc[:, keys + allowed_columns].copy()) != 'completed':
+        raise RuntimeError('feedback writes not confirmed complete')
+    commit(candidate)
+    result['watermark_advanced'] = True
+    return result

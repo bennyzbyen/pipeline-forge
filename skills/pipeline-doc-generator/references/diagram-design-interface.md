@@ -14,7 +14,7 @@ python scripts/diagram_design_bridge.py --facts <facts.json> --svg diagram_desig
 python scripts/render_pipeline_doc.py --facts <facts.json> --out-dir <project-dir> --format all
 ```
 
-For a report Catalog diagram, use `--slot catalog`. Both data_flow and enabled report catalog slots require reviewed Diagram Design bindings. Missing bindings stop generation before existing documents are overwritten. Facts-only preflight can run before authoring; complete bundle validation requires all bindings.
+Only the `data_flow` slot is required. Do not author or emit a Catalog registration flow; retain legacy `catalog` bindings only as audit history. Missing bindings stop generation before existing documents are overwritten. Facts-only preflight can run before authoring; complete bundle validation requires all bindings.
 
 Binding checks semantic coverage and stamps the current flow hash. It records `render_preferences.diagrams.<slot> = {engine: "diagram-design", svg: "relative/path.svg", sha256: "..."}`. Normal rendering verifies that the asset bytes and flow hash still match; it does not redraw or overwrite the approved design. Changed flow facts require updating and reviewing the diagram before rebinding. Do not rebind a stale diagram just to suppress a failure. Missing, modified, or unsupported SVGs fail rather than falling back. Changes to unrelated prose/tables reuse the approved diagram.
 
