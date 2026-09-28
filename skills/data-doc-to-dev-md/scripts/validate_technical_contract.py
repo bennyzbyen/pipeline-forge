@@ -11,6 +11,7 @@ from pathlib import Path
 from technical_contract import validate_contract
 from code_unit_contract import validate_code_unit_contract
 from knowledge_reference_contract import validate_knowledge_references
+from practice_decision_contract import validate_practice_decisions
 
 
 def main() -> int:
@@ -25,6 +26,7 @@ def main() -> int:
         raise ValueError("structured facts must contain an object at codegen_contract")
     result = validate_contract(contract)
     knowledge_result = validate_knowledge_references(payload)
+    knowledge_result['errors'].extend(validate_practice_decisions(payload)['errors'])
     result['knowledge_references'] = knowledge_result
     for message in knowledge_result['errors']:
         result['errors'].append({'code': 'KNOWLEDGE_REFERENCE_INVALID', 'severity': 'ERROR',

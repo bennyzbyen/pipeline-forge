@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0 - 2026-09-28
+
+- Discover optional reviewed practices and require current-project adoption evidence without adding runtime dependencies.
+- Keep comparison/version limits, audit frozen evidence and report/artifact hashes, and preserve plugin-only operation.
+
 ## 2.1.0 - 2026-09-28
 
 - Bundle nine public generic knowledge rules with reproducible integrity checks; private Vaults and original-source folders are optional.
