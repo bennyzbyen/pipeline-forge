@@ -19,6 +19,12 @@ PipelineForge 是一套带新手统一入口的数据管线开发工具集合。
 
 ## 安装
 
+### 推荐实践与验证
+
+配置可选的私有知识库后，检索会自动关联知识卡的推荐实践，并保留项目、版本与角色限制。采用实践时，需要记录当前需求依据、适用条件及本项目验证结果；历史合成测试不能替代当前项目验证。证据、验证报告或代码发生变化时，审计会要求重新检查。未配置私有知识库时，仍可使用插件内置通用规则，无需安装 Obsidian，也不新增服务依赖。详见[推荐实践使用说明](skills/pipeline-forge-guide/references/recommended-practices.md)。
+
+### 插件市场安装
+
 像 Diagram Design 一样添加 GitHub 仓库市场（跟随默认分支）：
 
 ```powershell
@@ -28,7 +34,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 如果需要锁定已发布的稳定版本，改用：
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.1.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.2.0
 ```
 
 然后在支持的入口完成安装：
@@ -87,4 +93,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.1.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.2.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
