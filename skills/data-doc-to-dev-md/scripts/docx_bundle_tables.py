@@ -87,6 +87,8 @@ def header_score(row: list[str]) -> int:
     normalized = {normalize_header(value) for value in row if compact_text(str(value or ""))}
     if not normalized:
         return 0
+    if normalize_header('字段名') in normalized and any(normalize_header(name) in normalized for name in ('类型', '字段类型', '数据类型')):
+        return 100
     if normalize_header("字段key") in normalized and (
         normalize_header("字段名称") in normalized or normalize_header("字段名") in normalized
     ):
@@ -260,7 +262,7 @@ def best_context_match(context: str, names: list[str]) -> str:
 def first_fields(rows: list[dict[str, str]], limit: int = 12) -> list[str]:
     values: list[str] = []
     for row in rows:
-        field = cell_value(row, "Key", "字段 key", "字段key", "字段名称", "字段", "Column", "Field")
+        field = cell_value(row, "Key", "字段 key", "字段key", "字段名", "字段名称", "字段", "Column", "Field")
         if field and field not in values:
             values.append(field)
         if len(values) >= limit:

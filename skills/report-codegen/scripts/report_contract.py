@@ -138,8 +138,8 @@ def validate_v2_write_safety(
     column_types = string_list(write.get("column_types"))
     if len(column_types) != len(columns) or not all(column_types):
         add_issue(blockers, "write_types_incomplete", f"{path}.column_types", "every ordered column needs an explicit target type")
-    if clean_text(write.get("empty_output_policy")) != "block_destructive_replace":
-        add_issue(blockers, "unsafe_empty_output_policy", f"{path}.empty_output_policy", "empty output must not trigger destructive replacement")
+    if clean_text(write.get("empty_output_policy")) not in {"block_destructive_replace", "skip", "reject", "clear_slice"}:
+        add_issue(blockers, "unsafe_empty_output_policy", f"{path}.empty_output_policy", "declare skip, reject, or confirmed clear_slice")
     transport = clean_text(write.get("transport"))
     if transport not in {"insert_df", "insert_file"}:
         add_issue(blockers, "unsupported_write_transport", f"{path}.transport", "transport must be insert_df or insert_file")
@@ -428,18 +428,27 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
             add_issue(errors, "unsafe_write_table", f"{path}.table", "write table must be a safe database.table identifier")
         if mode == "replace_where":
             predicate = write.get("predicate")
-            if not isinstance(predicate, Mapping):
-                add_issue(errors, "missing_replace_predicate", path, "replace_where requires predicate")
-            else:
+            predicates = predicate.get("all") if isinstance(predicate, Mapping) and "all" in predicate else [predicate]
+            if not isinstance(predicates, list) or not predicates:
+                predicates = [None]
+            for predicate in predicates:
+                if not isinstance(predicate, Mapping):
+                    add_issue(errors, "missing_replace_predicate", path, "replace_where requires non-empty equality predicates")
+                    continue
+                if set(predicate) != {"column", "value_from"}:
+                    add_issue(errors, "invalid_replace_predicate", path, "only column/value_from equalities are supported")
                 predicate_column = clean_text(predicate.get("column"))
-                if not predicate_column:
-                    add_issue(errors, "missing_predicate_column", path, "replace predicate column is required")
-                elif not SQL_IDENTIFIER_RE.fullmatch(predicate_column):
+                if not predicate_column or not SQL_IDENTIFIER_RE.fullmatch(predicate_column):
                     add_issue(errors, "unsafe_predicate_column", path, "replace predicate column must be a safe identifier")
-                if not clean_text(predicate.get("value_from")):
-                    add_issue(errors, "missing_predicate_value", path, "replace predicate value_from is required")
-                elif not valid_value_from(predicate.get("value_from")):
+                if not valid_value_from(predicate.get("value_from")):
                     add_issue(errors, "invalid_value_from", path, "write value_from must use time_range.<key> or params.<key>")
+            if isinstance(write.get("predicate"), Mapping) and "all" in write["predicate"] and set(write["predicate"]) != {"all"}:
+                add_issue(errors, "invalid_replace_predicate", path, "all cannot be combined with other predicate keys")
+        policy = clean_text(write.get("empty_output_policy", "block_destructive_replace"))
+        if policy not in {"block_destructive_replace", "skip", "reject", "clear_slice"}:
+            add_issue(errors, "unsafe_empty_output_policy", path, "unknown empty output policy")
+        if policy == "clear_slice" and (mode != "replace_where" or write.get("empty_snapshot_confirmed") is not True):
+            add_issue(errors, "unconfirmed_empty_snapshot", path, "clear_slice requires replace_where and confirmed empty snapshot semantics")
         if version == 2:
             validate_v2_write_safety(write, expected_outputs.get(clean_text(output_name), []), path, deployment_blockers)
 

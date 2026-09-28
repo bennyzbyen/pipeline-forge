@@ -174,6 +174,8 @@ def build_field_contracts(facts: Mapping[str, Any]) -> list[dict[str, Any]]:
                 or field.get("dms_order_logic")
             )
             status = "confirmed" if target_field and (source_field or logic) else "needs_confirmation"
+            if mapping.get('requires_confirmation') or mapping.get('target_requires_confirmation'):
+                status = 'needs_confirmation'
             contracts.append(
                 {
                     "id": f"field_{mapping_index:03d}_{field_index:03d}",
@@ -564,6 +566,12 @@ def build_contract_v2(facts: Mapping[str, Any], base_contract: Mapping[str, Any]
     conflicts = detect_contract_conflicts(facts, fields, rules)
     blockers = unique(base_contract.get("blockers", []) or [])
     open_questions = [dict(item) for item in base_contract.get("open_questions", []) or []]
+    for mapping in list(facts.get('field_dictionaries') or []) + list(facts.get('report_field_mappings') or []):
+        if mapping.get('requires_confirmation') or mapping.get('target_requires_confirmation'):
+            question_id = stable_question_id('CG', 'FIELD-BINDING', mapping.get('source_document'), mapping.get('csv'))
+            message = 'Confirm field dictionary target binding: ' + str(mapping.get('csv') or mapping.get('sheet') or 'unbound dictionary')
+            add_contract_question(open_questions, question_id, 'blocking_codegen', message)
+            blockers.append(f'[{question_id}] {message}')
     for conflict in conflicts:
         question_id = stable_question_id(
             "CG",
@@ -627,6 +635,6 @@ def build_contract_v2(facts: Mapping[str, Any], base_contract: Mapping[str, Any]
             path=validation_issue.get("path"),
         )
     contract["open_questions"] = open_questions
-    contract["ready_for_codegen"] = bool(base_contract.get("ready_for_codegen")) and not validation["errors"]
+    contract["ready_for_codegen"] = bool(base_contract.get("ready_for_codegen")) and not validation["errors"] and not blockers
     contract["validation_result"] = validation
     return contract

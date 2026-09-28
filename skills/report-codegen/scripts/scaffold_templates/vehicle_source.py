@@ -13,6 +13,7 @@ import tempfile
 from typing import Dict, List, Optional, Tuple
 
 from common_utils.all_modules import logger, pd
+from common_utils.delivery_contract import read_all
 from gateway.client import GateWayClient
 from params_configs.col_config import fs_source_config, hbase_export_cols, hbase_export_range
 from params_configs.db_config import app_key, app_secret, env, fs_root_dir
@@ -142,6 +143,14 @@ class DataSource:
         return time_range.get(str(key), str(key))
 
     def _read_hbase_with_range(self, table_name: str, columns: List[str], fetch_range: dict, time_range: dict) -> pd.DataFrame:
+        if table_name == 'l0_dtr_order.t5_eo_erp_sales_order_line':
+            reader = self.params.get('indexed_order_reader')
+            if not callable(reader) or not time_range.get('p_start_date') or not time_range.get('p_end_date'):
+                raise ValueError('realtime orders require indexed_order_reader and resolved date bounds')
+            frame = reader(table_name, columns, time_range['p_start_date'], time_range['p_end_date'])
+            if frame is None or not set(columns).issubset(frame.columns):
+                raise ValueError('indexed order source is unavailable or missing columns')
+            return frame.loc[:, columns].copy()
         start_key = fetch_range.get("start_time")
         end_key = fetch_range.get("end_time")
         row_start = self._range_value(time_range, start_key)
@@ -183,7 +192,7 @@ class DataSource:
             return pd.read_csv(local_path, sep="\\t", dtype=str, usecols=columns, engine="c", low_memory=False)
         except Exception as exc:
             logger.error("Failed to process FS file {}: {}", fs_path, exc)
-            return None
+            raise
         finally:
             if os.path.exists(local_path):
                 os.remove(local_path)
@@ -216,9 +225,10 @@ class DataSource:
             fs_dir = self._render_fs_path(config.get("path", ""), time_range)
             logger.info("Reading FS key={} path={} columns={}", key, fs_dir, len(columns))
             if hasattr(fs_client, "exists") and not fs_client.exists(fs_dir):
-                logger.warning("FS path does not exist: {}", fs_dir)
-                df_fs_map[key] = pd.DataFrame(columns=columns)
-                continue
+                if config.get('optional') is True:
+                    df_fs_map[key] = pd.DataFrame(columns=columns)
+                    continue
+                raise FileNotFoundError('required FS source is unavailable: ' + key)
             with tempfile.TemporaryDirectory() as tmp_dir:
                 files = fs_client.listdir(fs_dir)
                 frames = []
@@ -235,8 +245,10 @@ class DataSource:
         logger.info("component_start component=vehicle layer=data_source")
         calendar_df, time_range = self._read_calendar()
         source_data: Dict[str, pd.DataFrame] = {}
-        source_data.update(self.fetch_hbase_tables(time_range, calendar_df))
-        source_data.update(self.fetch_fs_data(time_range))
+        batches = read_all({'hbase': lambda: self.fetch_hbase_tables(time_range, calendar_df),
+                            'fs': lambda: self.fetch_fs_data(time_range)})
+        source_data.update(batches['hbase'])
+        source_data.update(batches['fs'])
         return source_data, time_range
 '''
     (target / "data_utils" / "data_source.py").write_text(content, encoding="utf-8")

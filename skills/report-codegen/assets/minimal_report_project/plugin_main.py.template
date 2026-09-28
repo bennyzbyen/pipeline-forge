@@ -38,17 +38,10 @@ def main(params: dict):
     return ReportPipeline(params).execute()
 
 
-def _load_platform_params(params_path: str):
-    with open(params_path, "rb") as handle:
-        execute_params = json.load(handle)
-
-    algorithm_io_mode = execute_params.get("algorithm_io_mode")
-    result_path = params_path
-    if algorithm_io_mode == "SINGLE":
-        body_params = execute_params.get("params", {}).get("body", {}).get("params", "{}")
-        return json.loads(body_params), result_path
-
-    return execute_params, "./result.txt"
+def _load_platform_params(params_path: str, profile=None):
+    from common_utils.project_contracts import load_entry
+    from entry_contract import ENTRY_PROFILE
+    return load_entry(params_path, ENTRY_PROFILE if profile is None else profile)
 
 
 if __name__ == "__main__":

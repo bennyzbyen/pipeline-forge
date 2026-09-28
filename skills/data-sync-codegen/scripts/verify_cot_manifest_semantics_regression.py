@@ -29,6 +29,7 @@ def facts_for(table_name: str, fields: list[str]) -> Dict[str, Any]:
                 "source_range": "2026P01~",
                 "source_hbase_table": f"l2_fixture.{table_name}",
                 "clickhouse_table": f"cot_report_2026.{table_name}",
+                "rowkey_contract": {"confirmed": True, "prefix": "last_char", "columns": ['period', 'code'] if table_name.endswith('_p') else ['id'], "evidence": "synthetic fixture contract"},
             }
         ],
         "field_dictionaries": [
@@ -85,7 +86,6 @@ def run_regression() -> Dict[str, Any]:
         assert good["status"] == "passed", good
         assert good["deployment_status"] == "review_required", good
         assert {item["code"] for item in good["deployment_blockers"]} >= {
-            "rowkey_unconfirmed",
             "legacy_codegen_contract_v1",
         }, good
         assert good["checked_table_count"] == 1, good
@@ -94,12 +94,18 @@ def run_regression() -> Dict[str, Any]:
         assert good_manifest["tables"][0]["runtime_enabled"] is True, good_manifest
         assert good_manifest["tables"][0]["contract_issues"] == [], good_manifest
 
+        inferred_facts = facts_for('fixture_report_p', ['id', 'inksaa_last_modified_timestamp', 'period', 'code'])
+        inferred_facts['cot_report_tables'][0].pop('rowkey_contract')
+        inferred_project = root / 'inferred_project'
+        generate(inferred_facts, inferred_project)
+        inferred = json.loads((inferred_project / 'cot_sync_manifest.json').read_text(encoding='utf-8'))['tables'][0]
+        assert inferred['runtime_enabled'] is False and 'rowkey_evidence_missing' in inferred['contract_issues']
+
         blocked_project = root / "blocked_project"
+        historical = facts_for('freshness_report', ['id', 'inksaa_last_modified_timestamp', 'store_code', 'amount'])
+        historical['cot_historical_profile'] = {'name': 'cot_2026', 'confirmed': True, 'evidence': 'synthetic historical classification fixture'}
         generate(
-            facts_for(
-                "freshness_report",
-                ["id", "inksaa_last_modified_timestamp", "store_code", "amount"],
-            ),
+            historical,
             blocked_project,
         )
         blocked = validate_project(blocked_project)
@@ -113,8 +119,9 @@ def run_regression() -> Dict[str, Any]:
 
     return {
         "status": "passed",
-        "case_count": 2,
+        "case_count": 3,
         "cases": [
+            {"case": "inferred_rowkey_runtime_guard", "status": "passed"},
             {"case": "valid_all_table_contract", "status": "passed", "checked_tables": 1},
             {
                 "case": "invalid_period_contract_runtime_guard",

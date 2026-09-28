@@ -388,6 +388,7 @@ def _make_unit(
         ),
         "covered_tables": covered_tables,
         "execution_contract": contract,
+        **({"implementation_contract": copy.deepcopy(mapping["implementation_contract"])} if "implementation_contract" in mapping else {}),
         "state": copy.deepcopy(contract.get("state") or {}),
         "retry": copy.deepcopy(contract.get("retry") or {}),
         "rerun": copy.deepcopy(contract.get("rerun") or {}),
@@ -653,6 +654,7 @@ def confirm_code_unit_plan(
             "split_reason": unit["split_reason"],
             "depends_on": unit["depends_on"],
             "ready_for_codegen": unit["readiness"]["ready_for_codegen"],
+            **({"implementation_contract": copy.deepcopy(unit["implementation_contract"])} if "implementation_contract" in unit else {}),
         }
         for unit in confirmed_units
     ]

@@ -36,7 +36,10 @@ def run_report_policy(root):
     assert len(data["document"]["release_history"]) == 1
     assert data["document"]["release_history"][0]["author"] == "张本彦"
     assert data["document"]["release_history"][0]["version"] == "0.0.1"
-    markdown = render_markdown(data, "flow.svg")
+    markdown = render_markdown(data, "flow.svg", "obsolete_catalog.svg")
+    assert "obsolete_catalog.svg" not in markdown and "登记 Data Catalog" not in markdown
+    assert "4.2.4 检查 Catalog Basic Info" in markdown
+    assert "4.2.5 登记 Data Dictionary" in markdown and "4.2.6 登记 Data Storage" in markdown
     assert "链接信息" not in markdown and "../model.md" not in markdown
     assert "源字段/计算规则" not in markdown and "数据样例" not in markdown
     assert "unique_source_key" in markdown and "直接取值" in markdown

@@ -1,8 +1,33 @@
 # Changelog
 
-**Unreleased local changes**
+## 2.1.0 - 2026-09-28
+
+- Bundle nine public generic knowledge rules with reproducible integrity checks; private Vaults and original-source folders are optional.
+- Support built-in search, full reads and reference audits after relocation, with feature-specific dependency checks and isolated plugin-only regressions.
+
+### Knowledge governance and workflow contracts
+
+- Add versioned knowledge adoption references, full-note heading/block reads, stable-ID inventories, health diagnostics and selective unit/test invalidation. Preserve legacy handoffs and private read-only vault boundaries. Align COT environment and validation guidance and isolate historical COT 2026 observations from general rules. Deterministic checks do not claim live model or production success.
 
 - Match Diagram Design’s repository marketplace layout with a same-checkout local source. Document default-branch and pinned installation, marketplace refresh, local clones, and migration from Personal; preserve relative source semantics across version bumps.
+
+- Default knowledge CLI output to constraint-preserving summaries with exact-ID evidence expansion; load role context once per query and make original-source drift audits explicit. Add optional strict primary project/skill scope while retaining linked versions, plus retrieval efficiency and relevance regressions.
+
+- Prefer immutable redacted evidence snapshots in optional knowledge lookup. Original-source drift is reported separately; vault-only relocation remains verifiable. Add capture, relink, portable validation and corruption/deletion regressions; private snapshots remain outside plugin packages.
+
+- Add reviewed producer/consumer/activity/origin context to optional knowledge lookup. Keep stopped and unreviewed archived evidence comparison-only; mark FMOS and older QAS as generated-project feedback.
+- Separate business validation from framework choice, preserve implementation choices through code-unit confirmation and report planning, and refuse bundled scaffolding for explicit native/reference layouts. Add bounded-contract and preservation regressions.
+
+- Implement eight P1 work packages: contract-selected entry profiles, business-calendar and period helpers, dependency completion guards, O2O and report formula examples, Decimal/streaming/delete-audit primitives, strict file selection and generated-code hazard checks.
+
+- Add optional local knowledge lookup across all eight skills, including source hashes, related-version comparisons and evidence citations. Missing or unavailable knowledge falls back to the existing workflow.
+
+- Add target-specific empty-output policies and composite replacement predicates, with explicit confirmation for clearing empty snapshots.
+- Guard inferred COT rowkeys and field-dictionary bindings; report extraction coverage without treating missing recognition as missing business facts.
+- Add bounded readiness, joined source-failure propagation, feedback preservation/commit guards, and immutable snapshot delivery primitives with offline regressions.
+- Separate legacy and realtime vehicle profiles, including source/field consistency checks and an explicit indexed-reader adapter contract.
+
+These changes are locally validated; deployment adapters and production runs remain project-specific.
 
 ## 2.0.3 - 2026-09-10
 

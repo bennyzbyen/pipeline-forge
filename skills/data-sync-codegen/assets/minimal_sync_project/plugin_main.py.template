@@ -9,6 +9,7 @@ from cot_config.plugin_config import with_period_tables as WITH_PERIOD
 from cot_config.plugin_config import without_period_tables as WITHOUT_PERIOD
 from sync_with_period import COT_REPORT_WITH_P
 from sync_without_period import COT_REPORT_WITHOUT_P
+from delivery_contract import readiness_gate
 
 
 def _apply_table_defaults(params: dict) -> dict:
@@ -65,12 +66,19 @@ def calc_single(params: dict):
         raise ValueError("source_informations.mysql_table is required")
 
     defaults = table_configs.get(table_name, {})
+    if table_name not in WITH_PERIOD and table_name not in WITHOUT_PERIOD:
+        raise ValueError(f'table is not configured in with_period_tables or without_period_tables: {table_name}')
     if defaults.get("runtime_enabled") is False:
         issues = defaults.get("contract_issues") or ["unresolved table contract"]
         raise ValueError(
             f"table runtime is disabled until contract issues are resolved: {table_name}: "
             + ", ".join(str(item) for item in issues)
         )
+
+    gate = readiness_gate(params.get('upstream_readiness'), manual=bool(source_info.get('period')),
+                          probe=params.get('upstream_probe'), notify=params.get('upstream_notify'))
+    if gate['status'] == 'skipped_upstream_timeout':
+        return {'metrics': [gate], 'status': gate['status'], 'watermark_advanced': False}
 
     # Security: log an allowlisted dispatch summary, never the raw runtime payload.
     logger.info(
@@ -91,17 +99,10 @@ def calc_single(params: dict):
     raise ValueError(f"table is not configured in with_period_tables or without_period_tables: {table_name}")
 
 
-def _load_platform_params(params_path: str):
-    with open(params_path, "rb") as handle:
-        execute_params = json.load(handle)
-
-    algorithm_io_mode = execute_params.get("algorithm_io_mode")
-    result_path = params_path
-    if algorithm_io_mode == "SINGLE":
-        body_params = execute_params.get("params", {}).get("body", {}).get("params", "{}")
-        return json.loads(body_params), result_path
-
-    return execute_params, "./result.txt"
+def _load_platform_params(params_path: str, profile=None):
+    from project_contracts import load_entry
+    from entry_contract import ENTRY_PROFILE
+    return load_entry(params_path, ENTRY_PROFILE if profile is None else profile)
 
 
 if __name__ == "__main__":

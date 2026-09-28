@@ -92,6 +92,8 @@ def markdown_table(rows: list[dict], columns: list[tuple[str, str]], limit: int 
 
 def facts_summary_lines(facts: dict) -> list[str]:
     lines: list[str] = []
+    for item in facts.get('extraction_coverage', []):
+        lines.append(f"Extraction coverage {item['source_doc_name']}: {item['recognized_counts']}; tables without tracked facts: {len(item['tables_without_tracked_facts'])}. Zero means not recognized, not business absence.")
     if facts.get("documents"):
         lines.append(f"Documents merged: {len(facts['documents'])}.")
     if facts.get("cot_report_tables"):

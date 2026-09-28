@@ -28,7 +28,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 如果需要锁定已发布的稳定版本，改用：
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.0.3
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.1.0
 ```
 
 然后在支持的入口完成安装：
@@ -87,4 +87,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.0.3`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.1.0`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。

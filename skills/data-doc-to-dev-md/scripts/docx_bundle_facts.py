@@ -465,6 +465,7 @@ def _extract_schedule_or_field_table(headers: list[str], rows: list[dict[str, st
 
     if (
         "字段" in headers
+        or "字段名" in headers
         or "字段名称" in headers
         or "Key" in headers
         or "Column" in headers
@@ -489,6 +490,7 @@ def _extract_schedule_or_field_table(headers: list[str], rows: list[dict[str, st
 def _map_cot_field_dictionaries(facts: dict, field_dicts: list[dict]) -> None:
     util_names = [item["name"] for item in facts["data_utilizations"]]
     for index, item in enumerate(field_dicts):
+        item['requires_confirmation'] = True
         context_match = best_context_match(str(item.get("source_context", "")), util_names)
         if context_match:
             item["inferred_data_utilization"] = context_match
@@ -527,6 +529,8 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
     report_targets = facts.get("report_targets", [])
     report_physical_targets = facts.get("report_physical_targets", []) or facts.get("report_clickhouse_targets", [])
     for index, item in enumerate(report_field_dicts):
+        previously_unconfirmed = bool(item.get('requires_confirmation') or item.get('target_requires_confirmation'))
+        item['requires_confirmation'] = True
         declared_key = normalized_table_key(item.get("declared_table", ""))
         matched_target = None
         matched_physical_target = None
@@ -550,6 +554,7 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
             )
 
         if matched_target:
+            item['requires_confirmation'] = previously_unconfirmed or bool(matched_target.get('requires_confirmation'))
             item["inferred_target_name"] = matched_target.get("target_name", "")
             item["inferred_target_description"] = matched_target.get("description", "")
             item["inferred_physical_table"] = matched_target.get("physical_table", "")
@@ -557,6 +562,7 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
                 f"{item['csv']} is mapped to {item['inferred_target_name']} by declared table {item.get('declared_table', '')}."
             )
         elif matched_physical_target:
+            item['requires_confirmation'] = previously_unconfirmed or bool(matched_physical_target.get('requires_confirmation'))
             item["inferred_target_name"] = matched_physical_target.get("table_name", "") or matched_physical_target.get("table", "")
             item["inferred_target_description"] = matched_physical_target.get("description", "")
             item["inferred_physical_table"] = matched_physical_target.get("table", "")
@@ -702,4 +708,17 @@ def build_structured_facts(
     _infer_sources_from_field_mappings(facts)
     _detect_field_rule_conflicts(facts)
     infer_bysku_report_component_hint(facts, paragraphs)
+    tracked = ('cot_report_tables', 'field_dictionaries', 'report_sources', 'report_physical_targets', 'report_field_mappings')
+    documents = sorted({(s.source_doc_index, s.source_doc_name) for s in sheet_summaries} |
+                       {(p.source_doc_index, p.source_doc_name) for p in (paragraphs or [])})
+    facts['extraction_coverage'] = []
+    for index, name in documents:
+        counts = {key: sum(row.get('source_doc_index') == index for row in facts[key]) for key in tracked}
+        recognized = {row.get('source_csv') for key in tracked for row in facts[key] if row.get('source_doc_index') == index}
+        unrecognized = [s.csv_path.name for s in sheet_summaries if s.source_doc_index == index and s.csv_path.name not in recognized]
+        facts['extraction_coverage'].append({'source_doc_index': index, 'source_doc_name': name,
+                                             'recognized_counts': counts, 'tables_without_tracked_facts': unrecognized,
+                                             'zero_means': 'not_recognized_not_business_absent'})
+    facts['coverage_comparison'] = {'status': 'differences_require_review' if len({str(x['recognized_counts']) for x in facts['extraction_coverage']}) > 1 else 'counts_equal_or_single_source',
+                                    'note': 'Counts compare extraction coverage only; different document roles/formats are not business conflicts by themselves.'}
     return facts

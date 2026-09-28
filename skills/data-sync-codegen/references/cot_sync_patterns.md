@@ -122,9 +122,9 @@ When `structured_facts.json` exists, use it to create or review config:
 
 Generation must remain portable. The script may be developed and regression-tested against workspace samples, but generated projects must only depend on their local code and runtime parameters, not on `skill_lab/prod_code_sample`.
 
-## Blind Generation Defaults
+## Unconfirmed Mapping Candidates
 
-Use these defaults before inspecting production samples:
+Use these only as review candidates when direct task evidence is absent. None confirms a runtime mapping, database, timestamp, period mode or rowkey. Record unresolved candidates in questions.md and keep the affected table runtime-disabled until its contract is established:
 
 - Source MySQL table: ClickHouse table basename from the COT matrix.
 - HBase target: `source_hbase_table` from the COT matrix.
@@ -133,27 +133,18 @@ Use these defaults before inspecting production samples:
 - Without-period classification: execution-report tables without `_p` period naming.
 - Do not classify a table as with-period only because a field dictionary contains `period`; execution reports may keep a period field while still using timestamp-only incremental sync.
 - Update timestamp: prefer `inksaa_last_modified_timestamp`, then `last_update_timestamp`, then common update-time columns.
-- With-period rowkey: default to `period` plus the best available business code column (`code`, `store_code`, `main_store_code`, etc.).
-- Without-period rowkey: default to `id` or `inksaa_id`.
+- With-period rowkey candidates may suggest period plus a business code; suggestions are not confirmed runtime rules.
+- Without-period candidates may suggest id or inksaa_id; require an evidence-backed rowkey_contract before enabling runtime.
 - Source database group: with-period tables default to `report_ps_p`; execution-style without-period tables default to `store_report_generator`.
 - Any rowkey, source database, or timestamp inferred without direct document evidence must be listed in generated `questions.md`.
 
-## COT 2026 Production-Calibrated Exceptions
+## COT 2026 Historical Exceptions
 
-Keep these as config-generation rules, not control-flow branches:
-
-- `supervisor_assist_visit` is generated as `v_supervisor_assist_visit_2026`.
-- `rpt_exe_sales_assess_channel` is generated as `rpt_exe_sales_assess_channel_2022`.
-- `rpt_exe_visit_planning_execute_rate` remains without-period even though its field dictionary contains `period`.
-- `supervisor_remake_remark`, `v_supervisor_assist_visit_2026`, `rpt_exe_sales_assess_channel_2022`, and `freshness_report` are with-period execution-family exceptions.
-- `cot_gps_tracking_report`, `cot_gps_tracking_report_by_week`, `supervisor_remake_remark`, and `v_supervisor_assist_visit_2026` use the `store_report` source group.
-- `rpt_exe_store_past_will` and `wechat_authorization_info` use the legacy `cot_report` ClickHouse database.
-- `wechat_authorization_info` truncates ClickHouse and HBase before insert.
-- Runtime `clickhouse_table` params should use bare table names; database prefixes are handled by config exceptions.
+These observations apply only to the captured COT 2026 sample. They are not defaults for other years, projects or environments. Read `cot_2026_historical_exceptions.md` only when comparing that sample with the current task. Adopt a mapping or destructive write mode only with explicit current-task contract evidence.
 
 ## With-Period Sync
 
-Use when the source table has a period column and data can be refreshed by period.
+Use when the confirmed source contract has a period column and data can be refreshed by period.
 
 Default flow:
 
@@ -162,7 +153,7 @@ Default flow:
 3. Export source rows into local CSV chunks.
 4. Insert ClickHouse if configured.
 5. Insert HBase if configured.
-6. Update timestamp only for incremental non-manual reruns.
+6. Update timestamp only for incremental non-manual reruns after all required targets succeed.
 7. Clean temporary local files.
 
 Production-compatible sync-list logic:
@@ -209,7 +200,7 @@ Production-compatible behavior:
 
 - Use `insert_file` for file-based bulk insert when matching the COT sample.
 - Delete by period or configured partition before inserting when refresh semantics require replacement.
-- Keep `cluster` configurable; empty in UAT and `ON CLUSTER ...` in PROD.
+- Read `cluster` and connection mode from the confirmed environment connection matrix. UAT/QA/PROD labels never imply direct/Gateway mode or an `ON CLUSTER` clause; keep undeclared values unresolved.
 - With-period full mode: drop the target period partition before insert.
 - With-period delta mode: delete rows by `code_column` and `period_column` for only the exported store/code set, then insert.
 - Without-period mode: delete by `key_column` for exported rows, unless the table is configured in `ck_truncate_list`.
@@ -240,12 +231,17 @@ Production-compatible behavior:
 
 ## Verification
 
-Local verification is limited to:
+Required local verification for the generated scaffold:
 
 - `python -m py_compile` for generated `.py` files
+- `scripts/verify_cot_manifest_semantics.py --project-dir <generated-project>` for every table, fields and rowkey contract
+- `scripts/verify_codegen_observability.py --project-dir <generated-project>` for logging and metrics
 - `scripts/verify_cot_runtime_semantics.py --project-dir <generated-project>` for generated COT scaffold runtime semantics
+- `scripts/verify_generated_safety.py --project-dir <generated-project>` for generated-code safety
 - JSON parse check for `params.example.json`
 - Manual scan that generated examples/templates did not introduce real credentials unexpectedly
+
+Use `--strict-deployment` on the manifest verifier only for deployment review. For adopted knowledge, also validate its versioned references as described in `../../pipeline-forge-guide/references/knowledge-assistance.md`. Local/fake-runtime success does not establish production behavior.
 
 Deployment verification should inspect logs for:
 

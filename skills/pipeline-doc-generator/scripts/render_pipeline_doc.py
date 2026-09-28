@@ -304,18 +304,15 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
         sections.extend(["", "### 5.2.4 Catalog Basic Info", ""])
         sections.append(catalog_basic_info_table(catalog) if catalog.get("enabled") else "不适用（已确认）")
     else:
-        sections.extend(["", "### 4.2.4 登记 Data Catalog", ""])
         if catalog.get("enabled"):
-            if catalog_svg_rel:
-                sections.append(f"![Data Catalog 登记流程]({catalog_svg_rel})")
-            sections.extend(["", "### 4.2.5 检查 Catalog Basic Info", ""])
+            sections.extend(["", "### 4.2.4 检查 Catalog Basic Info", ""])
             sections.append(catalog_basic_info_table(catalog))
-            sections.extend(["", "### 4.2.6 登记 Data Dictionary", ""])
+            sections.extend(["", "### 4.2.5 登记 Data Dictionary", ""])
             sections.append(markdown_table(["数据项", "Column", "Type"], [[row.get("data_item", ""), target_reference(facts, row), target_reference(facts, row)] for row in catalog.get("dictionary") or []]))
-            sections.extend(["", "### 4.2.7 登记 Data Storage", ""])
+            sections.extend(["", "### 4.2.6 登记 Data Storage", ""])
             sections.append(markdown_table(["数据项", "存放地", "Field&Type", "Limit（Sample Data）"], [[row.get("data_item", ""), row.get("location", ""), target_reference(facts, row), row.get("limit", "")] for row in catalog.get("storage") or []]))
         else:
-            sections.extend(["不适用（已确认）", "", "### 4.2.5 检查 Catalog Basic Info", "", "不适用（已确认）"])
+            sections.extend(["", "### 4.2.4 检查 Catalog Basic Info", "", "不适用（已确认）"])
     return "\n".join(str(item) for item in sections)
 
 
@@ -511,49 +508,56 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
     document_link = f'<a class="toc-document-title" href="#{document_heading[2]}">{title_label}</a>' if document_heading else f'<p class="toc-document-title">{title_label}</p>'
     toc_items = [f'<li class="level-{level}"><a href="#{anchor}">{toc_markup(text)}</a></li>' for level, text, anchor in chapter_headings if level <= 3]
     css = """
-    :root{color-scheme:light;--ink:#0f172a;--muted:#475569;--line:#cbd5e1;--accent:#2563eb;--paper:#fff;--wash:#f8fafc;--toc-width:320px;--layout-width:1720px}
-    *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font-family:"Microsoft YaHei","Segoe UI",Arial,sans-serif;line-height:1.65}
+    :root{color-scheme:light;--ink:#0f172a;--muted:#475569;--line:#cbd5e1;--accent:#2563eb;--paper:#fff;--wash:#f8fafc;--toc-width:320px;--rail-width:56px;--layout-width:1720px}
+    *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif;line-height:1.65}
     .toc-toggle{position:fixed;top:24px;left:24px;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-    .toc-toggle-label{position:fixed;top:16px;left:max(16px,calc((100% - var(--layout-width))/2 + 16px));z-index:40;display:flex;align-items:center;gap:10px;min-height:42px;padding:8px 14px;border:1px solid #475569;border-radius:9px;background:#1e293b;color:#f8fafc;font-size:13px;font-weight:600;cursor:pointer;user-select:none;box-shadow:0 2px 6px #0f172a18}
-    .toc-toggle-label:hover{background:#334155}.toc-toggle:focus-visible + .toc-toggle-label{outline:3px solid #60a5fa;outline-offset:3px}
-    .toc-toggle-icon{display:block;width:17px;height:14px;border:1.5px solid currentColor;border-radius:2px;position:relative}.toc-toggle-icon:before{content:"";position:absolute;left:4px;top:0;bottom:0;border-left:1.5px solid currentColor}
-    .toc-toggle-open{display:none}.toc-toggle:not(:checked) + .toc-toggle-label .toc-toggle-close{display:none}.toc-toggle:not(:checked) + .toc-toggle-label .toc-toggle-open{display:inline}
-    .layout{display:grid;grid-template-columns:var(--toc-width) minmax(0,1fr);width:100%;max-width:var(--layout-width);margin:auto}
-    .toc{position:sticky;top:0;min-width:0;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:82px 20px 18px;background:#0f172a;color:#e2e8f0}
-    .toc-header{flex-shrink:0;padding:0 12px 22px;border-bottom:1px solid #334155}.toc-eyebrow{margin:0 0 9px;color:#94a3b8;font-size:11px;letter-spacing:.16em}
+    .toc-toggle-label{position:fixed;top:18px;left:max(10px,calc((100% - var(--layout-width))/2 + 10px));z-index:40;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #d8dbe1;border-radius:10px;background:rgba(255,255,255,.92);color:#60646c;cursor:pointer;user-select:none;box-shadow:0 2px 8px #17203308;transition:background .15s,color .15s}
+    .toc-toggle-label:hover{background:#e9edf3;color:#1d1d1f}.toc-toggle:focus-visible + .toc-toggle-label{outline:3px solid #007aff;outline-offset:3px}
+    .toc-toggle-icon{display:block;width:18px;height:15px;border:1.5px solid currentColor;border-radius:3px;position:relative}.toc-toggle-icon:before{content:"";position:absolute;left:5px;top:0;bottom:0;border-left:1.5px solid currentColor}
+    .toc-toggle-open,.toc-toggle-close{display:none}
+
+    .layout{display:grid;grid-template-columns:var(--toc-width) minmax(0,1fr);width:100%;max-width:var(--layout-width);margin:auto;padding-left:var(--rail-width)}
+    .toc{position:sticky;top:0;min-width:0;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:28px 16px 18px;background:rgba(245,246,248,.96);color:#1d1d1f;border-right:1px solid #e4e6eb}
+    .toc-header{flex-shrink:0;padding:0 12px 22px;border-bottom:1px solid #e1e4e9}.toc-eyebrow{margin:0 0 9px;color:#86868b;font-size:11px;letter-spacing:.16em}
     .toc a,.toc-document-title{display:block;max-width:100%;text-decoration:none;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.6}
-    .toc-document-title{margin:0;color:#f8fafc;font-size:17px;font-weight:600}.toc-document-title:hover{color:#bfdbfe}
-    .toc-chapters{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#475569 #0f172a;padding:18px 4px 8px}
-    .toc h2{margin:0 8px 12px;color:#94a3b8;font-size:12px;font-weight:500;letter-spacing:.15em}.toc ul{min-width:0;list-style:none;margin:0;padding:0}
-    .toc li{min-width:0;margin:2px 0;break-inside:avoid}.toc-list a{padding:5px 8px;border-radius:6px;color:#cbd5e1;font-size:13px}
-    .toc-list .level-1{margin-top:12px}.toc-list .level-1:first-child{margin-top:0}.toc-list .level-1 a{color:#f1f5f9;font-size:14px;font-weight:600}
-    .toc-list .level-2{padding-left:12px}.toc-list .level-3{padding-left:24px}.toc-list .level-3 a{font-size:12px;color:#b8c7db}
-    .toc-list a:hover{color:#fff;background:#1e293b}.toc a:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
-    .toc-toggle:not(:checked) ~ .layout{grid-template-columns:minmax(0,1fr)}.toc-toggle:not(:checked) ~ .layout .toc{display:none}.toc-toggle:not(:checked) ~ .layout main{margin-top:80px}.toc-backdrop{display:none}
+    .toc-document-title{margin:0;color:#1d1d1f;font-size:16px;font-weight:600;letter-spacing:-.02em}.toc-document-title:hover{color:#0066cc}
+    .toc-chapters{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#c9cdd4 transparent;padding:18px 4px 8px}
+    .toc h2{margin:0 8px 12px;color:#86868b;font-size:11px;font-weight:500;letter-spacing:.15em}.toc ul{min-width:0;list-style:none;margin:0;padding:0}
+    .toc li{min-width:0;margin:2px 0;break-inside:avoid}.toc-list a{padding:8px 10px;border-radius:8px;color:#60646c;font-size:13px;line-height:1.5;border-left:3px solid transparent}
+    .toc-list .level-1{margin-top:12px}.toc-list .level-1:first-child{margin-top:0}.toc-list .level-1 a{color:#1d1d1f;font-size:13px;font-weight:600}
+    .toc-list .level-2{padding-left:12px}.toc-list .level-3{padding-left:24px}.toc-list .level-3 a{font-size:12px;color:#6e727a}
+    .toc-list a:hover{color:#1d1d1f;background:#e9ecf1}.toc-list a[aria-current="location"]{color:#0066cc;background:#e5efff;border-left-color:#007aff;font-weight:600}.toc a:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
+    .toc-toggle:not(:checked) ~ .layout{grid-template-columns:minmax(0,1fr)}.toc-toggle:not(:checked) ~ .layout .toc{display:none}.toc-backdrop{display:none}
     main{min-width:0;margin:28px;background:var(--paper);padding:42px 48px;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,.08);overflow-wrap:anywhere}h1,h2,h3{overflow-wrap:anywhere;word-break:break-word}h1{margin-top:2.3rem;border-bottom:2px solid #dbeafe;padding-bottom:.45rem}h1:first-child{margin-top:0;font-size:2.2rem;border:0;text-align:center}h2{margin-top:2rem;color:#1d4ed8}h3{margin-top:1.5rem;color:#334155}
     main [id]{scroll-margin-top:80px}
     .table-wrap{overflow:auto;margin:1rem 0 1.5rem;border:1px solid var(--line);border-radius:10px}table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:14px}th,td{padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;text-align:left;white-space:normal;overflow-wrap:anywhere;word-break:break-word}th{position:sticky;top:0;background:#eaf2ff;color:#1e3a8a;z-index:1}tr:last-child td{border-bottom:0}th:last-child,td:last-child{border-right:0}code{background:#eff6ff;padding:.12rem .35rem;border-radius:4px}pre{overflow:auto;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:10px}
     figure{margin:1.5rem 0;text-align:center;overflow:auto}.waterline-flow{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px;margin-top:.5rem}
-    @media(max-width:980px){.layout{display:block}.toc{position:fixed;left:0;top:0;width:min(var(--toc-width),calc(100% - 48px));z-index:30;box-shadow:8px 0 32px #0f172a26}.toc-toggle:checked ~ .toc-backdrop{display:block;position:fixed;inset:0;z-index:20;background:#0f172a55;cursor:pointer}main,.toc-toggle:not(:checked) ~ .layout main{margin:0;border-radius:0;padding:84px 20px 28px}h1:first-child{font-size:1.7rem}}
-    @media print{body{background:#fff}.layout,.toc-toggle:not(:checked) ~ .layout{display:block}.toc,.toc-toggle,.toc-toggle-label,.toc-toggle:checked ~ .toc-backdrop{display:none}main,.toc-toggle:not(:checked) ~ .layout main{margin:0;padding:0;box-shadow:none}.table-wrap{overflow:visible}table{font-size:10px}h1,h2,h3{break-after:avoid}tr{break-inside:avoid}}
+    @media(max-width:980px){.layout{display:block}.toc{position:fixed;left:var(--rail-width);top:0;width:min(var(--toc-width),calc(100% - var(--rail-width)));z-index:30;box-shadow:8px 0 32px #0f172a18}.toc-toggle:checked ~ .toc-backdrop{display:block;position:fixed;inset:0;z-index:20;background:#1d1d1f24;backdrop-filter:blur(3px);cursor:pointer}main,.toc-toggle:not(:checked) ~ .layout main{margin:0;border-radius:0;padding:28px 20px}h1:first-child{font-size:1.7rem}}
+    @media print{body{background:#fff}.layout,.toc-toggle:not(:checked) ~ .layout{display:block;padding-left:0}.toc,.toc-toggle,.toc-toggle-label,.toc-toggle:checked ~ .toc-backdrop{display:none}main,.toc-toggle:not(:checked) ~ .layout main{margin:0;padding:0;box-shadow:none}.table-wrap{overflow:visible}table{font-size:10px}h1,h2,h3{break-after:avoid}tr{break-inside:avoid}}
     """
     navigation = (
         '<input type="checkbox" id="toc-toggle" class="toc-toggle" checked aria-label="显示目录" aria-controls="document-toc">'
-        '<label for="toc-toggle" class="toc-toggle-label"><span class="toc-toggle-icon" aria-hidden="true"></span>'
+        '<label for="toc-toggle" class="toc-toggle-label" title="收起目录"><span class="toc-toggle-icon" aria-hidden="true"></span>'
         '<span class="toc-toggle-close">收起目录</span><span class="toc-toggle-open">展开目录</span></label>'
         '<label for="toc-toggle" class="toc-backdrop" aria-hidden="true"></label>'
+        '<button type="button" id="theme-toggle" class="theme-toggle" aria-label="当前浅色模式，切换为深色模式" aria-pressed="false" title="切换外观">'
+        '<span class="theme-icon theme-sun" aria-hidden="true"></span><span class="theme-icon theme-moon" aria-hidden="true"></span></button>'
         '<div class="layout"><aside id="document-toc" class="toc" aria-label="文档导航">'
         '<header class="toc-header"><p class="toc-eyebrow">水线文档</p>' + document_link + '</header>'
         '<nav class="toc-chapters" aria-label="章节目录"><h2>目录</h2><ul class="toc-list">' + "".join(toc_items) + '</ul></nav></aside>'
     )
     viewer = ""
-    script_policy = "'none'"
+    navigation_script = (ASSETS / "document-navigation.js").read_text(encoding="utf-8")
+    navigation_digest = base64.b64encode(hashlib.sha256(navigation_script.encode("utf-8")).digest()).decode("ascii")
+    script_policy = f"'sha256-{navigation_digest}'"
     if any('class="waterline-diagram-open"' in part for part in body):
         css += (ASSETS / "diagram-viewer.css").read_text(encoding="utf-8")
         script = (ASSETS / "diagram-viewer.js").read_text(encoding="utf-8")
         digest = base64.b64encode(hashlib.sha256(script.encode("utf-8")).digest()).decode("ascii")
-        script_policy = f"'sha256-{digest}'"
+        script_policy += f" 'sha256-{digest}'"
         viewer = (ASSETS / "diagram-viewer.html").read_text(encoding="utf-8") + '<script data-waterline-viewer="1">' + script + '</script>'
+    css += (ASSETS / "document-theme.css").read_text(encoding="utf-8")
+    viewer += '<script data-waterline-navigation="1">' + navigation_script + '</script>'
     csp = f"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src {script_policy}; base-uri 'none'; object-src 'none'"
     return "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\"><title>" + html.escape(title) + "</title><style>" + css + "</style></head><body>" + navigation + '<main id="document-main">' + "\n".join(body) + "</main></div>" + viewer + "</body></html>\n"
 
@@ -590,6 +594,8 @@ def main() -> int:
     if not blocking_questions(facts):
         require_bindings(facts)
     for slot, config in facts.get("render_preferences", {}).get("diagrams", {}).items():
+        if slot == "catalog":
+            continue  # Retained legacy audit asset; no longer part of the document.
         if slot not in {"data_flow", "catalog"} or config.get("engine") != "diagram-design":
             raise ValueError("Invalid bound diagram slot or engine")
         spec = facts["flow"] if slot == "data_flow" else catalog_spec()
@@ -627,14 +633,6 @@ def main() -> int:
     data_svg_rel = f"{asset_dir.name}/{data_svg_path.name}"
 
     catalog_svg_rel = ""
-    if facts["profile"] == "report" and (facts.get("catalog") or {}).get("enabled"):
-        cat_spec = catalog_spec()
-        cat_spec_path = asset_dir / "catalog_registration_flow.spec.json"
-        cat_svg_path = asset_dir / "catalog_registration_flow.svg"
-        write_json(cat_spec_path, cat_spec)
-        render_diagram(cat_spec, cat_svg_path, facts, facts_path.parent, "catalog")
-        catalog_svg_rel = f"{asset_dir.name}/{cat_svg_path.name}"
-
     markdown = render_markdown(facts, data_svg_rel, catalog_svg_rel)
     markdown_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"

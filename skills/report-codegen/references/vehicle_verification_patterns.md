@@ -1,5 +1,11 @@
 # Vehicle Verification Report Patterns
 
+## Version selection
+
+Rules below describe the legacy period-table profile. Never switch table names while retaining old filters. `vehicle_profile.version` is `legacy_period` (compatible default) or `realtime_eo`. Realtime requires `confirmed=true`, an `evidence` description, and an unmixed source matrix with `l0_dtr_order.t5_eo_erp_sales_order_line`, complete legacy fields except `pt_sum`, plus `pt_sum_p` and `created_dtr_interconnect_type`.
+
+Realtime filters EO only, numeric statuses 4516/4508/4 and (NDT OR interconnect type 4); GSV uses `pt_sum_p`. The source requires `indexed_order_reader(table, columns, p_start_date, p_end_date)` with resolved calendar bounds, never a period-prefix fallback. Supply the confirmed index adapter before running. Legacy retains `_p`, its old filter and `pt_sum`. Both preserve the store LEFT JOIN. Run `verify_p0_lifecycle.py` for differences and the matching project runtime verifier for full KPI parity.
+
 This reference is self-contained. If `prod_code_sample/vehicle_verification_202605221431` is present in the workspace, inspect it as optional style guidance, but do not depend on it.
 
 Use this reference when a report has complex HBase + FS + ClickHouse data flow, multiple summary outputs, order-level detail, vehicle/customer mappings, or FS evidence retention.

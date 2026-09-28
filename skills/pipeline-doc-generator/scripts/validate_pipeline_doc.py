@@ -142,6 +142,7 @@ class HTMLSecurityProbe(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.scripts = []
+        self.script_kinds = []
         self.in_script = False
         self.errors = []
 
@@ -154,10 +155,11 @@ class HTMLSecurityProbe(HTMLParser):
         if "src" in attrs and not attrs["src"].startswith("data:"):
             self.errors.append("HTML contains a non-embedded resource")
         if tag == "script":
-            if attrs != {"data-waterline-viewer": "1"}:
+            if attrs not in ({"data-waterline-viewer": "1"}, {"data-waterline-navigation": "1"}):
                 self.errors.append("HTML contains an untrusted script")
             self.in_script = True
             self.scripts.append("")
+            self.script_kinds.append(attrs)
 
     def handle_endtag(self, tag):
         if tag == "script":
@@ -179,8 +181,9 @@ def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> 
     probe.feed(text)
     errors.extend(probe.errors)
     trusted = (Path(__file__).resolve().parent.parent / "assets/diagram-viewer.js").read_text(encoding="utf-8")
-    if probe.scripts != [trusted]:
-        errors.append("HTML must contain exactly the trusted offline diagram viewer script")
+    navigation = (Path(__file__).resolve().parent.parent / "assets/document-navigation.js").read_text(encoding="utf-8")
+    if probe.scripts != [trusted, navigation] or probe.script_kinds != [{"data-waterline-viewer": "1"}, {"data-waterline-navigation": "1"}]:
+        errors.append("HTML must contain exactly the trusted offline viewer and navigation scripts")
     styles = re.findall(r"<style\b[^>]*>(.*?)</style>", text, re.DOTALL | re.IGNORECASE)
     urls = [url.strip().strip("'\"") for style in styles for url in re.findall(r"url\(([^)]+)\)", style, re.IGNORECASE)]
     if any("@import" in style.lower() for style in styles) or any(not url.startswith(("#", "data:")) for url in urls):
@@ -235,6 +238,8 @@ def main() -> int:
             errors.append(str(exc))
     from render_pipeline_doc import catalog_spec
     for slot, config in facts.get("render_preferences", {}).get("diagrams", {}).items():
+        if slot == "catalog":
+            continue  # Deprecated presentation asset is not required.
         try:
             if slot not in {"data_flow", "catalog"} or config.get("engine") != "diagram-design":
                 raise ValueError("Invalid diagram binding")

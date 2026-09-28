@@ -1,0 +1,246 @@
+"""Opt-in project contracts. Callers supply business rules and platform adapters."""
+import json
+import re
+from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP, localcontext
+from pathlib import Path
+
+
+def load_entry(path, profile='cot'):
+    """Unwrap exactly once; q3 SINGLE has a dict directly under params."""
+    if profile not in {'cot', 'q3', 'direct'}:
+        raise ValueError('unknown entry profile')
+    envelope = json.loads(Path(path).read_text(encoding='utf-8'))
+    if not isinstance(envelope, dict):
+        raise ValueError('entry must be an object')
+    mode = envelope.get('algorithm_io_mode')
+    if profile == 'q3':
+        if mode != 'SINGLE':
+            raise ValueError('q3 requires SINGLE')
+        params, result = envelope.get('params'), str(path)
+    elif profile == 'cot' and mode == 'SINGLE':
+        try:
+            raw = envelope['params']['body']['params']
+        except (KeyError, TypeError) as error:
+            raise ValueError('missing SINGLE body.params') from error
+        if not isinstance(raw, str):
+            raise ValueError('SINGLE body.params must be JSON text')
+        params, result = json.loads(raw), str(path)
+    else:
+        params, result = envelope, './result.txt'
+    if not isinstance(params, dict):
+        raise ValueError('business params must be an object')
+    return params, result
+
+
+def period_list(value, *, array_required):
+    if array_required and not isinstance(value, list):
+        raise ValueError('period requires an array')
+    items = value if isinstance(value, list) else [value]
+    if not items:
+        raise ValueError('explicit period list is empty')
+    result = []
+    for item in items:
+        if not isinstance(item, str) or not re.fullmatch(r'[0-9]{4}P(0[1-9]|1[0-3])', item):
+            raise ValueError('period must be YYYYP01 through YYYYP13')
+        if item not in result:
+            result.append(item)
+    return result
+
+
+def period_window(calendar_periods, current, *, kind, start=None, count=None):
+    periods = period_list(calendar_periods, array_required=True)
+    if periods != sorted(periods) or len(periods) != len(calendar_periods):
+        raise ValueError('calendar periods must be unique and chronological')
+    # A missing P must not silently shorten a business window.
+    for left, right in zip(periods, periods[1:]):
+        year, number = int(left[:4]), int(left[5:])
+        expected = f'{year + 1}P01' if number == 13 else f'{year}P{number + 1:02d}'
+        if right != expected:
+            raise ValueError('calendar period gap')
+    end = periods.index(current) + 1
+    if kind == 'from':
+        begin = periods.index(start)
+        if begin >= end:
+            raise ValueError('start period is after current')
+        return periods[begin:end]
+    if kind not in {'recent', 'ytd_with_minimum'} or type(count) is not int or count <= 0:
+        raise ValueError('explicit window kind and positive count required')
+    if end < count:
+        raise ValueError('insufficient calendar history')
+    recent = periods[end-count:end]
+    ytd = [p for p in periods[:end] if p[:4] == current[:4]]
+    if kind == 'ytd_with_minimum' and ytd[0][5:] != '01':
+        raise ValueError('incomplete YTD calendar')
+    return recent if kind == 'recent' or len(ytd) < count else ytd
+
+
+def execute_periods(calendar, execute_date, trigger_date, *, backfill_week_day=None):
+    """Normalized rows: date (ISO), period, week, day. No implicit trigger rule."""
+    rows = {}
+    for row in calendar:
+        datetime.strptime(row['date'], '%Y-%m-%d')
+        period_list([row['period']], array_required=True)
+        if row['date'] in rows:
+            raise ValueError('duplicate calendar date')
+        rows[row['date']] = row
+    if execute_date not in rows or trigger_date not in rows:
+        raise ValueError('missing execute or trigger calendar date')
+    current, trigger = rows[execute_date]['period'], rows[trigger_date]
+    result = [current]
+    if backfill_week_day is not None and (trigger['week'], trigger['day']) == tuple(backfill_week_day):
+        history = [r for d, r in sorted(rows.items()) if d < trigger_date and r['period'] != current]
+        if not history:
+            raise ValueError('missing previous-period history')
+        result.append(history[-1]['period'])
+    return result
+
+
+def dates_for_table(sync_dates, *, date_scoped):
+    if type(date_scoped) is not bool:
+        raise ValueError('date applicability must be explicit')
+    if sync_dates is None:
+        return [None]
+    if not isinstance(sync_dates, list) or not sync_dates:
+        raise ValueError('sync_dates requires a non-empty array')
+    for value in sync_dates:
+        if not isinstance(value, str):
+            raise ValueError('sync date must be ISO text')
+        datetime.strptime(value, '%Y-%m-%d')
+    return list(dict.fromkeys(sync_dates)) if date_scoped else [None]
+
+
+class UnitFailure(RuntimeError):
+    def __init__(self, unit, completed):
+        self.unit, self.completed = unit, list(completed)
+        super().__init__('unit failed: ' + unit)
+
+
+def run_periods(periods, output_dir, run):
+    completed = []
+    for period in period_list(periods, array_required=True):
+        try:
+            result = run(period, Path(output_dir) / period)
+            if not isinstance(result, dict) or result.get('status') != 'completed':
+                raise ValueError('period completion not acknowledged')
+        except Exception as error:
+            raise UnitFailure(period, completed) from error
+        completed.append(period)
+    return {'status': 'completed', 'periods': completed}
+
+
+def require_artifacts(required, available, *, batch):
+    if not required or not batch:
+        raise ValueError('dependency names and batch required')
+    for name in required:
+        artifact = available.get(name)
+        if not artifact or artifact.get('status') != 'completed' or artifact.get('batch') != batch:
+            raise ValueError('missing, incomplete or stale dependency: ' + name)
+
+
+def run_stages(stages, *, initial=None):
+    """Call acknowledged stages in order; activation alone is not completion."""
+    completed = []
+    value = initial
+    for name, call in stages:
+        try:
+            value = call(value)
+            if not isinstance(value, dict) or value.get('status') != 'completed':
+                raise ValueError('stage completion not acknowledged')
+        except Exception as error:
+            raise UnitFailure(name, completed) from error
+        completed.append(name)
+    return {'status': 'completed', 'stages': completed, 'result': value}
+
+
+def select_file(paths, *, table, suffix, latest=False):
+    """Exact table or table_YYYYmmddHHMMSS; no suffix-only fallback."""
+    if not table or not suffix.startswith('.'):
+        raise ValueError('table and dotted suffix required')
+    pattern = re.compile(re.escape(table) + r'(?:_([0-9]{14}))?' + re.escape(suffix))
+    candidates = []
+    for path in paths:
+        match = pattern.fullmatch(Path(path).name)
+        if match:
+            timestamp = datetime.strptime(match[1], '%Y%m%d%H%M%S') if match[1] else None
+            candidates.append((path, timestamp))
+    if not candidates:
+        raise ValueError('no file matches the declared table')
+    if len(candidates) == 1:
+        return candidates[0][0]
+    if not latest or any(time is None for _, time in candidates):
+        raise ValueError('ambiguous file candidates')
+    newest = max(time for _, time in candidates)
+    winners = [path for path, time in candidates if time == newest]
+    if len(winners) != 1:
+        raise ValueError('ambiguous latest timestamp')
+    return winners[0]
+
+
+def decimal_tdu(quantity, price, factor):
+    """Caller selects quantity using its confirmed sales/return status contract."""
+    def number(value):
+        if value is None:
+            return None
+        if isinstance(value, (float, bool)):
+            raise ValueError('use decimal text, Decimal or integer inputs')
+        result = Decimal(value)
+        if not result.is_finite():
+            raise ValueError('non-finite decimal')
+        return result
+    quantity, price, factor = map(number, (quantity, price, factor))
+    if factor is None or factor == 0:
+        return None, None
+    values = [v for v in (quantity, price, factor) if v is not None]
+    with localcontext() as context:
+        context.prec = max(50, sum(len(v.as_tuple().digits) + abs(v.as_tuple().exponent) for v in values) + 20)
+        quant = Decimal('0.0000000001')
+        q = (quantity / factor).quantize(quant, rounding=ROUND_HALF_UP) if quantity is not None else None
+        p = (price * factor).quantize(quant, rounding=ROUND_HALF_UP) if price is not None else None
+    return q, p
+
+
+class BatchFailure(RuntimeError):
+    def __init__(self, completed, phase):
+        self.completed_batches = completed
+        self.failed_batch = None if phase == 'watermark' else completed + 1
+        self.phase = phase
+        super().__init__('batch processing failed: completed=%s phase=%s' % (completed, phase))
+
+
+def stream_batches(cursor, size, transform, write, commit):
+    """Cursor is an injected server-side cursor; each writer must acknowledge commit."""
+    if type(size) is not int or size <= 0:
+        raise ValueError('batch size must be a positive integer')
+    completed, phase = 0, 'fetch'
+    try:
+        while True:
+            phase = 'fetch'
+            batch = cursor.fetchmany(size)
+            if not batch:
+                break
+            phase = 'transform'
+            output = transform(batch)
+            phase = 'write'
+            if write(output) != 'completed':
+                raise ValueError('batch commit not acknowledged')
+            completed += 1
+        phase = 'watermark'
+        commit()
+    except Exception as error:
+        raise BatchFailure(completed, phase) from error
+    return {'status': 'completed', 'completed_batches': completed}
+
+
+def audited_delete(old_ids, *, record, delete):
+    """Record adapter durably acknowledges the exact IDs before delete is invoked."""
+    ids = tuple(old_ids)
+    if any(value is None for value in ids) or len(set(ids)) != len(ids):
+        raise ValueError('delete IDs must be non-null and unique')
+    if not ids:
+        return {'status': 'skipped_empty'}
+    if record(ids) != 'completed':
+        raise ValueError('delete audit not durably acknowledged')
+    if delete(ids) != 'completed':
+        raise ValueError('delete incomplete; audit retained for reconciliation')
+    return {'status': 'completed', 'deleted_count': len(ids)}

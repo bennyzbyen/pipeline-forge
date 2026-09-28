@@ -168,6 +168,8 @@ def validate_table(
     if not fields:
         expected_contract_issues.append("missing_field_dictionary")
     else:
+        if not table.get('rowkey_evidence'):
+            expected_contract_issues.append('rowkey_evidence_missing')
         if any(not column for column in required_columns):
             expected_contract_issues.append("missing_required_column_name")
         for column in dict.fromkeys(column for column in required_columns if column):
