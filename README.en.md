@@ -19,6 +19,8 @@ PipelineForge is a data pipeline development toolkit with a beginner-friendly fr
 
 ## Installation
 
+Version 2.3.0 fixes project boundary gates and exception-first diagnostics. Optional tools preserve first confirmation during scoped contract revisions and derive separate stage statuses from recorded evidence. Bundled report validation can use an external implementation-status document. See [scoped revisions and delivery evidence](skills/pipeline-forge-guide/references/feedback-driven-delivery.md); these helpers do not certify production execution or enable writes.
+
 With an optional private vault configured, knowledge search discovers linked reviewed practices while preserving project, version and role limits. Adoption requires current-task evidence and project validation; recorded historical synthetic tests do not replace project tests. Evidence, report and artifact hashes detect stale decisions. Built-in rules remain available without a vault, Obsidian or additional services. See [reviewed practices](skills/pipeline-forge-guide/references/recommended-practices.md).
 
 Add the public GitHub repository as a marketplace (tracks the default branch):
@@ -30,7 +32,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 For a reproducible installation of the published stable release instead:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.2.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.3.0
 ```
 
 Then finish installation from either supported surface:
@@ -89,4 +91,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## Release Notes
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.2.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.3.0`; see [CHANGELOG.md](CHANGELOG.md) for release notes.

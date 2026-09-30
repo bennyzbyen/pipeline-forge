@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0 - 2026-09-30
+
+- Fix project boundary validation and exception-first diagnostics; keep plugin fixtures separate from project gates.
+- Add scoped confirmed-contract revisions, evidence-based stage summaries and optional external implementation-status documents.
+- Reuse existing lifecycle, environment and business checks with explicit project evidence; no private knowledge or new runtime service dependency.
+
 ## 2.2.0 - 2026-09-28
 
 - Discover optional reviewed practices and require current-project adoption evidence without adding runtime dependencies.

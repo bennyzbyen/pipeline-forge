@@ -16,6 +16,8 @@ For substantive work, use the optional local knowledge workflow in `../pipeline-
 
 Diagnose the failure and recommend the smallest evidence-backed next step. When the current request or prior session instruction authorizes a fix, inspect the related code, apply the smallest supported correction, and verify it directly. For diagnosis-only requests, report the findings.
 
+Prioritize the exception line and failing call over successful platform messages. Retain multiple exception chains and uncertainty; do not infer an exact Python version from an unavailable API. For project-specific source/deployment preflight and stage evidence, read `../pipeline-forge-guide/references/feedback-driven-delivery.md`.
+
 ## Inputs
 
 Use the fullest available log text or screenshots. Params JSON, related code, `diagnostic_manifest.json`, `report_codegen_plan.json`, environment, rerun period/date, and recent changes improve confidence.

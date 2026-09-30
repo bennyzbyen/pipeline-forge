@@ -254,6 +254,11 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
     assert verification["status"] == "passed", verification
     assert verification["implementation_ready"] is True, verification
     assert verification["deployment_status"] == "ready", verification
+    external_status = case_dir / "external_status.md"
+    (project_dir / "IMPLEMENTATION_STATUS.md").rename(external_status)
+    assert validate_project(project_dir, implementation_status=external_status)["status"] == "passed"
+    assert validate_project(project_dir)["status"] == "failed"
+    external_status.rename(project_dir / "IMPLEMENTATION_STATUS.md")
     observability = verify_observability(project_dir)
     assert observability["status"] == "passed", observability
     for name in ["data_source.py", "data_process.py", "data_storage.py"]:

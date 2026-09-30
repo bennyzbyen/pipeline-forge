@@ -30,6 +30,8 @@ Extract requirement evidence into a technical-design handoff. For a document-onl
 - Review the code-unit count and mapping before full generation. When implementation is authorized and boundary evidence is sufficient, adopt the evidence-backed mapping through the confirmation CLI with `--actor assistant` and a note identifying the existing authorization and decision evidence; do not ask again. Keep `awaiting_user_confirmation` only for material unresolved boundaries or when the user requested a review checkpoint. Changed boundary evidence requires re-evaluation and a fresh audit, not automatically another question.
 - Give every generated ambiguity a stable semantic ID: `TC-CG-*` for code-generation blockers, `TC-DP-*` for deployment confirmations, and `TC-NB-*` for non-blocking questions. Preserve the same ID in `questions.md`, `codegen_contract.open_questions`, blocker summaries, and user-facing confirmation prompts.
 
+For execution-only changes within an already-confirmed mapping, use `scripts/revise_confirmed_contract.py` as described in `../pipeline-forge-guide/references/feedback-driven-delivery.md`. Preserve first confirmation, record change authorization separately, and revalidate affected units plus declared dependants.
+
 ## Inputs And Outputs
 
 Input is one or more `.md`, `.markdown`, or `.docx` files. Markdown and DOCX are equal first-class inputs and may be mixed in one project. Supplemental Excel, screenshots, copied tables, project name, or known project type are optional evidence.
@@ -49,7 +51,7 @@ Write under the user-provided output directory, or `outputs/<project-name>/`:
 3. Build the legacy-compatible `codegen_contract`, enrich schedule-derived waterlines through `scripts/code_unit_evidence.py`, then build the code-unit proposal. Link task identity, Data Utilization ownership, temporal grain, targets, rules, sources, write contracts, and dependency evidence. Render its count, waterline bindings, parameter profiles, route candidates, dependencies, reasons, confidence, and blockers in the three-file handoff.
 4. Resolve `TC-CG-CODE-UNIT-CONFIRMATION` using the existing authorization and sufficient boundary evidence, or ask only about material unresolved boundaries. Use `scripts/manage_code_unit_plan.py` for audited adoption or merge/split decisions; preserve incompatible state, write, deployment, failure-isolation, and route checks.
 5. Use `assets/technical_design_template.md` as the final HLD + LLD document shape. After confirmation, retain the confirmation audit and show real blockers per unit.
-6. Run `scripts/validate_technical_contract.py --facts <structured_facts.json>` for normal review and add `--strict-deployment` only for deployment review. Run `scripts/verify_technical_contract_regression.py`, `scripts/verify_code_unit_contract_regression.py`, and `scripts/verify_schedule_boundary_planning.py --facts <structured_facts.json>` after contract or boundary-enrichment changes.
+6. Run `scripts/validate_technical_contract.py --facts <structured_facts.json>` for normal review and add `--strict-deployment` only for deployment review. Use `scripts/verify_schedule_boundary_planning.py --facts <structured_facts.json>` for project boundary/readiness checks. After plugin contract or boundary-enrichment changes, separately run `scripts/verify_technical_contract_regression.py`, `scripts/verify_code_unit_contract_regression.py`, and `../pipeline-forge-guide/scripts/verify_feedback_workflows.py`; fixture results do not replace project gates.
 
 ## Acceptance Criteria
 
