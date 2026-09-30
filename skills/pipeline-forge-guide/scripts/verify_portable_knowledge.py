@@ -42,7 +42,10 @@ def run():
         source_read = read_available(root/'missing.json', 'PFB-003')
         relocated = cli('knowledge_governance.py', 'read', '--id', 'PFB-003')
         assert relocated['content_hash'] == source_read['content_hash']
-        assert str(root).replace('\\', '/') in relocated['citation']
+        # Windows runners may supply an 8.3 TEMP alias; the reader resolves it.
+        # Compare the full relocated note, rather than the raw temp-directory text.
+        expected_note = (skills/'pipeline-forge-guide/assets/builtin-knowledge/03_知识卡片/PFB-003.md').resolve()
+        assert relocated['citation'] == f'[PFB-003](<{expected_note.as_posix()}>)'
         facts = {'knowledge_references_version': 1, 'knowledge_references': [{
             'id': 'PFB-003', 'decision': 'adopted', 'reason': 'synthetic matching watermark contract',
             **{f: source_read[f] for f in ('source_revision', 'content_hash', 'version_scope', 'citation', 'evidence_span')},
