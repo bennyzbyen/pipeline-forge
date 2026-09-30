@@ -9,8 +9,8 @@
 :root[data-theme="dark"]{color-scheme:dark;--ink:#e8e9ed;--muted:#a2a8b4;--line:#383d47;--accent:#79b5ff;--paper:#1c1e23;--wash:#131519}
 :root[data-theme="dark"] .toc{background:#191b20;color:#e8e9ed;border-color:#30343d}
 :root[data-theme="dark"] .toc-header{border-color:#30343d}
-:root[data-theme="dark"] .toc-document-title,:root[data-theme="dark"] .toc-list .level-1 a{color:#eceef2}
-:root[data-theme="dark"] .toc-list a,:root[data-theme="dark"] .toc-list .level-3 a{color:#aeb5c1}
+:root[data-theme="dark"] .toc-list a{color:#aeb5c1}
+:root[data-theme="dark"] .toc-document-title,:root[data-theme="dark"] .toc-list .level-1>a{color:#eceef2}
 :root[data-theme="dark"] .toc h2,:root[data-theme="dark"] .toc-eyebrow{color:#a2a8b4}
 :root[data-theme="dark"] .toc-chapters{scrollbar-color:#4b5260 transparent}
 :root[data-theme="dark"] .toc-list a:hover{background:#272c35;color:#f5f7fa}

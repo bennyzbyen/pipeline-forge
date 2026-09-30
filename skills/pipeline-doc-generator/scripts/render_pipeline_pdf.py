@@ -288,7 +288,7 @@ class WaterlineDoc(BaseDocTemplate):
             return
         self.canv.bookmarkPage(flowable.heading_key)
         self.canv.addOutlineEntry(flowable.heading_text, flowable.heading_key, flowable.heading_level, closed=False)
-        if flowable.heading_level <= 2 and not flowable.heading_key.startswith("document-title"):
+        if not flowable.heading_key.startswith("document-title"):
             self.notify("TOCEntry", (flowable.heading_level, html.escape(flowable.heading_text), self.page, flowable.heading_key))
 
 
@@ -330,6 +330,7 @@ def render_pdf(markdown, markdown_path, output, facts):
         font_size = {1: 17, 2: 13, 3: 11}.get(level, 10)
         styles[f"h{level}"] = ParagraphStyle(f"h{level}", **{**base, "fontName": "WaterlineBold", "fontSize": font_size, "leading": font_size*1.5, "spaceBefore": 16 if level==1 else 10, "spaceAfter": 9, "keepWithNext": True, "textColor": colors.HexColor(BLUE if level==2 else INK)})
     story, figures, heading_index, toc_added = [], [], 0, False
+    heading_ancestors = []
     for block_index, (kind, value) in enumerate(blocks):
         if kind == "heading":
             level, label = value
@@ -338,7 +339,7 @@ def render_pdf(markdown, markdown_path, output, facts):
                 story.append(Paragraph("目录", styles["h1"]))
                 toc = TableOfContents()
                 toc.tableStyle = TableStyle([("VALIGN", (0,0), (-1,-1), "TOP"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 1), ("BOTTOMPADDING", (0,0), (-1,-1), 1)])
-                toc.levelStyles = [ParagraphStyle(f"toc{i}", fontName="Waterline", fontSize=10 if i==0 else 9, leading=13, leftIndent=i*14, firstLineIndent=0, spaceBefore=4 if i==0 else 0, wordWrap="CJK") for i in range(3)]
+                toc.levelStyles = [ParagraphStyle(f"toc{i}", fontName="Waterline", fontSize=10 if i==0 else 9, leading=13, leftIndent=i*14, firstLineIndent=0, spaceBefore=4 if i==0 else 0, wordWrap="CJK") for i in range(6)]
                 story.extend([toc, PageBreak()]); toc_added = True
             heading_index += 1
             is_title = heading_index==1 and level==1
@@ -346,7 +347,13 @@ def render_pdf(markdown, markdown_path, output, facts):
             paragraph.audit_id = unit_keys[block_index, None, None]
             paragraph.heading_key = "document-title" if is_title else f"section-{heading_index}"
             paragraph.heading_text = plain(label)
-            paragraph.heading_level = level-1
+            # PDF outlines forbid skipped depths. Preserve the Markdown hierarchy
+            # using the nearest shallower heading, as the HTML outline does.
+            while heading_ancestors and heading_ancestors[-1] >= level:
+                heading_ancestors.pop()
+            paragraph.heading_level = 0 if is_title else len(heading_ancestors)
+            if not is_title:
+                heading_ancestors.append(level)
             story.append(paragraph)
         elif kind == "table":
             headers, rows = value

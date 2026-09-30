@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4, A3, landscape
 
 from pipeline_doc_common import OUTPUT_FORMATS
 from render_pipeline_doc import document_stem, render_markdown
-from render_pipeline_pdf import parse_markdown, text_units
+from render_pipeline_pdf import parse_markdown, render_pdf, text_units
 from validate_pipeline_pdf import compact, validate_pdf
 from verify_pipeline_doc_generator import facts, run, RENDER, VALIDATE, render_and_validate
 
@@ -126,6 +126,39 @@ def test_pdf_long_table(root):
     return {"pages": len(reader.pages), "split_cell_pages": len(hit_pages), "all_cells_checked": True, "middle_fragment_deletion_rejected": True, "stale_pdf_rejected": True, "all_formats_updated": True, "unrelated_facts_preserved": True}
 
 
+def test_pdf_heading_hierarchy(root):
+    output = root / "heading_hierarchy"
+    output.mkdir(parents=True, exist_ok=True)
+    data = facts("sync", "合成六级目录")
+    markdown = "# 合成六级目录\n\n# 1. 需求概述\n\n"
+    labels = ["一级章节", "二级类别", "三级报表", "四级物理表", "五级分组", "六级字段"]
+    for level, label in enumerate(labels, 1):
+        markdown += "#" * level + " " + label + "\n\n正文内容。\n\n"
+    markdown += "| 字段 | 字段生成逻辑 |\n| --- | --- |\n| complete_field | COMPLETE_DICTIONARY_VALUE |\n\n"
+    markdown += "## 同级类别\n\n#### 跳级物理表\n\n###### 跳级字段\n\n"
+    path = render_pdf(markdown, output / "document.md", output / "document.pdf", data)
+    reader = PdfReader(path)
+
+    def flatten(items, depth=0):
+        result = []
+        for item in items:
+            if isinstance(item, list):
+                result.extend(flatten(item, depth + 1))
+            else:
+                result.append((item.title, depth))
+                assert 0 <= reader.get_destination_page_number(item) < len(reader.pages)
+        return result
+
+    outline = dict(flatten(reader.outline))
+    assert [outline[label] for label in labels] == list(range(6)), outline
+    assert [outline[label] for label in ("同级类别", "跳级物理表", "跳级字段")] == [1, 2, 3], outline
+    text = compact("".join(page.extract_text() for page in reader.pages))
+    assert "complete_field" in text and "COMPLETE_DICTIONARY_VALUE" in text
+    for label in labels:
+        assert text.count(label) >= 2, "Every heading must remain in contents and body"
+    return {"six_heading_levels": True, "skipped_levels_preserve_ancestry": True, "dictionary_retained": True}
+
+
 def run_pdf_regressions(root, check_formats=True):
     root.mkdir(parents=True, exist_ok=True)
     metrics = {}
@@ -136,6 +169,7 @@ def run_pdf_regressions(root, check_formats=True):
                 render_and_validate(root, profile, choice)
                 metrics["formats"].append(f"{profile}:{choice}")
     metrics["blockers"] = test_pdf_blockers(root)
+    metrics["heading_hierarchy"] = test_pdf_heading_hierarchy(root)
     metrics["long_table_and_edits"] = test_pdf_long_table(root)
     return metrics
 

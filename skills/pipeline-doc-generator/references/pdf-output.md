@@ -14,6 +14,7 @@ The renderer always emits Markdown, HTML, and PDF. `--format` defaults to `all`;
 ## Presentation
 
 - Preserve canonical chapter order and all table/field/logic content. Do not add invented release metadata. Contents pages and unnumbered diagram supplements are PDF navigation/layout elements, not new business chapters.
+- Retain all H1–H6 entries in the clickable contents and bookmarks, including nested data-dictionary groups. The HTML's default two-level expansion and per-chapter folds do not truncate the PDF hierarchy or hide table content.
 - Body pages are A4. Auto orientation uses landscape when a table has at least seven columns; otherwise portrait. Honor an explicit `render_preferences.pdf_orientation` choice.
 - Embed Chinese TrueType fonts, retain selectable/searchable text, wrap long paths and table names, and repeat table headers on continuation pages. Permit an exceptionally tall cell to split instead of dropping text.
 - Render bound Diagram Design SVGs as native PDF vectors, not screenshots. Diagram Design exports follow `diagram-design-interface.md`; unsupported CSS/path features must be flattened before binding. In-text diagrams link to A3 landscape full-page supplements, which link back to their original position. PDF readers provide page zoom/pan; do not promise HTML-style popups or embed viewer scripts.

@@ -88,7 +88,7 @@ def assert_html_navigation(markup: str) -> NavigationProbe:
     assert by_id["document-toc"]["tag"] == "aside"
     assert any(node["tag"] == "label" and node["attrs"].get("for") == "toc-toggle" and node["text"] for node in probe.nodes)
     links = [node for node in probe.nodes if node["tag"] == "a" and any(parent["attrs"].get("class") == "toc-list" for parent in node["ancestors"])]
-    main_headings = [node for node in probe.nodes if node["tag"] in {"h1", "h2", "h3"} and any(parent["tag"] == "main" for parent in node["ancestors"])]
+    main_headings = [node for node in probe.nodes if node["tag"] in {"h1", "h2", "h3", "h4", "h5", "h6"} and any(parent["tag"] == "main" for parent in node["ancestors"])]
     home_links = [node for node in probe.nodes if node["tag"] == "a" and node["attrs"].get("class") == "toc-document-title"]
     if home_links:
         assert len(home_links) == 1
@@ -113,12 +113,15 @@ def assert_html_navigation(markup: str) -> NavigationProbe:
 def test_html_navigation(root: Path) -> dict:
     title = '合成超长标题：Blob 同步 <P>/<W> 与 "引用" & <script>alert(1)</script>'
     path = "PLANT_PRODUCTION/FULL/<P>/<W>/" + "long_source_name_" * 8 + "part-*"
-    markdown = f"# {title}\n\n# 发布历史\n\n# 1. 数据源\n\n## 1.1 数据字典\n\n### 1.1.1 `{path}`<br>字段清单\n\n# 2. Target\n"
+    markdown = f"# {title}\n\n# 发布历史\n\n# 1. 数据源\n\n## 1.1 数据字典\n\n### 1.1.1 `{path}`<br>字段清单\n\n#### 报表类型\n\n##### physical_table\n\n###### 目标分销字段\n\n# 2. Target\n"
     markup = markdown_to_html(markdown, root / "navigation.md", title)
     probe = assert_html_navigation(markup)
     chapter_labels = [node["text"] for node in probe.nodes if node["tag"] == "a" and any(parent["attrs"].get("class") == "toc-list" for parent in node["ancestors"])]
     assert title not in chapter_labels
     assert f"1.1.1 {path} 字段清单" in chapter_labels
+    deepest = next(node for node in probe.nodes if node["tag"] == "a" and node["text"] == '目标分销字段')
+    ancestry = [parent["attrs"].get("data-outline-level") for parent in deepest["ancestors"] if parent["tag"] == "li"]
+    assert ancestry == ['1', '2', '3', '4', '5', '6'], "Dictionary ancestry must survive rendering"
     assert any(node["attrs"].get("class") == "toc-document-title" and node["text"] == title for node in probe.nodes)
     assert not any(node["tag"] in {"w"} for node in probe.nodes)
     # A partial document without a matching H1 title must not lose its first chapter.
