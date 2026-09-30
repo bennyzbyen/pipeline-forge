@@ -23,6 +23,7 @@ Use lowercase ASCII IDs with underscores. Keep an existing ID during renames so 
 - `flow`: accessible title/description, nodes, and valid edges.
 - `catalog`: applicability and registration facts for both profiles. Report `dictionary[]` and `storage[]` rows should bind `target_id` to a stable target ID; legacy `data_item` may resolve only when it uniquely identifies an ID or physical table. The renderer derives `参见 3.1.x` from target order, never from manually typed chapter numbers.
 - `render_preferences` for sync documents: explicit booleans for the three optional Target columns selected from explicit preferences or documented assistant presentation defaults (`include_target_category`, `include_target_report_type`, and `include_target_range`).
+- `render_preferences.include_target_notes`: false by default for report documents. Keep legacy target `logic` and `processing_notes` in facts for audit; enable narrative rendering only for a requested extension. Place required field derivations in the field logic cells and table-level write/key facts in metadata before suppressing duplicate prose.
 - `render_preferences.last_format`: always `all`; legacy partial values are migrated automatically. Optional `pdf_orientation`: `auto` (default), `portrait`, or `landscape`; reuse on later renders.
 
 ## Questions
@@ -61,8 +62,8 @@ Literal `待定`, `TBD`, or equivalent values are not complete by default. Allow
 
 ## Conversational Revision
 
-1. Identify the stable ID or JSON pointer affected by the user request.
+1. Compare the current facts and existing document with the last available generated/committed baseline before regeneration. Inspect manual Markdown differences and reconcile valid changes into facts with their actual provenance. If an edit conflicts with current business evidence, preserve it in the audit and resolve only the dependent conflict; do not overwrite it silently. Then identify the stable ID or JSON pointer affected by the user request.
 2. Update the value and append a `change_log` entry with timestamp, summary, and `source = user_confirmation` for actual user answers, or `source = assistant_decision` for authorized local presentation/naming choices; never mislabel inferred business facts as user answers.
-3. Update affected flow labels/edges, pipeline inputs/outputs, writing responsibilities and Catalog references when a source, target, or Pipeline relationship changed. Preserve previously accepted exclusions and terminology; do not restore deleted sections during regeneration.
+3. Update affected flow labels/edges, pipeline inputs/outputs, writing responsibilities and Catalog references when a source, target, or Pipeline relationship changed. Persist presentation choices in `render_preferences`, and retain scope exclusions by heading/purpose rather than mutable section numbers. Preserve accepted terminology and specific per-record overrides: a broad later “same as the reference” instruction does not erase a retained exception without evidence. Do not restore deleted sections during regeneration or turn temporary business exclusions into global defaults.
 4. Regenerate all three formats, even when the previous document used a partial output selection.
-5. Validate Markdown, HTML, and PDF together so older output cannot silently drift.
+5. Validate Markdown, HTML, and PDF together against the sources actually used for this revision. Check ordered fields, types/nullability, descriptions, keys and full storage names; review resolved internal links and escaped raw HTML/unparsed Markdown in rendered outputs. Previous validation results do not cover changed evidence. Report schema alignment, schema/DDL agreement, rendering and production execution separately, with the applicable baseline; a passing renderer does not establish the other three.

@@ -151,7 +151,8 @@
         "pdf_orientation": {"enum": ["auto", "portrait", "landscape"], "default": "auto"},
         "include_target_category": {"type": ["boolean", "null"]},
         "include_target_report_type": {"type": ["boolean", "null"]},
-        "include_target_range": {"type": ["boolean", "null"]}
+        "include_target_range": {"type": ["boolean", "null"]},
+        "include_target_notes": {"type": "boolean", "default": false, "description": "Report table narratives are audit-only unless explicitly requested."}
       },
       "additionalProperties": true
     },
@@ -191,6 +192,7 @@
         "type": {"type": "string"},
         "source": {"type": "string"},
         "source_field": {"type": "string"},
+        "nullable": {"type": ["boolean", "null"], "description": "Explicit source nullability; null or absent means unknown, not inferred from type text."},
         "logic": {"type": "string"},
         "sample": {"type": "string"},
         "history": {"type": "string"},
@@ -233,7 +235,9 @@
         "range": {"type": "string", "description": "Data coverage only, never a fallback copy of the schedule."},
         "rowkey": {"type": "string", "description": "User-confirmed design; no default inferred from a full refresh."},
         "write_mode": {"type": "string"},
+        "layer": {"type": "string", "description": "Evidenced data layer, independent of processing stage and physical name."},
         "logic": {"type": "array", "items": {"type": "string"}},
+        "processing_notes": {"type": "array", "items": {"type": "string"}, "description": "Legacy table narratives retained for audit; hidden by default."},
         "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
         "source_refs": {"type": "array", "items": {"$ref": "#/$defs/sourceRef"}}
       },

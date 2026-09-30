@@ -9,8 +9,8 @@ import tempfile
 
 from pipeline_doc_authoring import checkpoint_revision, prepare_revision
 from pipeline_doc_common import apply_fixed_defaults, blocking_questions
-from pipeline_doc_report import target_reference
-from render_pipeline_doc import render_markdown
+from pipeline_doc_report import target_reference, target_layer
+from render_pipeline_doc import render_markdown, target_logic_sections, split_pipe_row
 from validate_pipeline_doc import validate_facts
 from verify_pipeline_doc_generator import facts, run, RENDER, VALIDATE
 
@@ -23,8 +23,19 @@ def run_report_policy(root):
     first = data["targets"][0]
     first["storage_tables"] = {"HBase": "demo_hbase.measure", "ClickHouse": "demo_ck.measure"}
     first["fields"][0]["source_field"] = "unique_source_key"
+    first["category"] = "L2/I3"
+    first["table"] = "warehouse_i3_daily_metric"
+    first["logic"] = ["AUDIT_ONLY_TABLE_NARRATIVE"]
+    first["processing_notes"] = ["AUDIT_ONLY_PROCESSING_NOTE"]
+    extra_field = copy.deepcopy(first["fields"][0])
+    extra_field.update(id="optional_metric", key="optional_metric", name="可空指标")
+    first["fields"].append(extra_field)
+    first["fields"][0]["nullable"] = False
+    first["fields"][1]["nullable"] = True
     second = copy.deepcopy(first)
-    second.update(id="second_target", table="second_table", storage_tables={"ClickHouse": "demo_ck.second_table"})
+    second.update(id="second_target", table="second_table", category="silver",
+                  storage_tables={"ClickHouse": "demo_ck.second_table"})
+    second["fields"][1].pop("nullable")
     data["targets"].append(second)
     data["pipelines"][0]["targets"].append(second["id"])
     data["catalog"]["dictionary"].append({"data_item": "second entry", "target_id": "second_target"})
@@ -37,6 +48,31 @@ def run_report_policy(root):
     assert data["document"]["release_history"][0]["author"] == "张本彦"
     assert data["document"]["release_history"][0]["version"] == "0.0.1"
     markdown = render_markdown(data, "flow.svg", "obsolete_catalog.svg")
+    assert data["render_preferences"]["include_target_notes"] is False
+    assert "AUDIT_ONLY" not in markdown
+    assert "L2/I3" not in markdown and "| 层级 | L2 |" in markdown
+    assert "warehouse_i3_daily_metric" in markdown and first["category"] == "L2/I3"
+    assert target_layer({"category": "L4 / I7"}) == "L4"
+    assert target_layer({"category": "silver"}) == "silver"
+    assert target_layer({"category": "L2/I3", "layer": "bronze"}) == "bronze"
+    assert target_layer({"table": "unconfirmed_l2_i3_table"}) == ""
+    # Explicit nullability preserves false, true and unknown independently of type text.
+    table_rows = [split_pipe_row(line) for line in target_logic_sections(data).splitlines()
+                  if line.startswith("| ")]
+    header = next(row for row in table_rows if row[0] == "字段名")
+    nullable_index = header.index("允许空")
+    field_rows = [row for row in table_rows if row[0] in {field["key"] for field in first["fields"]}]
+    assert [row[nullable_index] for row in field_rows] == ["否", "是", "否", ""]
+    # A requested narrative extension survives defaulting and remains audit-preserving.
+    extended = copy.deepcopy(data)
+    extended["render_preferences"]["include_target_notes"] = True
+    apply_fixed_defaults(extended)
+    assert "AUDIT_ONLY_TABLE_NARRATIVE" in target_logic_sections(extended)
+    assert "AUDIT_ONLY_PROCESSING_NOTE" in target_logic_sections(extended)
+    # Hidden target prose must not suppress an actual Pipeline step.
+    mapped = copy.deepcopy(data)
+    mapped["pipelines"][0]["steps"] = ["AUDIT_ONLY_TABLE_NARRATIVE"]
+    assert "AUDIT_ONLY_TABLE_NARRATIVE" in render_markdown(mapped, "flow.svg")
     assert "obsolete_catalog.svg" not in markdown and "登记 Data Catalog" not in markdown
     assert "4.2.4 检查 Catalog Basic Info" in markdown
     assert "4.2.5 登记 Data Dictionary" in markdown and "4.2.6 登记 Data Storage" in markdown
@@ -78,6 +114,12 @@ def run_report_policy(root):
         "--html", str(root/f"{title}.html"), "--pdf", str(root/f"{title}.pdf"))
     rendered = json.loads(path.read_text(encoding="utf-8"))
     assert len(rendered["document"]["release_history"]) == 1
+    assert rendered["render_preferences"]["include_target_notes"] is False
+    stored = next(target for target in rendered["targets"] if target["id"] == first["id"])
+    assert stored["logic"] == first["logic"] and stored["processing_notes"] == first["processing_notes"]
+    for suffix in ("md", "html"):
+        text = (root / f"{title}.{suffix}").read_text(encoding="utf-8")
+        assert "AUDIT_ONLY" not in text and "warehouse_i3_daily_metric" in text
     assert rendered["document"]["documentation"] == data["document"]["documentation"], "Audit evidence was erased"
     # Entering version management creates exactly one subsequent release.
     rendered["document"]["release_mode"] = "versioned"
@@ -86,7 +128,10 @@ def run_report_policy(root):
     prepare_revision(rendered)
     assert len(rendered["document"]["release_history"]) == 2
     return {"draft_pin": True, "storage_identities": True, "unique_field_logic_preserved": True,
-            "catalog_reorder_and_missing_target": True, "three_format_bundle": True}
+            "catalog_reorder_and_missing_target": True, "three_format_bundle": True,
+            "audit_notes_hidden_and_retained": True, "requested_notes_preserved": True,
+            "layer_stage_separation": True, "nullable_true_false_unknown": True,
+            "pipeline_steps_not_lost": True}
 
 
 if __name__ == "__main__":

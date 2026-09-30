@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from pipeline_doc_report import storage_tables, target_reference, field_logic
+from pipeline_doc_report import storage_tables, target_reference, field_logic, target_layer
 
 import argparse
 import base64
@@ -174,7 +174,7 @@ def target_table_report(facts: dict) -> str:
     labels = list(dict.fromkeys(label for target in targets for label in storage_tables(target)))
     labels.sort(key=lambda label: (0 if label == "HBase" else 1 if label == "ClickHouse" else 2))
     return markdown_table(["层级", "数据项", *(f"{label}表名" for label in labels)],
-                          [[target.get("category", ""), target.get("description", ""),
+                          [[target_layer(target), target.get("description", ""),
                             *(storage_tables(target).get(label, "不适用") for label in labels)]
                            for target in targets])
 
@@ -197,18 +197,27 @@ def target_logic_sections(facts: dict) -> str:
         metadata = [["业务描述", target.get("description", "")],
                     ["存储", target.get("location", "")], ["数据粒度", target.get("grain", "")],
                     ["写入方式", target.get("write_mode", "")]]
+        if target_layer(target):
+            metadata.insert(2, ["层级", target_layer(target)])
         if target.get("rowkey"):
             metadata.append(["RowKey", target["rowkey"]])
         sections.extend([markdown_table(["项目", "内容"], metadata), ""])
         fields = target.get("fields") or []
-        logic = [value for value in unique_paragraphs(target.get("logic") or [])
-                 if not any(same_prose(value, field.get("logic", "")) for field in fields)]
-        if logic:
-            sections.extend([bullet_lines(logic), ""])
+        if (facts.get("render_preferences") or {}).get("include_target_notes") is True:
+            notes = [*(target.get("logic") or []), *(target.get("processing_notes") or [])]
+            logic = [value for value in unique_paragraphs(notes)
+                     if not any(same_prose(value, field.get("logic", "")) for field in fields)]
+            if logic:
+                sections.extend([bullet_lines(logic), ""])
+        include_nullable = any(isinstance(field.get("nullable"), bool) for field in fields)
+        headers = ["字段名", "字段名称", "字段类型",
+                   *(["允许空"] if include_nullable else []), "数据源/来源表", "字段生成逻辑"]
         rows = [[field.get("key", ""), field.get("name", ""), field.get("type", ""),
+                 *(["是" if field.get("nullable") is True else "否" if field.get("nullable") is False else ""]
+                   if include_nullable else []),
                  source_names.get(field.get("source"), field.get("source", "")), field_logic(field)]
                 for field in fields]
-        sections.extend([markdown_table(["字段名", "字段名称", "字段类型", "数据源/来源表", "字段生成逻辑"], rows), ""])
+        sections.extend([markdown_table(headers, rows), ""])
     return "\n".join(sections).strip()
 
 
@@ -294,7 +303,13 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
         if profile == "sync":
             pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), pipeline.get("trigger", "")])
         else:
-            described_logic = [item for target in facts.get("targets", []) if target.get("id") in pipeline.get("targets", []) for item in target.get("logic", [])]
+            related_targets = [target for target in facts.get("targets", [])
+                               if target.get("id") in pipeline.get("targets", [])]
+            described_logic = [field_logic(field) for target in related_targets
+                               for field in target.get("fields", [])]
+            if (facts.get("render_preferences") or {}).get("include_target_notes") is True:
+                described_logic.extend(item for target in related_targets
+                                       for item in [*(target.get("logic") or []), *(target.get("processing_notes") or [])])
             description = [item for item in unique_paragraphs(description) if not any(same_prose(item, logic) for logic in described_logic)]
             pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), "\n".join(description), pipeline.get("trigger", "")])
     headers = ["Data Utilization Name", "Pipeline Name", "task1 name", "定时同步时间"] if profile == "sync" else ["Data Utilization Name", "Pipeline Name", "task1 name", "Description", "trigger time"]

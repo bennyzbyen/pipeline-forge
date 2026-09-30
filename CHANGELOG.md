@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1 - 2026-09-30
+
+- Generalize document revision lessons: preserve manual edits, scoped overrides and current-source evidence without project-specific defaults.
+- Keep report table narratives hidden by default with retained audit facts; separate layer/stage display and preserve explicit field nullability.
+
 ## 2.3.0 - 2026-09-30
 
 - Fix project boundary validation and exception-first diagnostics; keep plugin fixtures separate from project gates.
