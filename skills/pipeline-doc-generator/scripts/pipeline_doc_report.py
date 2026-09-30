@@ -1,6 +1,15 @@
 """Report table identities and internal dictionary references; no I/O."""
 from __future__ import annotations
 
+import re
+
+
+def target_layer(target):
+    """Separate an explicit layer from legacy stage notation without renaming facts."""
+    value = str(target.get("layer") or target.get("category") or "").strip()
+    match = re.fullmatch(r"(L[0-9]+)\s*/\s*I[0-9]+", value, re.IGNORECASE)
+    return match.group(1).upper() if match else value
+
 
 def storage_tables(target):
     """Prefer explicit per-storage identities; support legacy dual-write facts."""

@@ -44,7 +44,10 @@ def apply_fixed_defaults(facts: dict[str, Any]) -> dict[str, Any]:
     team = document.setdefault("team", {})
     team["developer"] = FIXED_ENGINEER_ROLE
     team["operator"] = FIXED_ENGINEER_ROLE
-    facts.setdefault("render_preferences", {})["last_format"] = "all"
+    preferences = facts.setdefault("render_preferences", {})
+    preferences["last_format"] = "all"
+    if facts.get("profile") == "report":
+        preferences.setdefault("include_target_notes", False)
     for item in facts.get("questions") or []:
         if item.get("id") in {"PL-BLOCK-WRITE-FLOW", "WL-BLOCK-WRITE-FLOW", "PL-BLOCK-SYNC-LOGIC", "WL-BLOCK-SYNC-LOGIC", "PL-BLOCK-OUTPUT-FORMAT", "WL-BLOCK-OUTPUT-FORMAT"}:
             item["status"] = "resolved"
