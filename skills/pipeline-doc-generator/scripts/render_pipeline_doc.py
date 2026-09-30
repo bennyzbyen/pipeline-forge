@@ -395,6 +395,27 @@ def toc_markup(value: str) -> str:
     return html.escape(" ".join(value.split()))
 
 
+def chapter_outline(headings: list[tuple[int, str, str]]) -> str:
+    """Retain every heading and its nearest shallower ancestor, including H6."""
+    roots, stack = [], []
+    for level, text, anchor in headings:
+        node = {"level": level, "text": text, "anchor": anchor, "children": []}
+        while stack and stack[-1]["level"] >= level:
+            stack.pop()
+        (stack[-1]["children"] if stack else roots).append(node)
+        stack.append(node)
+
+    def render(nodes: list[dict]) -> str:
+        return "".join(
+            f'<li class="level-{node["level"]}" data-outline-level="{node["level"]}">'
+            f'<a href="#{node["anchor"]}">{toc_markup(node["text"])}</a>'
+            + (f'<ul class="toc-children">{render(node["children"])}</ul>' if node["children"] else "")
+            + '</li>' for node in nodes
+        )
+
+    return render(roots)
+
+
 def safe_inline_svg(path: Path) -> str:
     root = ET.fromstring(path.read_text(encoding="utf-8"))
     validate_svg_safety(root)
@@ -521,7 +542,7 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
     chapter_headings = headings[1:] if document_heading else headings
     title_label = toc_markup(title)
     document_link = f'<a class="toc-document-title" href="#{document_heading[2]}">{title_label}</a>' if document_heading else f'<p class="toc-document-title">{title_label}</p>'
-    toc_items = [f'<li class="level-{level}"><a href="#{anchor}">{toc_markup(text)}</a></li>' for level, text, anchor in chapter_headings if level <= 3]
+    toc_items = chapter_outline(chapter_headings)
     css = """
     :root{color-scheme:light;--ink:#0f172a;--muted:#475569;--line:#cbd5e1;--accent:#2563eb;--paper:#fff;--wash:#f8fafc;--toc-width:320px;--rail-width:56px;--layout-width:1720px}
     *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif;line-height:1.65}
@@ -539,12 +560,19 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
     .toc-chapters{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#c9cdd4 transparent;padding:18px 4px 8px}
     .toc h2{margin:0 8px 12px;color:#86868b;font-size:11px;font-weight:500;letter-spacing:.15em}.toc ul{min-width:0;list-style:none;margin:0;padding:0}
     .toc li{min-width:0;margin:2px 0;break-inside:avoid}.toc-list a{padding:8px 10px;border-radius:8px;color:#60646c;font-size:13px;line-height:1.5;border-left:3px solid transparent}
-    .toc-list .level-1{margin-top:12px}.toc-list .level-1:first-child{margin-top:0}.toc-list .level-1 a{color:#1d1d1f;font-size:13px;font-weight:600}
-    .toc-list .level-2{padding-left:12px}.toc-list .level-3{padding-left:24px}.toc-list .level-3 a{font-size:12px;color:#6e727a}
+    .toc-list [hidden]{display:none!important}.toc-list li{position:relative}.toc-list li>a{margin-left:23px}
+    .toc-list .toc-children{margin-left:9px;border-left:1px solid var(--line);padding-left:7px}
+    .toc-list .level-1{margin-top:12px}.toc-list .level-1:first-child{margin-top:0}.toc-list .level-1>a{color:var(--ink);font-size:13px;font-weight:600}
+    .toc-list .level-3>a,.toc-list .level-4>a,.toc-list .level-5>a,.toc-list .level-6>a{font-size:12px}
+    .toc-list .toc-branch-toggle{position:absolute;left:0;top:7px;width:22px;height:25px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--muted);cursor:pointer;display:grid;place-items:center}
+    .toc-branch-toggle::before{content:"";width:6px;height:6px;border-right:1.7px solid currentColor;border-bottom:1.7px solid currentColor;transform:rotate(-45deg);transition:transform .15s ease}
+    .toc-branch-toggle[aria-expanded="true"]::before{transform:rotate(45deg)}
+    .toc-branch-toggle:hover{background:var(--line);color:var(--ink)}.toc-branch-toggle:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
+    @media(prefers-reduced-motion:reduce){.toc-branch-toggle::before{transition:none}}
     .toc-list a:hover{color:#1d1d1f;background:#e9ecf1}.toc-list a[aria-current="location"]{color:#0066cc;background:#e5efff;border-left-color:#007aff;font-weight:600}.toc a:focus-visible{outline:2px solid #60a5fa;outline-offset:1px}
     .toc-toggle:not(:checked) ~ .layout{grid-template-columns:minmax(0,1fr)}.toc-toggle:not(:checked) ~ .layout .toc{display:none}.toc-backdrop{display:none}
     main{min-width:0;margin:28px;background:var(--paper);padding:42px 48px;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,.08);overflow-wrap:anywhere}h1,h2,h3{overflow-wrap:anywhere;word-break:break-word}h1{margin-top:2.3rem;border-bottom:2px solid #dbeafe;padding-bottom:.45rem}h1:first-child{margin-top:0;font-size:2.2rem;border:0;text-align:center}h2{margin-top:2rem;color:#1d4ed8}h3{margin-top:1.5rem;color:#334155}
-    main [id]{scroll-margin-top:80px}
+    main [id]{scroll-margin-top:80px}h4,h5,h6{overflow-wrap:anywhere;word-break:break-word;color:var(--ink);line-height:1.6}h4{font-size:1.15rem;margin-top:1.75rem}h5{font-size:1.05rem;margin-top:1.5rem}h6{font-size:1rem;margin-top:1.25rem}
     .table-wrap{overflow:auto;margin:1rem 0 1.5rem;border:1px solid var(--line);border-radius:10px}table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:14px}th,td{padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;text-align:left;white-space:normal;overflow-wrap:anywhere;word-break:break-word}th{position:sticky;top:0;background:#eaf2ff;color:#1e3a8a;z-index:1}tr:last-child td{border-bottom:0}th:last-child,td:last-child{border-right:0}code{background:#eff6ff;padding:.12rem .35rem;border-radius:4px}pre{overflow:auto;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:10px}
     figure{margin:1.5rem 0;text-align:center;overflow:auto}.waterline-flow{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px;margin-top:.5rem}
     @media(max-width:980px){.layout{display:block}.toc{position:fixed;left:var(--rail-width);top:0;width:min(var(--toc-width),calc(100% - var(--rail-width)));z-index:30;box-shadow:8px 0 32px #0f172a18}.toc-toggle:checked ~ .toc-backdrop{display:block;position:fixed;inset:0;z-index:20;background:#1d1d1f24;backdrop-filter:blur(3px);cursor:pointer}main,.toc-toggle:not(:checked) ~ .layout main{margin:0;border-radius:0;padding:28px 20px}h1:first-child{font-size:1.7rem}}
@@ -559,7 +587,7 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
         '<span class="theme-icon theme-sun" aria-hidden="true"></span><span class="theme-icon theme-moon" aria-hidden="true"></span></button>'
         '<div class="layout"><aside id="document-toc" class="toc" aria-label="文档导航">'
         '<header class="toc-header"><p class="toc-eyebrow">水线文档</p>' + document_link + '</header>'
-        '<nav class="toc-chapters" aria-label="章节目录"><h2>目录</h2><ul class="toc-list">' + "".join(toc_items) + '</ul></nav></aside>'
+        '<nav class="toc-chapters" aria-label="章节目录"><h2>目录</h2><ul class="toc-list">' + toc_items + '</ul></nav></aside>'
     )
     viewer = ""
     navigation_script = (ASSETS / "document-navigation.js").read_text(encoding="utf-8")

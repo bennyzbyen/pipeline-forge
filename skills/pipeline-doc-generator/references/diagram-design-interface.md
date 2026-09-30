@@ -33,6 +33,10 @@ The binding validator checks safety, IDs, visible fact labels, endpoints, bounds
 
 ## Layout persistence and scope
 
+For an existing Word/PDF flow, inspect the source image as evidence before redrawing. Record all distinct components, directed paths, meaningful groups, physical table/database examples and timing/write labels in facts. Preserve differences such as incremental collection and daily T-1 collection; keep the source diagram as provenance once the user requests a Diagram Design redraw. Report intentional merges or omissions instead of losing detail silently.
+
+For a compact source → Pipeline → storage flow, `architecture` with `doc-wide` and an engineer audience is a useful starting point, not a fixed template. Use readable database cylinders and a prominent Pipeline node; enclose only platform members established by evidence. Reuse the approved palette and local CJK fallbacks for the offline interchange. Choose size/detail from the content, retain long physical names using wrapping or a larger canvas, and inspect browser and PDF labels. Arrow labels need opaque masks with clearance from strokes, nodes and platform borders. Export the authored HTML with Diagram Design's helper, flatten carried CSS into supported attributes before binding, and retain the linked PDF vector supplement.
+
 Do not turn a single simple layout into a mandatory fixed grid. For complex flows use Diagram Design's overview/detail approach with explicit semantic coverage; this version binds one SVG per slot, so compose the reviewed views into one supported SVG or extend the interface before delivering multiple linked views. Never silently drop nodes or relationships to fit a complexity budget.
 
 Modify skill implementation in the source repository first. Plugin mirroring, installation and publishing remain separate actions governed by the user's scope; merely binding a document diagram does not authorize them.

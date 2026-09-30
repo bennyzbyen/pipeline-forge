@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.0 - 2026-09-30
+
+- Add persistent six-level chapter outlines with separate branch arrows, ancestor-aware links and scroll highlighting; retain complete PDF hierarchy and dictionaries.
+- Generalize source-flow review and Diagram Design export practices without project-specific layouts or business assumptions.
+
 ## 2.3.2 - 2026-09-30
 
 - Fix the Windows relocation regression to compare resolved knowledge note citations across temporary-directory aliases; lookup behavior is unchanged.
