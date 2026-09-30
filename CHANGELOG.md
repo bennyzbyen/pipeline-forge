@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2 - 2026-09-30
+
+- Fix the Windows relocation regression to compare resolved knowledge note citations across temporary-directory aliases; lookup behavior is unchanged.
+
 ## 2.3.1 - 2026-09-30
 
 - Generalize document revision lessons: preserve manual edits, scoped overrides and current-source evidence without project-specific defaults.
