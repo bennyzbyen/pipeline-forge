@@ -58,7 +58,7 @@ Always compile generated Python. Then run the applicable packaged checks:
 
 - Sync: `verify_cot_manifest_semantics.py` for every table, then `verify_codegen_observability.py` and `verify_cot_runtime_semantics.py`.
 - Report: `verify_report_plan_semantics.py` for every output/field/write contract, then `verify_codegen_observability.py`; run `verify_report_runtime_semantics.py` for specialized types and the packaged generic runtime regression after changing standard/bySKU contract generation.
-- Cross-cutting contract changes: run `validate_technical_contract.py`, `verify_technical_contract_regression.py`, `verify_code_unit_contract_regression.py`, `verify_schedule_boundary_planning.py`, `verify_multi_code_unit_delivery.py`, `verify_blocked_code_unit_delivery.py`, and the synthetic QAS acceptance regression.
+- Cross-cutting contract changes: run project gates `validate_technical_contract.py` and `verify_schedule_boundary_planning.py --facts <facts>` on the current contract. Separately run plugin self-tests `verify_technical_contract_regression.py`, `verify_code_unit_contract_regression.py`, `verify_feedback_workflows.py`, `verify_multi_code_unit_delivery.py`, `verify_blocked_code_unit_delivery.py`, and the synthetic QAS acceptance regression. Self-test failures identify plugin behavior to investigate; they do not automatically change unrelated project readiness.
 
 Parse generated JSON files and scan the generated project for credentials and workspace-only paths. Do not connect to Gateway, HBase, FS, ClickHouse, MSSQL, or other production services.
 

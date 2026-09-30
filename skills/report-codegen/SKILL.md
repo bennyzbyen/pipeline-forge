@@ -69,6 +69,8 @@ Read `references/implementation-compatibility.md` when the user supplies an exis
 - Do not claim completeness for empty DataFrames, planned metrics, `NotImplementedError`, or syntax-only success.
 - Do not guess formulas from free text. For the bundled layout, normalize confirmed rules into its bounded DSL; for native/reference implementations, preserve the confirmed Python business logic. Keep unresolved rules as blockers and never evaluate free-text formulas with `eval` or `exec`.
 
+For environment parity, published producer/consumer chains, business golden cases, external documentation or final package identity, read `../pipeline-forge-guide/references/feedback-driven-delivery.md` and apply only the relevant project checks.
+
 ## Output-Equivalence Standard
 
 Preserve output tables, column order, source filters, join direction, defaults, formulas, rounding, null behavior, grouping keys, and target replacement predicates. For HBase prepare components, also preserve period derivation, source table and columns, filters, FS naming, pipeline activation, and credential boundaries.

@@ -151,6 +151,7 @@ def validate_generated_files(
     implementation_ready: bool,
     errors: List[Dict[str, str]],
     warnings: List[Dict[str, str]],
+    implementation_status: Path | None = None,
 ) -> None:
     required = [
         project_dir / "data_utils" / "data_source.py",
@@ -158,7 +159,7 @@ def validate_generated_files(
         project_dir / "data_utils" / "data_storage.py",
         project_dir / "params_configs" / "col_config.py",
         project_dir / "params_configs" / "execution_contract.py",
-        project_dir / "IMPLEMENTATION_STATUS.md",
+        implementation_status if implementation_status is not None else project_dir / "IMPLEMENTATION_STATUS.md",
     ]
     for path in required:
         if not path.is_file():
@@ -200,7 +201,7 @@ def validate_generated_files(
         add_issue(errors, "generated_contract_mismatch", "generated execution_contract differs from report plan")
 
 
-def validate_project(project_dir: Path) -> Dict[str, Any]:
+def validate_project(project_dir: Path, *, implementation_status: Path | None = None) -> Dict[str, Any]:
     plan_path = project_dir / "report_codegen_plan.json"
     if not plan_path.is_file():
         raise FileNotFoundError(plan_path)
@@ -258,7 +259,7 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     for issue in execution_validation.get("deployment_blockers", []):
         add_issue(deployment_blockers, f"execution_{issue.get('code')}", f"{issue.get('path')}: {issue.get('message')}")
     implementation_ready = specialized or execution_validation.get("status") == "passed"
-    validate_generated_files(project_dir, plan, implementation_ready, errors, warnings)
+    validate_generated_files(project_dir, plan, implementation_ready, errors, warnings, implementation_status)
 
     codegen_contract = plan.get("codegen_contract") if isinstance(plan.get("codegen_contract"), Mapping) else {}
     design_ready = codegen_contract.get("ready_for_codegen") is True
@@ -307,8 +308,9 @@ def main() -> int:
     parser.add_argument("--project-dir", type=Path, required=True, help="Generated report project directory.")
     parser.add_argument("--json-out", type=Path, help="Optional path for the JSON verification report.")
     parser.add_argument("--strict-deployment", action="store_true", help="Fail when ERROR or DEPLOYMENT_BLOCKER findings remain; warnings are non-blocking.")
+    parser.add_argument("--implementation-status", type=Path, help="Explicit external IMPLEMENTATION_STATUS.md; other code checks remain unchanged.")
     args = parser.parse_args()
-    result = validate_project(args.project_dir.resolve())
+    result = validate_project(args.project_dir.resolve(), implementation_status=args.implementation_status)
     payload = json.dumps(result, ensure_ascii=False, indent=2)
     print(payload)
     if args.json_out:

@@ -1,73 +1,50 @@
 #!/usr/bin/env python3
-"""Verify that multi-schedule evidence is not collapsed without safe merge evidence."""
-
-from __future__ import annotations
-
+"""Validate project boundary evidence; never impose fixed regression-fixture outcomes."""
 import argparse
 import copy
 import json
 from pathlib import Path
-
 from code_unit_contract import apply_proposal, validate_code_unit_contract
-from code_unit_selection import select_code_unit
 
 
-def main() -> int:
+def verify(facts):
+    candidate = copy.deepcopy(facts)
+    if not candidate.get('code_unit_plan'):
+        apply_proposal(candidate)
+    validation = validate_code_unit_contract(candidate)
+    plan = candidate['code_unit_plan']
+    errors = [{'code': 'BOUNDARY_CONTRACT_INVALID', 'message': e} for e in validation['errors']]
+    if plan.get('confidence') not in ('low', 'medium', 'high'):
+        errors.append({'code': 'BOUNDARY_CONFIDENCE_INVALID', 'message': 'Unsupported evidence confidence'})
+    blockers = []
+    for row in candidate.get('waterlines', []):
+        missing = [k for k in ('algorithm_key', 'codegen_route', 'state_boundary', 'write_boundary',
+                               'deployment_boundary', 'failure_boundary') if not row.get(k)]
+        if missing:
+            blockers.append({'code': 'BOUNDARY_EVIDENCE_MISSING', 'waterline_id': row['waterline_id'], 'fields': missing})
+    if plan.get('status') != 'confirmed':
+        blockers.append({'code': 'MAPPING_NOT_CONFIRMED'})
+    for unit in candidate.get('code_units', []):
+        if not unit.get('readiness', {}).get('ready_for_codegen'):
+            blockers.append({'code': 'UNIT_NOT_READY', 'code_unit_id': unit['code_unit_id']})
+    return {'status': 'failed' if errors or blockers else 'passed', 'check_kind': 'project_gate',
+            'confidence': plan.get('confidence'), 'proposed_count': plan.get('proposed_count'),
+            'errors': errors, 'blockers': blockers, 'blocks_codegen': bool(errors or blockers),
+            'input_changed': False}
+
+
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--facts", type=Path, required=True, help="Existing structured_facts.json regression evidence.")
+    parser.add_argument('--facts', type=Path, required=True)
     args = parser.parse_args()
-    original = json.loads(args.facts.read_text(encoding="utf-8"))
-    facts = copy.deepcopy(original)
-    for key in ("project_contract", "code_unit_plan", "code_units", "waterlines"):
-        facts.pop(key, None)
-    schedules = facts.get("report_schedules") or facts.get("schedules") or []
-    if not isinstance(schedules, list) or len(schedules) < 2:
-        raise ValueError("regression evidence must contain at least two schedules")
-    apply_proposal(facts)
-    plan = facts["code_unit_plan"]
-    validation = validate_code_unit_contract(facts)
-    assert validation["status"] == "passed", validation
-    assert plan["status"] == "awaiting_user_confirmation", plan
-    assert plan["proposed_count"] > 1, plan
-    assert len(plan["covered_waterlines"]) == len(facts["waterlines"]), plan
-    assert plan["confidence"] == "low", plan
-    assert all(item.get("algorithm_key") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("parameter_profile") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("state_boundary") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("write_boundary") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("deployment_boundary") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("failure_boundary") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("dependency_evidence") for item in facts["waterlines"]), facts["waterlines"]
-    assert all(item.get("blockers") for item in facts["code_units"]), facts["code_units"]
-    assert any(item.get("outputs") for item in facts["waterlines"]), facts["waterlines"]
-    unresolved_routes = [item for item in facts["waterlines"] if not item.get("codegen_route")]
-    assert all(item.get("codegen_route_candidates") for item in unresolved_routes), unresolved_routes
     try:
-        select_code_unit(facts, "", "report-codegen")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("unconfirmed schedule-derived plan must reject codegen")
-    print(
-        json.dumps(
-            {
-                "status": "passed",
-                "schedule_evidence_count": len(schedules),
-                "proposed_count": plan["proposed_count"],
-                "confidence": plan["confidence"],
-                "algorithm_boundary_count": sum(bool(item.get("algorithm_key")) for item in facts["waterlines"]),
-                "parameter_profile_count": sum(bool(item.get("parameter_profile")) for item in facts["waterlines"]),
-                "unit_scoped_output_count": sum(len(item.get("outputs") or {}) for item in facts["waterlines"]),
-                "route_candidates_audited": len(unresolved_routes),
-                "proposal_blocker_count": sum(len(item.get("blockers") or []) for item in facts["code_units"]),
-                "hardcoded_business_rules": 0,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
-    return 0
+        result = verify(json.loads(args.facts.read_text(encoding='utf-8-sig')))
+    except (ValueError, TypeError, KeyError, AttributeError) as error:
+        result = {'status': 'failed', 'check_kind': 'project_gate', 'blocks_codegen': True,
+                  'errors': [{'code': 'BOUNDARY_INPUT_INVALID', 'message': str(error)}]}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return int(result['status'] != 'passed')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

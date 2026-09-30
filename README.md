@@ -35,7 +35,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 For a reproducible installation of the published stable release instead:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.2.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.3.0
 ```
 
 Then restart the ChatGPT desktop app, open **Plugins**, choose the **PipelineForge** marketplace, and install PipelineForge. Codex CLI users can enter `/plugins` after restarting the session.
@@ -60,7 +60,7 @@ python .\scripts\validate_package.py
 
 The validator checks package metadata, distribution files, required modules, logo assets, and Python helper syntax.
 
-PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.2.0`.
+PipelineForge follows [Semantic Versioning](VERSIONING.md). The current stable version is `2.3.0`.
 
 ## License
 

@@ -25,7 +25,7 @@ This follows the repository default branch. Adding a market registers its catalo
 For a reproducible installation of the published stable release instead:
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.2.0
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.3.0
 ```
 
 Restart Codex, open **Plugins**, select the **PipelineForge** marketplace, and install PipelineForge. In Codex CLI, restart the session, enter `/plugins`, choose the PipelineForge source, and install `pipeline-forge`.

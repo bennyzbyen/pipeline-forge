@@ -46,6 +46,8 @@ When blockers need user input, read `references/beginner-questions.md` before pr
 
 Route by the requested deliverable, not the input filename. If the user provides requirements without saying whether they want a waterline document or implementation artifacts, ask before selecting either route. A document-only request does not authorize downstream code generation.
 
+For confirmed-project revisions, contradictory stage reports, or final delivery evidence, read `references/feedback-driven-delivery.md`. Keep plugin self-tests separate from project gates.
+
 ## Stage Loop
 
 1. **Assess**: inventory the input files, requested outcome, and any existing project or template.

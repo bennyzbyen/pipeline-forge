@@ -79,8 +79,9 @@ def run_regression() -> dict[str, object]:
             encoding="utf-8",
         )
         payload = run_twice(competing, root, "competing")
-        assert payload["primary_pattern_id"] == "missing_runtime_param", payload
-        assert payload["competing_pattern_ids"] == ["dependency_or_import"], payload
+        assert payload["primary_pattern_id"] == "dependency_or_import", payload
+        assert len(payload["exception_history"]) == 2, payload
+        assert payload["classification_basis"] == "exception_line", payload
         assert payload["confidence"] == "low", payload
         assert payload["diagnosis_status"] == "hypothesis", payload
         results.append(

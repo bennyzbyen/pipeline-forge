@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional
 
 PATTERNS = [
     {
+        "id": "python_api_compatibility", "category": "environment", "severity": "high",
+        "patterns": [r"AttributeError:.*['\"]str['\"].*has no attribute ['\"](?:removeprefix|removesuffix)['\"]"],
+        "root_cause": "字符串 API 在实际运行环境中不可用；需核对解释器及实际对象，不从异常猜测具体版本。",
+        "impact": "失败发生在该字符串调用阶段；此前读取或写入是否完成须分别核查。",
+        "fix": "取得运行解释器版本和对象类型证据，再选择受支持的 API 或经验证的兼容实现。",
+        "verify": "在实际目标解释器或等价离线环境复现该调用，并验证正常与边界输入。",
+    },
+    {
         "id": "wrapped_single_params",
         "category": "params",
         "severity": "high",
@@ -294,7 +302,11 @@ def score_patterns(text: str) -> List[Dict[str, Any]]:
 def analyze_log(text: str) -> Dict[str, Any]:
     lines = normalize_lines(text)
     traceback_info = extract_traceback(lines)
-    hits = score_patterns(text)
+    # Successful platform messages are context, not root-cause evidence.
+    exception = traceback_info["exception_line"]
+    root_hits = score_patterns(exception) if exception else []
+    failure_text = "\n".join(line for line in lines if re.search(r"\b(ERROR|WARNING|failed|failure|unavailable)\b", line, re.I))
+    hits = root_hits or score_patterns(failure_text)
     primary = hits[0] if hits else None
     competing = []
     if primary:
@@ -314,9 +326,15 @@ def analyze_log(text: str) -> Dict[str, Any]:
     elif traceback_info["traceback_count"] == 0 or not traceback_info["exception_line"]:
         confidence = "low"
         confidence_reason = "日志没有完整 traceback/异常终行，可能已被截断。"
+    elif traceback_info["traceback_count"] > 1:
+        confidence = "low"
+        confidence_reason = "日志包含多个异常链；末行用于定位当前失败，保留历史异常供因果复核。"
     elif competing:
         confidence = "low"
         confidence_reason = "存在同优先级、同分值的竞争错误模式，当前分类仅是确定性首选假设。"
+    elif not root_hits:
+        confidence = "low"
+        confidence_reason = "分类仅来自失败上下文，未与异常末行直接对应。"
     else:
         confidence = "high"
         confidence_reason = "完整 traceback 与唯一最高优先级错误模式一致。"
@@ -331,6 +349,10 @@ def analyze_log(text: str) -> Dict[str, Any]:
         "confidence": confidence,
         "confidence_reason": confidence_reason,
         "competing_pattern_ids": competing,
+        "classification_basis": "exception_line" if root_hits else "failure_context",
+        "runtime_version": "unknown",
+        "failure_stage": "module_load" if primary and primary["id"] == "dependency_or_import" else "exception_call" if exception else "unknown",
+        "exception_history": [line.strip() for line in lines if re.search(r"(?:Error|Exception):", line)],
         "matched_patterns": [
             {
                 "id": item["id"],
