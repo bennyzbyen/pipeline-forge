@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.1 - 2026-10-14
+
+- Preserve implementation contracts, risks, source lifecycle and verified function-level retrieval for self-contained private knowledge.
+- Exclude historical primary matches by default and enforce comparison-only reuse independently of optional role records.
+- Report private health separately; function-review changes invalidate affected adoption hashes, and embedded evidence audits never require external originals.
+
 ## 2.4.0 - 2026-09-30
 
 - Add persistent six-level chapter outlines with separate branch arrows, ancestor-aware links and scroll highlighting; retain complete PDF hierarchy and dictionaries.

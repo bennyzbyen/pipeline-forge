@@ -9,6 +9,8 @@ import re
 import sys
 from pathlib import Path
 from knowledge_snapshots import load_manifest, verify_snapshot
+from knowledge_extensions import (ACTIVE_LIFECYCLES, HISTORICAL_LIFECYCLE,
+                                  load_function_reviews, function_details)
 
 CARD_ID = re.compile(r'^PF[BKW]-\d{3,}$')
 ALIASES = (
@@ -67,6 +69,11 @@ def load_index(config):
         for field in ('updates', 'supplemented_by'):
             if row.get(field) is not None and (not isinstance(row[field], list) or any(not isinstance(key, str) for key in row[field])):
                 raise ValueError('invalid knowledge version links')
+        contract = row.get('implementation_contract')
+        if contract is not None and (not isinstance(contract, dict) or any(
+                not isinstance(contract.get(key), list) or any(not isinstance(v, str) for v in contract[key])
+                for key in ('inputs', 'outputs', 'reuse_steps'))):
+            raise ValueError('invalid implementation contract')
     ids = [row.get('id', '') for row in rows]
     if any(not CARD_ID.fullmatch(key) for key in ids) or len(ids) != len(set(ids)):
         raise ValueError('knowledge index has invalid or duplicate IDs')
@@ -138,12 +145,18 @@ def check_original_evidence(evidence, config, documents, cache):
 
 def check_evidence(evidence, config, documents, cache, vault, snapshots, audit_originals=False):
     snapshot = verify_snapshot(vault, evidence, snapshots)
-    origin = (check_original_evidence(evidence, config, documents, cache)
+    embedded = evidence.get('type') == 'embedded' and evidence.get('root') == 'vault'
+    origin = ({'verification': 'not_applicable_embedded_evidence',
+               'scope': 'original drift cannot be checked from a self-contained captured source hash'} if embedded else
+              check_original_evidence(evidence, config, documents, cache)
               if snapshot is None or audit_originals else {'verification': 'not_checked'})
     if snapshot is None:
         return {**origin, 'basis': 'original_source_legacy'}
     result = {key: evidence[key] for key in ('type', 'root', 'path', 'document_id', 'start', 'end', 'symbol', 'locator') if key in evidence}
+    provenance = evidence.get('provenance', {})
     return {**result, 'expected_sha256': evidence.get('source_sha256'),
+            'capture_provenance': {k: provenance[k] for k in ('source_id', 'source_sha256', 'source_line_span', 'repository',
+                'github_anchor_commit', 'local_head_commit', 'source_state', 'selected_source', 'deployment') if k in provenance},
             'verification': snapshot['verification'], 'basis': 'frozen_evidence',
             'citation': snapshot.get('citation'), 'snapshot': snapshot, 'origin': origin,
             'applicability': 'captured_version_only; current project behavior requires separate review'}
@@ -196,7 +209,7 @@ def usage_context(vault, key, checked, requested_role, contexts=None):
 
 
 def search(config, query, *, skill='', project='', version='all', limit=6, role='',
-           detail='full', audit_originals=False, ids=None, strict_scope=False):
+           detail='full', audit_originals=False, ids=None, strict_scope=False, include_historical=False):
     if not query.strip():
         raise ValueError('query must not be empty')
     if version not in {'all', 'working', 'historical'} or not 1 <= limit <= 20:
@@ -208,7 +221,9 @@ def search(config, query, *, skill='', project='', version='all', limit=6, role=
     vault, cards, index_hash = load_index(config)
     snapshots = load_manifest(vault)
     contexts = load_usage_context(vault)
+    reviews = load_function_reviews(vault, cards)
     requested_ids = set(ids or [])
+    query_ids = {key.upper() for key in re.findall(r'\bPF[BKW]-\d{3,}\b', query, re.I)}
     if requested_ids - {c['id'] for c in cards}:
         raise ValueError('unknown knowledge IDs')
     words = terms(query)
@@ -216,11 +231,15 @@ def search(config, query, *, skill='', project='', version='all', limit=6, role=
     for card in cards:
         if requested_ids and card['id'] not in requested_ids:
             continue
+        if (card.get('lifecycle') == HISTORICAL_LIFECYCLE and not include_historical
+                and version != 'historical' and card['id'] not in requested_ids | query_ids):
+            continue
         if strict_scope and ((project and not project_match(card['project'], project))
                              or (skill and skill not in re.split(r'[\s;/,]+', card['target_skill']))):
             continue
-        score = sum(weight for key, weight in [('title', 5), ('project', 6), ('claim', 3), ('reuse', 2), ('limits', 1)]
+        score = sum(weight for key, weight in [('title', 5), ('project', 6), ('module', 5), ('claim', 3), ('reuse', 2), ('limits', 1)]
                     for word in words if word in str(card.get(key, '')).lower())
+        score += sum(8 for word in words if any(word in row['function'].lower() for row in reviews.get(card['id'], [])))
         if card['id'] in requested_ids or card['id'].lower() in query.lower():
             score += 100
         if score:
@@ -246,10 +265,16 @@ def search(config, query, *, skill='', project='', version='all', limit=6, role=
     for key in selected:
         card = by_id[key]
         scope = card.get('version_scope', '')
-        current_version = 'working' if card.get('source_root') == 'work_code' or 'working_tree' in scope else 'historical'
+        lifecycle = card.get('lifecycle')
+        current_version = ('historical' if lifecycle == HISTORICAL_LIFECYCLE else 'working' if lifecycle in ACTIVE_LIFECYCLES
+                           or card.get('source_root') == 'work_code' or 'working_tree' in scope else 'historical')
         checked = [check_evidence(e, config, documents, cache, vault, snapshots, audit_originals) for e in card.get('evidence', [])]
         verified = bool(checked) and all(e['verification'] == 'verified' for e in checked)
         blockers = []
+        if lifecycle == HISTORICAL_LIFECYCLE:
+            blockers.append('historical_reference_comparison_only')
+        elif lifecycle is not None and lifecycle not in ACTIVE_LIFECYCLES:
+            blockers.append('unknown_lifecycle_comparison_only')
         if card.get('status') != 'reviewed_static':
             blockers.append('knowledge_not_reviewed')
         if not verified:
@@ -264,12 +289,21 @@ def search(config, query, *, skill='', project='', version='all', limit=6, role=
             blockers.append('risk_counterexample_not_default_rule')
         context, context_blockers = usage_context(vault, key, checked, role, contexts)
         blockers.extend(context_blockers)
+        if lifecycle is not None and lifecycle not in ACTIVE_LIFECYCLES:
+            context = {**context, 'components': [{**c, 'use': 'comparison_only'} for c in context['components']]}
+        functions = function_details(vault, reviews.get(key, []), checked)
+        if functions['status'] == 'review_required':
+            blockers.append('function_review_not_verified')
         link = card_link(vault, key)
         results.append({
-            **{field: card.get(field) for field in ('id', 'title', 'project', 'kind', 'claim', 'reuse', 'limits', 'evaluation', 'target_skill', 'version_scope', 'updates', 'supplemented_by')},
+            **{field: card.get(field) for field in ('id', 'title', 'project', 'module', 'kind', 'claim', 'reuse', 'limits',
+                'evaluation', 'target_skill', 'version_scope', 'updates', 'supplemented_by', 'lifecycle', 'applicability',
+                'risks', 'implementation_contract', 'reviewed_on', 'status', 'promotion_status', 'repository',
+                'github_commit', 'github_anchor_commit', 'local_head_commit', 'selected_source', 'source_states')},
             'score': scores.get(key, 0), 'match_type': 'query' if key in direct else 'linked_version',
             'source_version': current_version, 'citation': link, 'evidence': checked,
             'usage_context': context,
+            'function_review': functions,
             'reuse_decision': 'comparison_only' if blockers else 'requires_task_contract_review',
             'blockers': blockers,
             'required_review': ['match current user requirements', 'confirm source/version', 'confirm schema/rowkey/write scope/business rules', 'cite accepted evidence; record rejected/conflicting alternatives'],
@@ -278,7 +312,7 @@ def search(config, query, *, skill='', project='', version='all', limit=6, role=
         results = [summarize_result(row) for row in results]
     return {'status': 'matched' if results else 'no_match', 'index_sha256': index_hash,
             'detail': detail, 'original_audit_requested': audit_originals,
-            'strict_scope': strict_scope, 'primary_count': len(direct),
+            'strict_scope': strict_scope, 'include_historical': include_historical, 'primary_count': len(direct),
             'linked_count': len(selected)-len(direct),
             'expand': 'search --ids <knowledge IDs> --detail full; add --audit-originals only for source drift checks',
             'indexed_cards': len(cards), 'query': query, 'requested_skill': skill,
@@ -293,7 +327,8 @@ def summarize_result(row):
     """Keep decisions and complete limits; defer bulky provenance, never blockers."""
     fields = ('id', 'title', 'project', 'claim', 'reuse', 'limits', 'target_skill',
               'source_version', 'version_scope', 'updates', 'supplemented_by',
-              'match_type', 'citation', 'reuse_decision', 'blockers')
+              'match_type', 'citation', 'reuse_decision', 'blockers', 'module', 'lifecycle', 'applicability',
+              'risks', 'implementation_contract', 'reviewed_on', 'status', 'promotion_status', 'selected_source', 'source_states')
     context = row['usage_context']
     return {**{key: row.get(key) for key in fields},
             'evidence': [{'verification': e['verification'], 'basis': e['basis'],
@@ -302,6 +337,7 @@ def summarize_result(row):
             'usage_context': {key: context.get(key) for key in ('status', 'origin', 'version_status')},
             'components': [{key: c.get(key) for key in ('subject', 'role', 'state', 'use')}
                            for c in context.get('components', [])],
+            'function_review': {key: row['function_review'].get(key) for key in ('status', 'count', 'issues')},
             'next_step': 'expand full evidence before adoption; captured version is not current-source or deployment verification'}
 
 
@@ -320,6 +356,7 @@ def main():
     lookup.add_argument('--detail', choices=['summary', 'full'], default='summary')
     lookup.add_argument('--audit-originals', action='store_true', help='Also check optional original sources for drift')
     lookup.add_argument('--strict-scope', action='store_true', help='Filter primary matches by supplied project/skill; keep linked versions')
+    lookup.add_argument('--include-historical', action='store_true', help='Include archived primary matches for comparison; never promotes reuse')
     lookup.add_argument('--skill', default='')
     lookup.add_argument('--project', default='')
     lookup.add_argument('--version', choices=['all', 'working', 'historical'], default='all')
@@ -357,7 +394,8 @@ def execute(args):
         else:
             result = search_available(args.config, args.query or ' '.join(args.ids or []), skill=args.skill, project=args.project,
                             version=args.version, limit=args.limit, role=args.role, detail=args.detail,
-                            audit_originals=args.audit_originals, ids=args.ids, strict_scope=args.strict_scope)
+                            audit_originals=args.audit_originals, ids=args.ids, strict_scope=args.strict_scope,
+                            include_historical=args.include_historical)
     return result
 
 

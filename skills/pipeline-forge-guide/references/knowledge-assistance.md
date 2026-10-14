@@ -32,6 +32,12 @@ old/new cards remain visible. `--limit` bounds primary matches, not linked versi
 it never removes linked version comparisons. The default keeps cross-project patterns.
 Neither mode guarantees semantic relevance; refine ambiguous queries before adoption.
 
+Lifecycle-aware private indexes exclude `historical_reference` cards from default primary matches. Use `--include-historical`, `--version historical`, or an exact ID to deliberately inspect history. Linked old/new cards remain visible for comparison. A historical lifecycle always makes the card comparison-only, even if role metadata is missing or incorrectly active. Legacy indexes without lifecycle fields retain their existing behavior. Both GitHub-matched and repository-bound local snapshots count as working versions; a remote anchor never proves local modifications were uploaded.
+
+Results retain `module`, `applicability`, `risks` and `implementation_contract` when recorded. Treat contract inputs, outputs and reuse steps as adaptation guidance, not a claim that original functions implement every safeguard. An optional internal function-review ledger enables exact function-name retrieval. Full expansion verifies each selected function body against frozen evidence and returns its observation and internal citation; summary retains the count, verification status and blockers. Function-record changes invalidate affected adoption hashes. Older vaults without these extensions continue to work.
+
+For embedded vault evidence, even `--audit-originals` performs no external-source lookup: original drift is unavailable from a captured hash alone. Keep the private configuration's external source roots empty when the vault is self-contained. A host's global business knowledge routing remains separate; use confirmed task contracts and the configured business knowledge source to resolve meanings before adopting implementation patterns.
+
 Frozen evidence is verified on every query; original-source checks are separate.
 `origin_verification=not_checked` means no current-source claim was made. Use
 `--audit-originals` with `--detail full` when checking drift or reviewing an update.
