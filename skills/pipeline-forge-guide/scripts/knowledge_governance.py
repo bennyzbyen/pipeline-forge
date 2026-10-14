@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from knowledge_lookup import config_path, contained, load_index, read_json, search, load_usage_context
+from knowledge_extensions import load_function_reviews, compatibility_profile
 
 
 def fingerprint(value):
@@ -43,6 +44,7 @@ def notes(vault):
 def inventory(config):
     vault, cards, index_hash = load_index(config)
     locations, contexts = notes(vault), load_usage_context(vault)
+    reviews = load_function_reviews(vault, cards)
     records, issues = {}, []
     keys = {card['id'] for card in cards}
     for card in cards:
@@ -53,9 +55,11 @@ def inventory(config):
         for linked in list(card.get('updates') or []) + list(card.get('supplemented_by') or []):
             if linked not in keys:
                 issues.append({'id': key, 'code': 'broken_version_link', 'target': linked})
-        records[key] = {'path': note['path'] if note else None,
-                        'content_hash': fingerprint({'card': card, 'note_hash': note['sha256'] if note else None,
-                                                     'usage_context': contexts.get(key)})}
+        content = {'card': card, 'note_hash': note['sha256'] if note else None,
+                   'usage_context': contexts.get(key)}
+        if reviews.get(key):
+            content['function_reviews'] = reviews[key]
+        records[key] = {'path': note['path'] if note else None, 'content_hash': fingerprint(content)}
     for key in sorted(locations.keys() - keys):
         issues.append({'id': key, 'code': 'unindexed_note'})
     return {'version': 1, 'index_sha256': index_hash, 'records': records, 'issues': issues}
@@ -82,13 +86,18 @@ def runtime_identity():
 def doctor(config):
     current = inventory(config)
     issues = list(current['issues'])
-    for key in current['records']:
-        row = next(r for r in search(config, key, ids=[key])['results'] if r['id'] == key)
+    rows = search(config, 'inventory health', ids=list(current['records']))['results'] if current['records'] else []
+    for row in rows:
+        key = row['id']
         for evidence in row['evidence']:
             if evidence['verification'] != 'verified':
                 issues.append({'id': key, 'code': evidence['verification']})
+        if row['function_review']['status'] == 'review_required':
+            issues.append({'id': key, 'code': 'function_review_not_verified'})
+    vault, cards, _ = load_index(config)
     return {'status': 'review_required' if issues else 'ready', 'runtime': runtime_identity(),
             'indexed_cards': len(current['records']), 'index_sha256': current['index_sha256'],
+            'compatibility': compatibility_profile(vault, cards, load_function_reviews(vault, cards), config.get('source_roots', {})),
             'issues': issues, 'freshness': 'curated index compared with notes and evidence; no automatic review promotion'}
 
 

@@ -43,9 +43,13 @@ Before code generation using adopted knowledge, run both checks. If knowledge be
 
 `knowledge_lookup.py doctor` and `knowledge_governance.py doctor` report actual helper location, plugin manifest version when present, helper Python, note/index linkage, related-version links and evidence integrity. Static checks do not infer the target environment or production deployment.
 
+Inspect `private_health` as well as built-in health. A ready built-in bundle does not certify a private vault. Private compatibility reports lifecycle counts, recorded implementation contracts, function-review coverage and the indexed evidence mode. Optional function records must bind to a card's frozen source hash and complete function span; full reads validate the actual body without executing it. The inventory includes these records in the affected card's content hash. Historical lifecycle remains comparison-only regardless of role metadata, and default primary retrieval excludes it; explicit historical retrieval and linked comparisons remain available.
+
 Use `knowledge_governance.py inventory --out <local-output.json>` to capture a read-only inventory. Repeat with `--baseline <previous-output.json>` to classify added, deleted, changed and moved IDs. Hashes cover indexed claims, note contents and reviewed role metadata; path-only moves do not invalidate semantic identity. `validate-refs` checks only adopted dependencies, so unrelated changes do not force a project rebuild. Inventory output must stay outside the private vault. Rebuilding this inventory does not rewrite the curated index, refresh reviewed evidence hashes or promote drafts. Curate new cards through the vault's existing review process.
 
 The vault, inventories, facts with private citations and evidence snapshots remain local; never include them in a public plugin package. Symbolic links and paths escaping the authorized vault/source roots are rejected. Run `verify_knowledge_governance.py` and the existing lookup/snapshot/context suites after shared-layer changes.
+
+Run `verify_knowledge_extensions.py` after lifecycle, implementation-contract or function-ledger changes. It uses synthetic local evidence and covers history constraints, complete frozen function spans, adoption-hash changes, private-health separation and legacy fallback without calling external services.
 
 ## Evaluation boundary
 
