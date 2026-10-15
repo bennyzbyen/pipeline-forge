@@ -194,6 +194,91 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(len(diff["configuration_changes"]), 2)
         self.assertNotEqual(review.normalize_expression("'a b'"), review.normalize_expression("'ab'"))
 
+    def assert_default_equal(self, type_name, before, after, expected=True):
+        old = {"name": "value", "source_type": type_name, "default": before}
+        new = dict(old, default=after)
+        self.assertEqual(review.defaults_equivalent(old, new), expected, (type_name, before, after))
+
+    def test_typed_numeric_default_equivalence(self):
+        for type_name, before, after in [
+            ("Int8", "'0'", "0"), ("Nullable(Int8)", "'0'", 0),
+            ("UInt64", "'18446744073709551615'", "18446744073709551615"),
+            ("Int32", "'+01'", "1.0"), ("Int32", "'-0'", "0e0"),
+            ("Decimal(5,2)", "'1.2300'", "1.23"), ("Nullable(Decimal(50,10))", "'0'", "0.0000000000"),
+            ("Decimal64(2)", "'-12.30'", "-12.3"),
+            ("Float32", "'0.1'", "0.10"), ("LowCardinality(Nullable(Float64))", "'1e3'", "1000"),
+        ]:
+            with self.subTest(type=type_name, before=before, after=after):
+                self.assert_default_equal(type_name, before, after)
+
+    def test_string_defaults_keep_literal_distinctions(self):
+        for type_name in ["String", "Nullable(String)", "LowCardinality(String)", "varchar(20)", "DateTime", "Bool", ""]:
+            with self.subTest(type=type_name):
+                self.assert_default_equal(type_name, "'0'", "0", False)
+                self.assert_default_equal(type_name, "'001'", "'1'", False)
+        self.assert_default_equal("String", "'a b'", "'ab'", False)
+
+    def test_numeric_bounds_and_scale_prevent_false_equivalence(self):
+        for type_name, before, after in [
+            ("Int8", "'128'", "128.0"), ("Int8", "'-129'", "-129.0"),
+            ("UInt8", "'-1'", "-1.0"), ("UInt8", "'256'", "256.0"),
+            ("Int32", "'0.1'", "0.10"), ("UInt64", "'18446744073709551616'", "18446744073709551616.0"),
+            ("Decimal(5,2)", "'1.234'", "1.2340"), ("Decimal(5,2)", "'1000'", "1000.00"),
+            ("Decimal(5,6)", "'0'", "0"), ("Decimal(77,1)", "'0'", "0"),
+            ("Float32", "'1e100'", "1.0e100"), ("Float64", "'1e1000'", "1.0e1000"),
+            ("Float32", "'1e-1000'", "1.0e-1000"),
+        ]:
+            with self.subTest(type=type_name, before=before, after=after):
+                self.assert_default_equal(type_name, before, after, False)
+
+    def test_decimal_defaults_do_not_lose_precision(self):
+        large = "9" * 76
+        self.assert_default_equal("Decimal(76,0)", "'" + large + "'", large)
+        self.assert_default_equal("Decimal(76,0)", "'" + large + "'", large[:-1] + "8", False)
+        self.assert_default_equal("Float64", "'9007199254740992'", "9007199254740993", False)
+
+    def test_nulls_expressions_and_non_numeric_strings_are_not_coerced(self):
+        for before, after in [(None, "0"), ("NULL", "'NULL'"), ("' 0'", "0"), ("''", "0"),
+                              ("'NaN'", "NaN"), ("'Infinity'", "Infinity"), ("'0x10'", "16"),
+                              ("1 + 1", "2"), ("CAST(0 AS Int8)", "0"), ("'0'", "1")]:
+            with self.subTest(before=before, after=after):
+                self.assert_default_equal("Int8", before, after, False)
+        self.assert_default_equal("Nullable(Int8)", "NULL", None)
+
+    def test_type_changes_remain_visible_and_equivalence_is_audited(self):
+        old = {"columns": [{"name": "flag", "source_type": "Int8", "default": "'0'"}]}
+        new = {"columns": [{"name": "flag", "source_type": "UInt8", "default": "0"}]}
+        equivalences = []
+        diff = review.compare_schemas(old, new, equivalences)
+        self.assertEqual([c["attribute"] for c in diff["column_changes"]], ["source_type"])
+        self.assertEqual(len(equivalences), 1)
+        self.assertEqual(equivalences[0]["before"], "'0'")
+        self.assertEqual(equivalences[0]["after"], "0")
+
+    def test_cli_numeric_defaults_pass_but_string_defaults_fail(self):
+        with tempfile.TemporaryDirectory(prefix="ddl_defaults_") as temp:
+            root = Path(temp)
+            source, baseline, target, output = [root / n for n in ["source.sql", "qa.csv", "target.sql", "review.json"]]
+            source.write_text("CREATE TABLE `fixture_defaults` (`id` int NOT NULL DEFAULT '0', `label` varchar(20) DEFAULT '0') ENGINE=InnoDB;", encoding="utf-8")
+            target_text = "CREATE TABLE qa_new.fixture_defaults (`id` Int32 DEFAULT 0, `label` Nullable(String) DEFAULT '0') ENGINE = MergeTree ORDER BY (id);"
+            target.write_text(target_text, encoding="utf-8")
+            with baseline.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["database", "table_name", "ddl"])
+                writer.writerow(["qa_previous", "fixture_defaults", target_text.replace("qa_new.", "qa_previous.")])
+            arguments = ["--source", source, "--target", target, "--baseline", baseline,
+                         "--baseline-database", "qa_previous", "--env", "qa", "--output", output]
+            completed = run_cli("review_clickhouse_ddl.py", *arguments)
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            record = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(record["status"], "PASS")
+            self.assertEqual(record["default_equivalences"][0]["column"], "id")
+            target.write_text(target_text.replace("Nullable(String) DEFAULT '0'", "Nullable(String) DEFAULT 0"), encoding="utf-8")
+            completed = run_cli("review_clickhouse_ddl.py", *arguments)
+            self.assertEqual(completed.returncode, 1)
+            record = json.loads(output.read_text(encoding="utf-8"))
+            self.assertTrue(any(c["column"] == "label" and c["attribute"] == "default" for c in record["contract_diff"]["column_changes"]))
+
     def test_scope_requires_complete_decisions(self):
         other = copy.deepcopy(self.source)
         other["table_name"] = "not_needed"

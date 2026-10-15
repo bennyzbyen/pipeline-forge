@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.1 - 2026-10-15
+
+- Compare quoted and unquoted numeric defaults by declared numeric type while preserving string, NULL, expression, range and precision differences; record accepted equivalences.
+
 ## 2.5.0 - 2026-10-15
 
 - Generalize pipeline output placement, reference inheritance, field corrections and pure-sync overview aggregation while retaining actual task contracts.
