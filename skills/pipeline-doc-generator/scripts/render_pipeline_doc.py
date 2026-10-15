@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 
 from pipeline_doc_common import OUTPUT_FORMATS, apply_fixed_defaults, blocking_questions, bullet_lines, configure_utf8_stdio, load_json, markdown_table, write_json, write_questions
 from pipeline_doc_authoring import checkpoint_revision, prepare_revision
-from pipeline_doc_presentation import connection_note, is_blob_connection, sas_url, same_prose, unique_paragraphs
+from pipeline_doc_presentation import connection_note, display_trigger, is_blob_connection, sas_url, same_prose, unique_paragraphs
 from pipeline_diagram_contract import validate_svg_safety
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -44,14 +44,16 @@ def source_fields(source: dict) -> str:
 def source_table_report(facts: dict) -> str:
     rows = []
     for source in facts.get("sources") or []:
-        rows.append([source.get("location", ""), source.get("name", ""), source.get("description", ""), source.get("range", ""), source_fields(source), "\n".join(source.get("filters") or [])])
+        filters = "\n".join(source.get("filters") or []) if (facts.get("render_preferences") or {}).get("include_source_filters", True) else ""
+        rows.append([source.get("location", ""), source.get("name", ""), source.get("description", ""), source.get("range", ""), source_fields(source), filters])
     return markdown_table(["位置", "数据表名", "数据表", "取数范围", "字段", "关联、过滤信息"], rows)
 
 
 def source_table_sync(facts: dict) -> str:
     rows = []
     for index, source in enumerate(facts.get("sources") or [], start=1):
-        rows.append([index, source.get("location", ""), source.get("category", ""), source.get("report_type", ""), source.get("description", ""), source.get("name", ""), source.get("range", ""), "\n".join(source.get("filters") or [])])
+        filters = "\n".join(source.get("filters") or []) if (facts.get("render_preferences") or {}).get("include_source_filters", True) else ""
+        rows.append([index, source.get("location", ""), source.get("category", ""), source.get("report_type", ""), source.get("description", ""), source.get("name", ""), source.get("range", ""), filters])
     return markdown_table(["序号", "数据位置", "所属类别", "报表类型", "业务描述", "表（source）", "数据范围", "字段差异/过滤信息"], rows)
 
 
@@ -82,7 +84,8 @@ def source_dictionaries(facts: dict) -> str:
         rows = []
         for field in fields:
             if isinstance(field, dict):
-                rows.append([field.get("key", ""), field.get("name", ""), field.get("source_type", ""), field.get("type", ""), field.get("history", "")])
+                history = field.get("history", "") if (facts.get("render_preferences") or {}).get("include_field_history", True) else ""
+                rows.append([field.get("key", ""), field.get("name", ""), field.get("source_type", ""), field.get("type", ""), history])
             else:
                 rows.append([field, "", "", "", ""])
         sections.extend([f"### 3.3.{index} {source.get('name', source.get('id', ''))}", "", markdown_table(["字段", "字段描述", "源字段类型", "目标字段类型", "变更历史"], rows)])
@@ -181,6 +184,8 @@ def target_table_report(facts: dict) -> str:
 
 def target_sync_notes(facts: dict) -> str:
     """One compact home for write/rowkey facts, never another flow narrative."""
+    if (facts.get("render_preferences") or {}).get("include_target_notes") is not True:
+        return ""
     return "\n\n".join(
         f"{physical_target_name(target)}：" + "；".join(
             value for value in (f"写入方式：{target.get('write_mode', '')}",
@@ -301,7 +306,7 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
         if pipeline.get("rerun"):
             description.append(f"重跑：{pipeline['rerun']}")
         if profile == "sync":
-            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), pipeline.get("trigger", "")])
+            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), display_trigger(pipeline)])
         else:
             related_targets = [target for target in facts.get("targets", [])
                                if target.get("id") in pipeline.get("targets", [])]
@@ -311,7 +316,7 @@ def project_pipeline_sections(facts: dict, profile: str, catalog_svg_rel: str = 
                 described_logic.extend(item for target in related_targets
                                        for item in [*(target.get("logic") or []), *(target.get("processing_notes") or [])])
             description = [item for item in unique_paragraphs(description) if not any(same_prose(item, logic) for logic in described_logic)]
-            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), "\n".join(description), pipeline.get("trigger", "")])
+            pipeline_rows.append([pipeline.get("data_utilization", ""), pipeline.get("name", ""), pipeline.get("task_name", ""), "\n".join(description), display_trigger(pipeline)])
     headers = ["Data Utilization Name", "Pipeline Name", "task1 name", "定时同步时间"] if profile == "sync" else ["Data Utilization Name", "Pipeline Name", "task1 name", "Description", "trigger time"]
     sections.append(markdown_table(headers, pipeline_rows))
     catalog = facts.get("catalog") or {}

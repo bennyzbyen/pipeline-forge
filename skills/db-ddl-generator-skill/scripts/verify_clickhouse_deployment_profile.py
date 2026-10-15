@@ -23,7 +23,7 @@ def schema() -> dict:
         "columns": [
             {"name": "period", "type": "String", "nullable": True},
             {"name": "code", "type": "String", "nullable": False},
-            {"name": "updated_at", "type": "DateTime", "nullable": True},
+            {"name": "updated_at", "type": "DateTime", "nullable": False},
         ],
         "primary_key": [],
         "indexes": [],
@@ -55,11 +55,11 @@ def main() -> int:
         "clickhouse",
         order_by=["period", "code"],
         clickhouse_engine="ReplacingMergeTree",
+        clickhouse_version_column="updated_at",
         allow_key_nullability_coercion=True,
     )
-    assert "ENGINE = ReplacingMergeTree()" in qa_sql, qa_sql
+    assert "ENGINE = ReplacingMergeTree(updated_at)" in qa_sql, qa_sql
     assert "ON CLUSTER" not in qa_sql, qa_sql
-    assert "updated_at)" not in qa_sql.split("ENGINE = ", 1)[1].splitlines()[0], qa_sql
     assert any("not a uniqueness constraint" in item for item in qa_notes["risks"]), qa_notes
 
     prod_sql, _ = generate_ddl.build_create_table(

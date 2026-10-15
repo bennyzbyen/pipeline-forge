@@ -1,6 +1,6 @@
 ---
 name: pipeline-doc-generator
-description: Generate or revise editable DataEngine/DataHub waterline documents from PRD/HLD/LLD in DOCX (including embedded Excel), Markdown, or PDF. Deliver Markdown, interactive standalone HTML, and paginated PDF together, with direct tables, overview SVG flows, audit facts, and clarification gates. Use for the waterline document itself, not a code-generation Technical Design handoff.
+description: Generate or revise editable DataEngine/DataHub pipeline documents from PRD/HLD/LLD in DOCX (including embedded Excel), Markdown, or PDF. Deliver Markdown, interactive standalone HTML, and paginated PDF together, with direct tables, overview SVG flows, audit facts, and clarification gates. Use for the pipeline document itself, not a code-generation Technical Design handoff.
 ---
 
 ## Optional Knowledge Assistance
@@ -14,7 +14,7 @@ For substantive work, use the optional local knowledge workflow in `../pipeline-
 
 # Pipeline Document Generator
 
-Generate reviewable waterline documents whose canonical source is `facts.json`.
+Generate reviewable pipeline documents whose canonical source is `facts.json`.
 
 ## Contract
 
@@ -42,6 +42,7 @@ Diagram Design is a separately installed plugin; PipelineForge does not bundle o
 ## Workflow
 
 1. Run `scripts/extract_requirement_evidence.py --input <files...> --out <project-dir>`. For PDF pages flagged `requires_visual_review`, inspect the rendered page images and add the recovered facts before resolving that question.
+   Before choosing `<project-dir>`, inspect the repository's local instructions, actual directories and tracked peer deliverables. Reuse the user's chosen location or a suitable existing location; a directory recommended by a generic standard is not necessarily present. Follow the output-placement rules in `references/presentation-rules.md`.
 2. Read [references/evidence-rules.md](references/evidence-rules.md), review `evidence.md`, extracted table Markdown, and the initial `facts.json`. Populate stable IDs and provenance instead of copying unclassified tables into the final document.
 3. Read [references/profiles.md](references/profiles.md) and [references/presentation-rules.md](references/presentation-rules.md), select `sync` or `report` from the work performed rather than the filename, and fill the corresponding facts. Ask if the project mixes replication and substantial transformation without a clear dominant profile.
 4. Read [references/facts-and-questions.md](references/facts-and-questions.md). Run `scripts/validate_pipeline_doc.py --facts <facts.json> --profile <profile>` as the preflight. Render only after it reports no blocking issues.
@@ -52,6 +53,7 @@ Diagram Design is a separately installed plugin; PipelineForge does not bundle o
 
 - Inspect current outputs for manual changes, then locate the affected stable source, target, field, pipeline, or flow-node ID in `facts.json`. Preserve scoped exclusions and explicit per-record overrides across edits; see `references/facts-and-questions.md`.
 - Apply the smallest fact change and preserve its `source_refs` plus any user-confirmation record.
+- Persist explicit blank/hidden cells and concise labels separately from canonical filters, schedules and evidence. Fix confirmed field-name errors in facts and reusable generation inputs as well as all affected outputs; preserve the original source discrepancy. See `references/facts-and-questions.md`.
 - Summarize the actual edit in `change_log`; only `versioned` mode creates a new release row. Preserve the initial drafting pin and the user’s author override. See the naming and revision rules in `references/facts-and-questions.md`.
 - Regenerate Markdown, HTML, and PDF together; migrate `render_preferences.last_format` to `all`.
 - Validate the full bundle against the current evidence and review rendered navigation, tables and links. Report changed facts, output paths and what was actually verified; source alignment, DDL consistency, rendering and production deployment are separate conclusions.

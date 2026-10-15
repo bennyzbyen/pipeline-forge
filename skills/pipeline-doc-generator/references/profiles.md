@@ -2,7 +2,7 @@
 
 清理重複確認，保留事實、驗證與授權邊界。
 
-# Waterline Profiles
+# Pipeline Profiles
 
 Choose a profile from the actual data work. A filename containing “同步”, “报表”, or “PRD” is supporting evidence only.
 

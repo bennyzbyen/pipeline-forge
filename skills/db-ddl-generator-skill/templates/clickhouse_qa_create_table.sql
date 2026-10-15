@@ -5,4 +5,4 @@ CREATE TABLE {{database}}.{{table_name}}
 ENGINE = {{confirmed_engine_expression}}
 {{partition_by}}
 ORDER BY ({{order_by}})
-SETTINGS index_granularity = 8192;
+{{confirmed_settings_clause}};

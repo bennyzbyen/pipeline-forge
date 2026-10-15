@@ -5,6 +5,12 @@ mysql_to_clickhouse:
   int: Int32
   integer: Int32
   bigint: Int64
+  tinyint unsigned: UInt8
+  smallint unsigned: UInt16
+  mediumint: Int32
+  mediumint unsigned: UInt32
+  int unsigned: UInt32
+  bigint unsigned: UInt64
   float: Float32
   double: Float64
   decimal: Decimal(p, s)
@@ -17,10 +23,14 @@ mysql_to_clickhouse:
   date: Date
   datetime: DateTime
   timestamp: DateTime
+  datetime(fsp): DateTime64(fsp)
+  timestamp(fsp): DateTime64(fsp)
   time: String
   json: String
 
 notes:
   - MySQL AUTO_INCREMENT has no direct ClickHouse equivalent; usually omit or load source ids.
+  - Integer display width does not alter storage width. Preserve unsigned separately from length.
+  - ON UPDATE is separate source behavior, not part of DEFAULT; report that generated ClickHouse DDL does not implement it.
   - MySQL secondary indexes are not equivalent to ClickHouse ORDER BY or skip indexes.
   - MySQL varchar length is not enforced by ClickHouse String.

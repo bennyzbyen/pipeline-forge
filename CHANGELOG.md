@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.0 - 2026-10-15
+
+- Generalize pipeline output placement, reference inheritance, field corrections and pure-sync overview aggregation while retaining actual task contracts.
+- Persist scoped blank filter/history cells and optional Target notes; bind concise schedule labels to reviewed triggers and verify complete overview task coverage.
+- Preserve unsigned integer widths and fractional timestamps; separate MySQL update clauses from defaults and require explicit ClickHouse key/version semantics.
+- Add offline QA/PROD export binding, complete deployment-settings inheritance, create/skip scopes, and auditable source/audit/target reconciliation.
+
 ## 2.4.1 - 2026-10-14
 
 - Preserve implementation contracts, risks, source lifecycle and verified function-level retrieval for self-contained private knowledge.

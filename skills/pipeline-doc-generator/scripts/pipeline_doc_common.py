@@ -46,8 +46,7 @@ def apply_fixed_defaults(facts: dict[str, Any]) -> dict[str, Any]:
     team["operator"] = FIXED_ENGINEER_ROLE
     preferences = facts.setdefault("render_preferences", {})
     preferences["last_format"] = "all"
-    if facts.get("profile") == "report":
-        preferences.setdefault("include_target_notes", False)
+    preferences.setdefault("include_target_notes", False)
     for item in facts.get("questions") or []:
         if item.get("id") in {"PL-BLOCK-WRITE-FLOW", "WL-BLOCK-WRITE-FLOW", "PL-BLOCK-SYNC-LOGIC", "WL-BLOCK-SYNC-LOGIC", "PL-BLOCK-OUTPUT-FORMAT", "WL-BLOCK-OUTPUT-FORMAT"}:
             item["status"] = "resolved"
@@ -237,6 +236,22 @@ def _reference_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
     for edge in (facts.get("flow") or {}).get("edges") or []:
         if edge.get("from") not in known_nodes or edge.get("to") not in known_nodes:
             result.append(question("PL-BLOCK-FLOW-REFERENCES", "block", f"流程图连线 {edge.get('id', '')} 引用了未知节点。"))
+    mapped_pipelines = set()
+    has_pipeline_mapping = False
+    for node in (facts.get("flow") or {}).get("nodes") or []:
+        if "pipeline_ids" not in node:
+            continue
+        has_pipeline_mapping = True
+        ids = node["pipeline_ids"]
+        if (node.get("kind") != "pipeline" or not isinstance(ids, list) or not ids
+                or any(not isinstance(identity, str) for identity in ids)):
+            result.append(question("PL-BLOCK-FLOW-PIPELINE-MAPPING", "block", "pipeline_ids 必须是 Pipeline 节点上的非空稳定 ID 列表。"))
+            continue
+        mapped_pipelines.update(ids)
+        if len(ids) != len(set(ids)) or set(ids) - set(pipeline_ids):
+            result.append(question("PL-BLOCK-FLOW-PIPELINE-MAPPING", "block", "流程图 pipeline_ids 含重复或未知 Pipeline ID。"))
+    if has_pipeline_mapping and set(pipeline_ids) - mapped_pipelines:
+        result.append(question("PL-BLOCK-FLOW-PIPELINE-COVERAGE", "block", "已启用的流程图 Pipeline 映射未覆盖全部实际任务；补全映射，不要删减任务事实以适配图。"))
     return result
 
 
