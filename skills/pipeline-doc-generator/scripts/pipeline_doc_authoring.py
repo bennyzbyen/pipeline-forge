@@ -20,7 +20,7 @@ CHANGE_LABELS = {
     "catalog": "更新 Catalog 登记信息",
     "resources": "更新资源评估",
     "flow": "调整数据流程图",
-    "target_columns": "调整 Target 展示列",
+    "target_columns": "调整文档展示内容",
     "profile": "调整文档模板类型",
 }
 
@@ -131,7 +131,8 @@ def semantic_hashes(facts):
             return [clean(item) for item in value]
         return value
     values = {key: facts.get(key) for key in CHANGE_LABELS if key != "target_columns"}
-    values["target_columns"] = {key: value for key, value in (facts.get("render_preferences") or {}).items() if key.startswith("include_target_")}
+    values["target_columns"] = {key: value for key, value in (facts.get("render_preferences") or {}).items()
+                                if key.startswith("include_target_") or key in {"include_source_filters", "include_field_history"}}
     return {key: hashlib.sha256(json.dumps(clean(value), sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest() for key, value in values.items()}
 
 

@@ -543,6 +543,8 @@ def main() -> int:
         metrics["authoring_policy"] = run_authoring_regressions(root / "authoring")
         from verify_presentation_policy import run_presentation_regressions
         metrics["presentation_policy"] = run_presentation_regressions(root / "presentation")
+        from verify_scoped_publication import run_scoped_publication
+        metrics["scoped_publication"] = run_scoped_publication(root / "scoped_publication")
         from verify_pipeline_pdf import run_pdf_regressions
         metrics["pdf"] = run_pdf_regressions(root / "pdf_special", check_formats=False)
         from verify_report_document_policy import run_report_policy

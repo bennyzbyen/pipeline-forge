@@ -85,6 +85,11 @@ def concise_trigger(value):
     )
 
 
+def display_trigger(pipeline):
+    """An explicit publication label never overwrites the confirmed schedule."""
+    return pipeline.get("trigger_display", pipeline.get("trigger", ""))
+
+
 def flow_detail_in_label(value):
     return bool(re.search(
         r"\browkey\b|\bttl\s*[:=：]|truncate\s*(?:\+|then|后)|字段类型|自增序号|幂等校验",
@@ -117,6 +122,13 @@ def presentation_gaps(facts):
         trigger = pipeline.get("trigger")
         if trigger and not concise_trigger(trigger):
             gaps.append((f"PL-BLOCK-PIPELINE-{index+1}-TRIGGER-DISPLAY", f"/pipelines/{index}/trigger", "请将已确认的触发时间单独写入 trigger；上游就绪、校验和重试说明移至 schedule_notes。不要从多个时间中猜选。"))
+        if "trigger_display" in pipeline and not concise_trigger(pipeline["trigger_display"]):
+            gaps.append((f"PL-BLOCK-PIPELINE-{index+1}-TRIGGER-LABEL", f"/pipelines/{index}/trigger_display", "显式调度展示值必须是非空的简洁触发时间，不得混入运维说明；原始 trigger 仍须完整保留。"))
+        if "trigger_display" in pipeline and pipeline.get("trigger_display_for") != trigger:
+            gaps.append((f"PL-BLOCK-PIPELINE-{index+1}-TRIGGER-LABEL-STALE", f"/pipelines/{index}/trigger_display_for", "调度展示值与当前 trigger 未绑定或已过期；重新核对展示文字，保留所有执行时间与频率。"))
+    for key in ("include_target_notes", "include_source_filters", "include_field_history"):
+        if key in (facts.get("render_preferences") or {}) and not isinstance(facts["render_preferences"][key], bool):
+            gaps.append(("PL-BLOCK-PRESENTATION-" + key.upper().replace("_", "-"), "/render_preferences/" + key, "展示开关必须为 true 或 false；不要把字符串 false 当作已确认的留空要求。"))
     flow = facts.get("flow") or {}
     for collection, fields in (("nodes", ("label",)), ("edges", ("label",)), ("groups", ("title",))):
         for index, item in enumerate(flow.get(collection) or []):

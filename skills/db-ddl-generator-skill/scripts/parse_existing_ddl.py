@@ -27,6 +27,7 @@ CONSTRAINT_KEYWORDS = {
     "check",
     "encode",
     "compression",
+    "on",
 }
 
 
@@ -76,10 +77,19 @@ def parse_csv_export(path: Path) -> Dict[str, Any]:
         except Exception as exc:
             warnings.append(f"row {idx}: failed to parse DDL: {exc}")
             continue
-        if row.get("database"):
-            schema["database"] = row["database"]
-        if row.get("table_name"):
-            schema["table_name"] = row["table_name"]
+        row_database = row.get("database")
+        row_table = row.get("table_name") or row.get("name")
+        ddl_database = schema.get("database") or schema.get("schema")
+        if row_database and ddl_database and row_database != ddl_database:
+            raise ValueError(f"row {idx}: CSV database conflicts with DDL")
+        if row_table and row_table != schema["table_name"]:
+            raise ValueError(f"row {idx}: CSV table name conflicts with DDL")
+        if row_database:
+            schema["database"] = row_database
+        schema["export_row"] = idx
+        if any((t.get("database") or t.get("schema"), t["table_name"]) ==
+               (schema.get("database") or schema.get("schema"), schema["table_name"]) for t in tables):
+            raise ValueError(f"row {idx}: duplicate exported table")
         tables.append(schema)
     return {"source": str(path), "tables": tables, "warnings": warnings}
 
@@ -109,6 +119,9 @@ def find_matching_paren(sql: str, start_idx: int) -> int:
     while idx < len(sql):
         char = sql[idx]
         if quote:
+            if char == "\\" and idx + 1 < len(sql):
+                idx += 2
+                continue
             if char == quote:
                 if idx + 1 < len(sql) and sql[idx + 1] == quote:
                     idx += 2
@@ -137,6 +150,9 @@ def split_top_level(block: str) -> List[str]:
     while idx < len(block):
         char = block[idx]
         if quote:
+            if char == "\\" and idx + 1 < len(block):
+                idx += 2
+                continue
             if char == quote:
                 if idx + 1 < len(block) and block[idx + 1] == quote:
                     idx += 2
@@ -200,19 +216,63 @@ def first_token(item: str) -> Tuple[str, str]:
 
 
 def extract_comment(item: str) -> str:
-    match = re.search(r"\bCOMMENT\s+'((?:''|[^'])*)'", item, flags=re.IGNORECASE | re.DOTALL)
-    return match.group(1).replace("''", "'") if match else ""
+    match = re.search(r"\bCOMMENT\s+'((?:''|\\.|[^'\\])*)'", item, flags=re.IGNORECASE | re.DOTALL)
+    return match.group(1).replace("''", "'").replace("\\'", "'").replace("\\\\", "\\") if match else ""
 
 
 def extract_default(item: str) -> Optional[str]:
-    match = re.search(
-        r"\bDEFAULT\s+(.+?)(?=\s+COMMENT\b|\s+NOT\s+NULL\b|\s+NULL\b|\s+PRIMARY\b|\s+CONSTRAINT\b|$)",
-        item,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if not match:
-        return None
-    return match.group(1).strip().rstrip(",")
+    return extract_clause(item, "DEFAULT")
+
+
+def top_level_mask(text: str) -> str:
+    """Mask quoted/nested contents while preserving offsets for clause parsing."""
+    result = list(text)
+    quote = None
+    depth = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            result[index] = " "
+            if char == "\\" and index + 1 < len(text):
+                result[index + 1] = " "
+                index += 2
+                continue
+            if char == quote:
+                if index + 1 < len(text) and text[index + 1] == quote:
+                    result[index + 1] = " "
+                    index += 2
+                    continue
+                quote = None
+        elif char in "'\"`":
+            quote = char
+            result[index] = " "
+        elif char == "(":
+            depth += 1
+            result[index] = " "
+        elif char == ")":
+            depth -= 1
+            result[index] = " "
+        elif depth:
+            result[index] = " "
+        index += 1
+    return "".join(result)
+
+
+def extract_clause(item: str, keyword: str) -> Optional[str]:
+    mask = top_level_mask(item)
+    clauses = list(re.finditer(
+        r"\b(?:DEFAULT|ON\s+UPDATE|COMMENT|NOT\s+NULL|NULL|PRIMARY\s+KEY|"
+        r"CONSTRAINT|AUTO_INCREMENT|COLLATE|GENERATED|REFERENCES|UNIQUE|CHECK)\b", mask, re.I))
+    for index, match in enumerate(clauses):
+        if re.sub(r"\s+", " ", match.group()).upper() == keyword:
+            end = clauses[index + 1].start() if index + 1 < len(clauses) else len(item)
+            # NULL itself is the value in DEFAULT NULL.
+            if keyword == "DEFAULT" and item[match.end():end].strip() == "" and index + 1 < len(clauses):
+                if clauses[index + 1].group().upper() == "NULL":
+                    end = clauses[index + 1].end()
+            return item[match.end():end].strip().rstrip(",") or None
+    return None
 
 
 def parse_type(rest: str) -> str:
@@ -239,7 +299,7 @@ def parse_column(item: str) -> Optional[Dict[str, Any]]:
     source_type = parse_type(rest)
     if not source_type:
         return None
-    lower_item = item.lower()
+    lower_item = top_level_mask(item).lower()
     nullable = "not null" not in lower_item
     primary = "primary key" in lower_item
     return {
@@ -248,6 +308,8 @@ def parse_column(item: str) -> Optional[Dict[str, Any]]:
         "type": source_type,
         "nullable": False if primary else nullable,
         "default": extract_default(item),
+        "on_update": extract_clause(item, "ON UPDATE"),
+        "auto_increment": bool(re.search(r"\bauto_increment\b", lower_item)),
         "primary_key": primary,
         "index": False,
         "comment": extract_comment(item),
@@ -256,10 +318,11 @@ def parse_column(item: str) -> Optional[Dict[str, Any]]:
 
 
 def parse_column_names(text: str) -> List[str]:
-    match = re.search(r"\((.*?)\)", text, flags=re.DOTALL)
-    if not match:
+    start = text.find("(")
+    if start < 0:
         return []
-    return [clean_ident(part.strip()) for part in split_top_level(match.group(1))]
+    end = find_matching_paren(text, start)
+    return [clean_ident(part.strip()) for part in split_top_level(text[start + 1:end])]
 
 
 def detect_dialect(sql: str) -> str:
@@ -313,7 +376,15 @@ def parse_tail(tail: str, schema: Dict[str, Any]) -> None:
         schema["primary_key"] = parse_column_names(expr) if expr.startswith("(") else [expr]
     settings_match = re.search(r"\bSETTINGS\s+(.+?)(?:;|$)", tail, re.I | re.S)
     if settings_match:
-        schema["settings_raw"] = " ".join(settings_match.group(1).split())
+        schema["settings_raw"] = settings_match.group(1).strip()
+        schema["table_settings"] = {}
+        for setting in split_top_level(schema["settings_raw"]):
+            key, separator, value = setting.partition("=")
+            if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key.strip()):
+                raise ValueError("invalid ClickHouse table setting")
+            if key.strip() in schema["table_settings"]:
+                raise ValueError("duplicate ClickHouse table setting")
+            schema["table_settings"][key.strip()] = value.strip()
 
 
 def parse_sql(sql: str, source: Optional[str] = None) -> Dict[str, Any]:
@@ -327,6 +398,8 @@ def parse_sql(sql: str, source: Optional[str] = None) -> Dict[str, Any]:
     raw_name = create_match.group(1)
     database, schema_name, table_name = split_qualified_name(raw_name)
     open_idx = sql.find("(", create_match.end())
+    if open_idx < 0:
+        raise ValueError("CREATE TABLE has no column list")
     try:
         close_idx = find_matching_paren(sql, open_idx)
     except ValueError:
@@ -352,6 +425,9 @@ def parse_sql(sql: str, source: Optional[str] = None) -> Dict[str, Any]:
         "source": source,
         "warnings": [],
     }
+    cluster_match = re.search(r"\bON\s+CLUSTER\s+([A-Za-z0-9_`\"]+)", sql[create_match.end():open_idx], re.I)
+    schema["cluster"] = clean_ident(cluster_match.group(1)) if cluster_match else ""
+    schema["cluster_status"] = "explicit" if cluster_match else "not_exported_or_absent"
 
     for item in split_top_level(block):
         lowered = item.strip().lower()

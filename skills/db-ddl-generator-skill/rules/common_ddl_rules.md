@@ -26,11 +26,12 @@ Map common header names to the standard schema:
 ## Defaults
 
 - Missing type: use a string type for the target database and list the assumption.
-- Missing nullable flag: default to nullable except primary key/order key/partition key columns.
+- Missing nullable flag: default to nullable. Source primary keys may establish non-nullability; a target ClickHouse sorting/partition key never silently changes the source contract. Use the target-specific explicit conversion check.
 - Missing length for variable character types: use 255 for MySQL/MSSQL/PostgreSQL unless the source says `text` or the target is ClickHouse.
 - Missing table name: derive from file name only if the user did not provide a table name; list the assumption.
 - Missing comments: leave comments out rather than inventing descriptions.
 - Default values: preserve exact user-provided default expressions where valid; otherwise list normalization in assumptions.
+- Parse update expressions and auto-increment metadata separately from defaults. Conversion notes must distinguish source behavior from target syntax; field counts alone do not verify type/default/nullability equivalence.
 - In DOCX designs with a Target section and separate data dictionaries, use the Target section's `clickhouse表` as the authoritative ClickHouse database/table name. Then use the matching data-dictionary field sheet for columns.
 
 ## Review Checks

@@ -36,9 +36,9 @@ Supported targets:
    - Always read `rules/common_ddl_rules.md`.
    - Read one target rule file from `rules/mysql_rules.md`, `rules/mssql_rules.md`, `rules/clickhouse_rules.md`, or `rules/postgres_rules.md`.
    - For conversion, also read the relevant file in `mapping/`.
-3. Normalize all inputs into the standard schema contract before generating SQL.
+3. Normalize all inputs into the standard schema contract before generating SQL. Keep the current source field contract separate from the target deployment profile. For reconciliation against existing tables or QA/PROD exports, read `references/clickhouse-reconciliation.md` and use `scripts/review_clickhouse_ddl.py`.
 4. Generate formatted SQL with target-specific syntax.
-5. Report assumptions, type mappings, and risks unless the user asks for SQL only or says "directly give me the statements".
+5. For deployment preparation, confirm the create/skip scope from the target mapping; a PRD report count is not a CREATE TABLE count. Compare fields and deployment configuration, then report assumptions, type mappings, and risks unless the user asks for SQL only or says "directly give me the statements". SQL-only output does not bypass validation.
 
 ## Standard Schema Contract
 
@@ -60,6 +60,8 @@ Represent extracted schema as JSON with this shape:
       "scale": null,
       "nullable": false,
       "default": null,
+      "on_update": null,
+      "auto_increment": false,
       "primary_key": true,
       "index": false,
       "comment": "primary id",
@@ -71,6 +73,7 @@ Represent extracted schema as JSON with this shape:
   "partition_by": [],
   "order_by": [],
   "engine": "",
+  "table_settings": {},
   "settings": {}
 }
 ```
@@ -93,6 +96,9 @@ python scripts/generate_ddl.py schema.json --target clickhouse --env prod --data
 python scripts/generate_ddl.py docx_schema.json --target clickhouse --env prod --all-tables --engine MergeTree --cot-period-code-rule --sql-only --output clickhouse_prod.sql
 python scripts/convert_ddl.py source.sql --source mysql --target clickhouse --env prod --database db --table table_name --engine MergeTree --order-by id
 python scripts/verify_clickhouse_deployment_profile.py
+python scripts/generate_ddl.py current_schema.json --target clickhouse --env qa --database new_report_db --deployment-export qa_ddl.csv --profile-database previous_report_db --sql-only --output qa.sql
+python scripts/review_clickhouse_ddl.py --source source.sql --target qa.sql --baseline qa_ddl.csv --baseline-database previous_report_db --env qa --output review.json
+python scripts/verify_ddl_reconciliation.py
 ```
 
 ## Output Rules
@@ -116,11 +122,15 @@ For ClickHouse, distinguish QA and PROD through an explicit deployment profile:
 - Require the engine and `ORDER BY` for every environment. Require cluster and replication path only when the confirmed profile uses them.
 - Do not infer `ReplacingMergeTree`, `ReplicatedMergeTree`, cluster names, ZooKeeper paths, or replacement grain from an environment label.
 - `ORDER BY` controls sorting and replacement behavior; it is not a uniqueness constraint.
-- For COT/DataEngine dictionaries, prefer `inksaa_last_modified_timestamp` as the ReplacingMergeTree version column when present. Fall back to common update timestamp names, then to another datetime field only if no update timestamp exists.
+- Use the version column explicitly supplied by the user or by the bound deployment profile/engine expression. Do not guess from timestamp names, field order, or the mere presence of a datetime column. A replacement profile without an explicit, existing, non-nullable version column is unresolved.
 - Production DDL exported from `system.tables` or similar sources may omit `ON CLUSTER` even when original creation used it. If the user states original production create had `ON CLUSTER cl_1shards_2replicas`, keep that in the extracted reusable PROD template and list it as an assumption.
 - Never silently put Nullable columns into `ORDER BY`, `PRIMARY KEY`, or partition keys. Conversion to non-nullable requires `--allow-key-nullability-coercion` or an already non-null source contract.
 - For DOCX Target sections, treat `clickhouse表` as the authoritative destination table name. Use the data dictionary only for columns and comments unless it also supplies stronger type/nullability metadata.
-- For COT/DataEngine report tables, when both `period` and `code` fields exist and the user has not supplied explicit keys, use `PARTITION BY period` and `ORDER BY (period, code)`, and generate both fields as non-nullable.
+- Apply the COT `PARTITION BY period` / `ORDER BY (period, code)` convention only when requested, both fields exist, and no explicit/source/profile keys exist. Preserve source nullability; require `--allow-key-nullability-coercion` with documented source semantics for nullable keys. Generate NULL-check SQL when preparing imports; do not invent NULL-to-empty-string conversions.
+- Precedence: explicit arguments > exact environment/database/table deployment profile > existing ClickHouse contract > explicitly requested COT convention. Preserve additional sorting columns and their order. A MySQL primary key is not automatically a ClickHouse sparse primary key.
+- Preserve unsigned integer width, Decimal precision/scale, and fractional datetime precision. Separate `DEFAULT`, `ON UPDATE`, and `AUTO_INCREMENT`; report non-equivalent update/id-generation behavior.
+- Preserve explicit table settings; do not inject `index_granularity` or storage policies when absent. Target-only audit columns require an explicit column contract and are counted separately from source columns.
+- Use plain `CREATE TABLE` for new-table scripts so existing tables are not silently accepted. If generating `IF NOT EXISTS` at the user's request, state that it does not verify an existing schema. Distinguish design draft, offline reconciliation, and independently evidenced server execution; an offline PASS does not prove deployment.
 
 Use `templates/clickhouse_qa_create_table.sql` and `templates/clickhouse_prod_create_table.sql` when building repeatable ClickHouse DDL.
 

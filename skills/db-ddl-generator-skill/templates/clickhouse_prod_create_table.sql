@@ -6,4 +6,4 @@ ENGINE = {{confirmed_engine_expression}}
 {{partition_by}}
 ORDER BY ({{order_by}})
 {{primary_key}}
-SETTINGS index_granularity = 8192;
+{{confirmed_settings_clause}};

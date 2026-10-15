@@ -14,6 +14,10 @@ Evidence precedence is:
 
 Never resolve a material conflict from file order alone. Record actual versions/dates and relevant working-tree changes in the existing evidence records. An old architecture document may remain useful for architecture while being superseded for fields or algorithms; do not call it “latest” without verification.
 
+When DDL generation is requested or authorized from PRD/HLD fields, produce a local proposed design rather than demanding a pre-existing target DDL. Distinguish logical report types, applicable physical source types and proposed target types. Record assumptions and unresolved physical constraints; do not guess nullability, unsigned ranges, decimal precision or RowKey from names. A generated DDL is not live-schema verification. If applicable physical DDL becomes available later, compare it field by field and reconcile material differences without overwriting unrelated work.
+
+Similar-looking field keys are a discrepancy to investigate, not an automatic spelling correction. Use applicable schema/DDL, related fields and the user's explicit resolution; persist the correction in facts and generation inputs while retaining the raw source cell. Never infer a global renaming rule from one corrected field.
+
 For calculations, distinguish source units, result units, conversion and aggregation grain. Samples do not prove units, completeness or valid duplicate handling. Keep numerator/denominator rules explicit for ratios; do not average rates or distribute a coarse period into finer periods without evidence. Temporary exclusions apply only to their confirmed scope/version. Adding an input does not itself require a new physical table; derive that decision from the current processing and storage contract.
 
 ## DOCX And Embedded Excel
@@ -38,7 +42,7 @@ For calculations, distinguish source units, result units, conversion and aggrega
 
 ## Mixed Documents
 
-Keep `source_refs` on each normalized fact; these are audit metadata, not publication prose. A reference identifies document index/name and, where available, heading, page, table, sheet, or cell range. Investigate unmatched workbooks/tables before asking; only a missing mapping needed by the requested document blocks its dependent part. Do not dump unclassified evidence into the final waterline.
+Keep `source_refs` on each normalized fact; these are audit metadata, not publication prose. A reference identifies document index/name and, where available, heading, page, table, sheet, or cell range. Investigate unmatched workbooks/tables before asking; only a missing mapping needed by the requested document blocks its dependent part. Do not dump unclassified evidence into the final pipeline.
 
 ## Related Field Inventories
 

@@ -26,16 +26,21 @@ def esc_comment(text: Any) -> str:
 def split_csv(value: Optional[str]) -> List[str]:
     if not value:
         return []
-    return [part.strip() for part in value.split(",") if part.strip()]
+    from parse_existing_ddl import split_top_level
+    return split_top_level(value)
 
 
 def apply_cot_period_code_rule(
     schema: Dict[str, Any],
     partition_by: Optional[List[str]],
     order_by: Optional[List[str]],
+    env: str = "qa",
 ) -> Tuple[Optional[List[str]], Optional[List[str]], bool]:
     """Use COT convention when both period and code exist."""
     if partition_by is not None or order_by is not None:
+        return partition_by, order_by, False
+    profile = deployment_profile(schema, env)
+    if any(key in profile for key in ("partition_by", "order_by")) or schema.get("partition_by") or schema.get("order_by"):
         return partition_by, order_by, False
 
     lower_to_name = {column["name"].lower(): column["name"] for column in schema.get("columns", [])}
@@ -44,11 +49,17 @@ def apply_cot_period_code_rule(
 
     period = lower_to_name["period"]
     code = lower_to_name["code"]
-    key_names = {period, code}
-    for column in schema.get("columns", []):
-        if column["name"] in key_names:
-            column["nullable"] = False
     return [period], [period, code], True
+
+
+def deployment_profile(schema: Dict[str, Any], env: str) -> Dict[str, Any]:
+    settings = schema.get("settings") or {}
+    if not isinstance(settings, dict):
+        raise ValueError("settings must be an object")
+    profiles = settings.get("clickhouse_profiles", {})
+    if not isinstance(profiles, dict) or not isinstance(profiles.get(env, {}), dict):
+        raise ValueError("clickhouse_profiles and each environment profile must be objects")
+    return profiles.get(env, {})
 
 
 def base_type(type_text: str) -> str:
@@ -97,6 +108,8 @@ def table_ref(schema: Dict[str, Any], target: str, database: Optional[str], tabl
 def map_type(type_text: str, target: str, column: Dict[str, Any]) -> str:
     raw = type_text or column.get("type") or "string"
     btype = base_type(raw)
+    unsigned = bool(re.search(r"\bunsigned\b", btype)) or bool(column.get("unsigned"))
+    btype = re.sub(r"\s+\b(?:unsigned|signed|zerofill)\b", "", btype).strip()
     length = column.get("length")
     precision = column.get("precision")
     scale = column.get("scale")
@@ -125,6 +138,9 @@ def map_type(type_text: str, target: str, column: Dict[str, Any]) -> str:
         }
         if btype in clickhouse_exact:
             return clickhouse_exact[btype]
+        integer_widths = {"tinyint": 8, "smallint": 16, "mediumint": 32, "int": 32, "integer": 32, "bigint": 64}
+        if btype in integer_widths:
+            return f"{'UInt' if unsigned else 'Int'}{integer_widths[btype]}"
         if btype in {"tinyint", "bit", "boolean", "bool"}:
             return "Int8"
         if btype in {"smallint", "int2"}:
@@ -138,11 +154,17 @@ def map_type(type_text: str, target: str, column: Dict[str, Any]) -> str:
         if btype in {"double", "double precision"}:
             return "Float64"
         if btype in {"decimal", "numeric", "number"}:
-            return f"Decimal({precision or 18}, {scale if scale is not None else 4})"
+            p, s = precision or 18, scale if scale is not None else 4
+            if not 1 <= p <= 76 or not 0 <= s <= p:
+                raise ValueError(f"invalid ClickHouse Decimal precision/scale: {p},{s}")
+            return f"Decimal({p}, {s})"
         if btype in {"date"}:
             return "Date"
         if btype in {"datetime", "datetime2", "timestamp", "timestamp without time zone", "timestamp with time zone", "smalldatetime"}:
-            return "DateTime"
+            fraction = column.get("datetime_precision", parsed_first or 0)
+            if not 0 <= fraction <= 9:
+                raise ValueError("invalid DateTime64 precision")
+            return f"DateTime64({fraction})" if fraction else "DateTime"
         if btype in {"uuid", "uniqueidentifier"}:
             return "UUID"
         return "String"
@@ -241,8 +263,10 @@ def normalize_default(default: Any, target: str) -> Optional[str]:
     text = str(default).strip()
     if text.upper() in {"NULL", "DEFAULT NULL"}:
         return None
-    if target == "clickhouse" and text.upper() in {"CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP()"}:
-        return "now()"
+    timestamp_default = re.fullmatch(r"CURRENT_TIMESTAMP(?:\((\d*)\))?", text, re.I)
+    if target == "clickhouse" and timestamp_default:
+        fraction = int(timestamp_default.group(1) or 0)
+        return f"now64({fraction})" if fraction else "now()"
     if target in {"mysql", "postgres", "mssql"} and text.lower() == "now()":
         return "CURRENT_TIMESTAMP"
     return text
@@ -272,22 +296,7 @@ def clickhouse_type(
 
 
 def choose_version_column(columns: List[Dict[str, Any]]) -> Optional[str]:
-    preferred = [
-        "inksaa_last_modified_timestamp",
-        "cl_last_update_time",
-        "updated_at",
-        "last_updated_at",
-        "modify_time",
-        "modified_at",
-        "report_build_time",
-    ]
-    names = {column["name"]: column for column in columns}
-    for name in preferred:
-        if name in names:
-            return name
-    for column in columns:
-        if base_type(column.get("type") or column.get("source_type")) in {"datetime", "datetime2", "timestamp", "datetime64"}:
-            return column["name"]
+    """Compatibility helper: a column list alone cannot confirm version semantics."""
     return None
 
 
@@ -305,6 +314,7 @@ def build_create_table(
     clickhouse_replication_path: Optional[str] = None,
     clickhouse_version_column: Optional[str] = None,
     allow_key_nullability_coercion: bool = False,
+    clickhouse_table_settings: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, Dict[str, List[str]]]:
     target = target.lower()
     columns = schema.get("columns", [])
@@ -335,26 +345,50 @@ def build_create_table(
 
     if target == "clickhouse":
         db = database or schema.get("database") or "default"
-        partition_cols = partition_by if partition_by is not None else schema.get("partition_by", [])
-        order_cols = order_by if order_by is not None else schema.get("order_by", [])
+        profile = deployment_profile(schema, env)
+        partition_cols = partition_by if partition_by is not None else profile.get("partition_by", schema.get("partition_by", []))
+        order_cols = order_by if order_by is not None else profile.get("order_by", schema.get("order_by", []))
+        # A MySQL primary key is not an implicit ClickHouse sparse primary key.
+        pk = primary_key if primary_key is not None else profile.get("primary_key", pk if schema.get("dialect") == "clickhouse" else [])
         if not order_cols:
             raise ValueError("ClickHouse ORDER BY must be supplied by the deployment profile or source DDL")
-        profile_root = schema.get("settings") if isinstance(schema.get("settings"), dict) else {}
-        profiles = profile_root.get("clickhouse_profiles") if isinstance(profile_root.get("clickhouse_profiles"), dict) else {}
-        profile = profiles.get(env) if isinstance(profiles.get(env), dict) else {}
         engine_name = clickhouse_engine or profile.get("engine") or schema.get("engine")
-        cluster_name = clickhouse_cluster if clickhouse_cluster is not None else profile.get("cluster", "")
+        cluster_name = clickhouse_cluster if clickhouse_cluster is not None else profile.get("cluster", schema.get("cluster", ""))
         replication_path = clickhouse_replication_path or profile.get("replication_path")
         version_column = clickhouse_version_column or profile.get("version_column")
+        if profile.get("source"):
+            notes["assumptions"].append(f"{env} deployment profile: {profile['source']}")
+        if profile.get("cluster_status") == "not_exported_or_absent" and clickhouse_cluster is None:
+            notes["risks"].append("Export does not prove ON CLUSTER absence; confirm original creation scope before deployment")
         if not engine_name:
             raise ValueError(
                 "ClickHouse engine is unresolved; pass --engine or define settings.clickhouse_profiles.<env>.engine"
             )
         key_columns = set(order_cols) | set(partition_cols) | set(pk)
+        from parse_existing_ddl import top_level_mask
+        known_columns = set(column_names)
+        for expression in key_columns:
+            # Validate simple keys; expressions remain expressions, never split on nested commas.
+            if re.fullmatch(r"`?[A-Za-z_][A-Za-z0-9_]*`?", expression) and expression.strip("`") not in known_columns:
+                raise ValueError(f"unknown ClickHouse key column: {expression}")
+        key_columns = {
+            name for name in known_columns
+            if any(re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", expr)
+                   for expr in [re.sub(r"'(?:''|\\.|[^'\\])*'", "", e) for e in list(order_cols) + list(partition_cols) + list(pk)])
+        }
         column_lines = []
         for column in columns:
             mapped = clickhouse_type(column, key_columns, notes, allow_key_nullability_coercion)
             default = normalize_default(column.get("default"), target)
+            if default and re.search(r"\bON\s+UPDATE\b", top_level_mask(default), re.I):
+                raise ValueError("DEFAULT contains ON UPDATE; reparse source DDL with separate on_update metadata")
+            if default and default.lower() == "now()" and mapped.removeprefix("Nullable(").startswith("DateTime64("):
+                fraction = numeric_args(mapped)[0]
+                default = f"now64({fraction})"
+            if column.get("on_update"):
+                notes["risks"].append(f"{column['name']}: source ON UPDATE {column['on_update']} has no generated ClickHouse equivalent")
+            if column.get("auto_increment"):
+                notes["risks"].append(f"{column['name']}: AUTO_INCREMENT omitted; load source ids")
             default_sql = f" DEFAULT {default}" if default else ""
             comment_sql = f" COMMENT '{esc_comment(column.get('comment'))}'" if column.get("comment") else ""
             column_lines.append(f"    {quote_ident(column['name'], target)} {mapped}{default_sql}{comment_sql}")
@@ -367,7 +401,42 @@ def build_create_table(
             "ReplicatedReplacingMergeTree",
         }
         engine_text = str(engine_name).strip()
+        from parse_existing_ddl import split_top_level
+        engine_base = engine_text.split("(", 1)[0].strip()
+        if engine_base not in allowed_engines:
+            raise ValueError(f"unsupported ClickHouse engine profile: {engine_base!r}")
+        if "Replacing" in engine_base:
+            embedded_version = None
+            if "(" in engine_text:
+                if not engine_text.endswith(")"):
+                    raise ValueError("invalid engine expression")
+                engine_args = split_top_level(engine_text.split("(", 1)[1][:-1])
+                expected_arg_count = 3 if engine_base.startswith("Replicated") else 1
+                if len(engine_args) != expected_arg_count:
+                    raise ValueError("Replacing engine requires an explicit version column")
+                embedded_version = engine_args[-1].strip("`")
+            if embedded_version and clickhouse_version_column and embedded_version != clickhouse_version_column:
+                raise ValueError("version column conflicts with engine expression")
+            version_column = clickhouse_version_column or embedded_version or version_column
+            if not version_column:
+                raise ValueError("Replacing engine requires an explicit version column")
+            version_field = next((c for c in columns if c["name"] == version_column), None)
+            if not version_field or version_field.get("nullable", True):
+                raise ValueError("version column must exist and be non-nullable")
+            version_type = map_type(version_field.get("source_type") or version_field.get("type"), "clickhouse", version_field)
+            if not re.fullmatch(r"UInt(?:8|16|32|64)|Date|DateTime(?:\([^)]*\))?|DateTime64\([^)]*\)", version_type):
+                raise ValueError("version column must use an unsigned integer or date/time type")
         if "(" in engine_text:
+            if engine_base.startswith("Replicated"):
+                engine_args = split_top_level(engine_text.split("(", 1)[1][:-1])
+                expected_arg_count = 3 if "Replacing" in engine_base else 2
+                if len(engine_args) != expected_arg_count or not re.fullmatch(r"'(?:''|[^'])*'", engine_args[0]):
+                    raise ValueError("Replicated engine requires explicit path and replica arguments")
+                if clickhouse_replication_path:
+                    engine_args[0] = f"'{esc_comment(clickhouse_replication_path)}'"
+                    engine_text = f"{engine_base}({', '.join(engine_args)})"
+                elif profile.get("source_database") and db != profile["source_database"]:
+                    raise ValueError("new database requires an explicit new replication path")
             engine = engine_text
         else:
             if engine_text not in allowed_engines:
@@ -375,7 +444,10 @@ def build_create_table(
             if engine_text.startswith("Replicated"):
                 if not replication_path:
                     raise ValueError("Replicated ClickHouse engines require an explicit replication path")
-                replica_args = f"'{esc_comment(replication_path)}', '{{replica}}'"
+                if profile.get("source_database") and db != profile["source_database"] and clickhouse_replication_path is None:
+                    raise ValueError("new database requires an explicit new replication path; do not reuse the historical path")
+                replica_expression = profile.get("replica_expression", "'{replica}'")
+                replica_args = f"'{esc_comment(replication_path)}', {replica_expression}"
                 if engine_text == "ReplicatedReplacingMergeTree" and version_column:
                     replica_args += f", {version_column}"
                 engine = f"{engine_text}({replica_args})"
@@ -391,6 +463,15 @@ def build_create_table(
 
         partition_sql = f"\nPARTITION BY {', '.join(partition_cols)}" if partition_cols else ""
         primary_sql = f"\nPRIMARY KEY ({', '.join(pk)})" if pk else ""
+        table_settings = clickhouse_table_settings if clickhouse_table_settings is not None else profile.get("table_settings", schema.get("table_settings", {}))
+        if not isinstance(table_settings, dict):
+            raise ValueError("ClickHouse table_settings must be an object")
+        setting_parts = []
+        for key, value in table_settings.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or ";" in str(value):
+                raise ValueError("invalid ClickHouse table setting")
+            setting_parts.append(f"{key} = {value}")
+        settings_sql = "\nSETTINGS " + ", ".join(setting_parts) if setting_parts else ""
         sql = (
             f"CREATE TABLE {db}.{table_name}{cluster_sql}\n"
             "(\n"
@@ -399,8 +480,7 @@ def build_create_table(
             f"ENGINE = {engine}"
             f"{partition_sql}\n"
             f"ORDER BY ({', '.join(order_cols)})"
-            f"{primary_sql}\n"
-            "SETTINGS index_granularity = 8192;"
+            f"{primary_sql}{settings_sql};"
         )
         return sql, notes
 
@@ -411,8 +491,12 @@ def build_create_table(
         nullable_sql = " NOT NULL" if not column.get("nullable", True) or column["name"] in pk else " NULL"
         default = normalize_default(column.get("default"), target)
         default_sql = f" DEFAULT {default}" if default else ""
+        if column.get("on_update") and target != "mysql":
+            notes["risks"].append(f"{column['name']}: ON UPDATE is not generated for {target}")
         notes["type_mappings"].append(f"{column['name']}: {column.get('source_type') or column.get('type')} -> {mapped}")
         if target == "mysql":
+            if column.get("on_update"):
+                default_sql += f" ON UPDATE {column['on_update']}"
             comment_sql = f" COMMENT '{esc_comment(column.get('comment'))}'" if column.get("comment") else ""
             column_lines.append(f"  {quote_ident(column['name'], target)} {mapped}{nullable_sql}{default_sql}{comment_sql}")
         else:
@@ -492,15 +576,20 @@ def main() -> int:
     parser.add_argument("--cot-period-code-rule", action="store_true", help="When both period and code exist, use PARTITION BY period and ORDER BY (period, code)")
     parser.add_argument("--sql-only", action="store_true")
     parser.add_argument("--output", type=Path, help="Write generated DDL to this path using UTF-8")
+    parser.add_argument("--deployment-export", type=Path, help="ClickHouse CSV export from the explicitly selected --env")
+    parser.add_argument("--profile-database", help="Exact database in the deployment export")
+    parser.add_argument("--scope-json", type=Path, help="Explicit create/skip table manifest; see review workflow reference")
     args = parser.parse_args()
 
     try:
         document = json.loads(args.schema_json.read_text(encoding="utf-8"))
         if not isinstance(document, dict):
             raise ValueError("schema JSON root must be an object")
-        if args.all_tables and "tables" in document:
+        if (args.all_tables or args.scope_json) and "tables" in document:
             schemas = document["tables"]
         elif "tables" in document and document["tables"]:
+            if len(document["tables"]) != 1:
+                raise ValueError("multiple tables require --all-tables or --scope-json")
             schemas = [document["tables"][0]]
         else:
             schemas = [document]
@@ -509,12 +598,24 @@ def main() -> int:
         if not schemas:
             raise ValueError("schema contains no tables")
 
+        if len(schemas) > 1 and args.table:
+            raise ValueError("--table cannot rename multiple tables")
+        if args.scope_json:
+            from review_clickhouse_ddl import apply_scope
+            schemas = apply_scope(schemas, json.loads(args.scope_json.read_text(encoding="utf-8-sig")))
+        if args.deployment_export:
+            if args.target != "clickhouse" or not args.profile_database:
+                raise ValueError("--deployment-export requires ClickHouse and --profile-database")
+            from parse_existing_ddl import parse_csv_export
+            from review_clickhouse_ddl import bind_profile
+            export = parse_csv_export(args.deployment_export)
+            schemas = [bind_profile(s, export, args.profile_database, args.env) for s in schemas]
         outputs: List[str] = []
         for schema in schemas:
             partition_by = split_csv(args.partition_by) or None
             order_by = split_csv(args.order_by) or None
             if args.cot_period_code_rule:
-                partition_by, order_by, _applied = apply_cot_period_code_rule(schema, partition_by, order_by)
+                partition_by, order_by, _applied = apply_cot_period_code_rule(schema, partition_by, order_by, args.env)
             sql, notes = build_create_table(
                 schema,
                 target=args.target,

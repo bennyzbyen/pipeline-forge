@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "pipeline-doc-generator/facts.schema.json",
-  "title": "Pipeline waterline facts",
+  "title": "Pipeline document facts",
   "type": "object",
   "required": [
     "schema_version",
@@ -152,7 +152,9 @@
         "include_target_category": {"type": ["boolean", "null"]},
         "include_target_report_type": {"type": ["boolean", "null"]},
         "include_target_range": {"type": ["boolean", "null"]},
-        "include_target_notes": {"type": "boolean", "default": false, "description": "Report table narratives are audit-only unless explicitly requested."}
+    "include_target_notes": {"type": "boolean", "default": false, "description": "Sync Target notes and report table narratives are hidden unless explicitly requested; keep canonical write/key/logic facts."},
+    "include_source_filters": {"type": "boolean", "default": true, "description": "False leaves source filter cells empty without changing canonical filters or data scope."},
+    "include_field_history": {"type": "boolean", "default": true, "description": "False leaves source dictionary history cells empty; does not clear document release history or audit provenance."}
       },
       "additionalProperties": true
     },
@@ -265,6 +267,8 @@
         },
         "description": {"type": "string"},
         "trigger": {"type": "string"},
+        "trigger_display": {"type": "string", "minLength": 1, "description": "Optional explicit concise publication label, e.g. omit a timezone when requested. Retain the confirmed trigger and timezone; do not change run times through this label."},
+        "trigger_display_for": {"type": "string", "description": "Exact trigger snapshot reviewed for trigger_display; a later schedule change invalidates the old label."},
         "schedule_notes": {"type": "string", "description": "Upstream readiness and operational evidence; retained in facts, not appended to trigger cells."},
         "prefix": {"type": "string"},
         "sources": {"type": "array", "items": {"type": "string"}},
