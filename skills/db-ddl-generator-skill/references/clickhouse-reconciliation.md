@@ -62,6 +62,8 @@ WHERE `period` IS NULL OR `code` IS NULL OR `data_source` IS NULL;
 
 The review records source/audit/target counts, exact column coverage/order, target type and signedness, precision, nullability, defaults/comments, engine/version, partition/sorting/primary keys, SETTINGS, baseline changes, input hashes, and export warnings. It exits 0 for an offline match, 1 for contract differences, and 2 for unresolved/invalid inputs. Review one table per SQL input. Unsupported parsing and unknown deployment facts remain review items; do not represent an offline match as source-value or server compatibility verification.
 
+For numeric columns, quoted and unquoted simple numeric defaults such as `'0'` and `0` compare by exact value only when both fit their declared numeric types. Integer width/signedness, Decimal precision/scale, and finite Float range are checked before accepting this equivalence; fractional integer values and numeric overflow remain differences. Accepted spellings are recorded separately in `default_equivalences`, preserving original values and types. String and nonnumeric fields remain literal comparisons; do not normalize leading zeros, whitespace inside quoted strings, NULL versus zero, or SQL expressions by evaluating them. Type changes are always reported independently of equal defaults.
+
 ## Delivery status
 
 - Design draft: unresolved assumptions remain visible; not ready to claim environment verification.

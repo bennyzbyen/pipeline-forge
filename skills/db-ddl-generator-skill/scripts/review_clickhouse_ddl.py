@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import copy
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
+import math
 import re
+import struct
 import sys
 from pathlib import Path
 from typing import Any
@@ -109,7 +112,75 @@ def normalize_expression(value: Any) -> str:
     return "".join(result)
 
 
-def compare_schemas(before: dict, after: dict) -> dict:
+def numeric_default(value: Any, column: dict) -> Decimal | None:
+    """Read a simple numeric literal only when it fits the declared numeric type.
+
+    Do not evaluate SQL expressions, strip whitespace inside strings, or round
+    Decimal values through binary floats/the ambient decimal context.
+    """
+    type_name = re.sub(r"\s+", "", str(column.get("source_type") or column.get("type") or ""))
+    while re.fullmatch(r"(?:Nullable|LowCardinality)\(.+\)", type_name, re.I):
+        type_name = type_name[type_name.index("(") + 1:-1]
+    integer = re.fullmatch(r"(U?Int)(8|16|32|64|128|256)", type_name, re.I)
+    decimal = re.fullmatch(r"Decimal\((\d+),(\d+)\)", type_name, re.I)
+    decimal_storage = re.fullmatch(r"Decimal(32|64|128|256)\((\d+)\)", type_name, re.I)
+    floating = re.fullmatch(r"Float(32|64)", type_name, re.I)
+    if not any((integer, decimal, decimal_storage, floating)):
+        return None
+    literal = str(value).strip() if value is not None else ""
+    if len(literal) >= 2 and literal[0] == literal[-1] == "'":
+        literal = literal[1:-1]
+    if not re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", literal):
+        return None
+    try:
+        number = Decimal(literal)
+        if not number.is_finite():
+            return None
+        if integer:
+            bits = int(integer.group(2))
+            unsigned = integer.group(1).lower().startswith("u")
+            low, high = (0, 2 ** bits - 1) if unsigned else (-2 ** (bits - 1), 2 ** (bits - 1) - 1)
+            if not low <= number <= high or number != number.to_integral_value():
+                return None
+        elif decimal or decimal_storage:
+            if decimal:
+                precision, scale = map(int, decimal.groups())
+            else:
+                precision = {32: 9, 64: 18, 128: 38, 256: 76}[int(decimal_storage.group(1))]
+                scale = int(decimal_storage.group(2))
+            if not 1 <= precision <= 76 or not 0 <= scale <= precision:
+                return None
+            if number:
+                digits, exponent = number.as_tuple().digits, number.as_tuple().exponent
+                trailing_zeros = 0
+                for digit in reversed(digits):
+                    if digit:
+                        break
+                    trailing_zeros += 1
+                if max(0, -exponent - trailing_zeros) > scale or number.adjusted() >= precision - scale:
+                    return None
+        else:
+            binary = float(number)
+            if floating.group(1) == "32":
+                binary = struct.unpack("!f", struct.pack("!f", binary))[0]
+            if not math.isfinite(binary) or (number and binary == 0):
+                return None
+    except (InvalidOperation, OverflowError, ValueError):
+        return None
+    return number
+
+
+def defaults_equivalent(before: dict, after: dict) -> bool:
+    a, b = before.get("default"), after.get("default")
+    a = None if str(a).strip().upper() == "NULL" else a
+    b = None if str(b).strip().upper() == "NULL" else b
+    if normalize_expression(a) == normalize_expression(b):
+        return True
+    old_number, new_number = numeric_default(a, before), numeric_default(b, after)
+    return old_number is not None and new_number is not None and old_number == new_number
+
+
+def compare_schemas(before: dict, after: dict, default_equivalences: list | None = None) -> dict:
     old_names = [c["name"] for c in before["columns"]]
     new_names = [c["name"] for c in after["columns"]]
     if len(set(old_names)) != len(old_names) or len(set(new_names)) != len(new_names):
@@ -122,9 +193,15 @@ def compare_schemas(before: dict, after: dict) -> dict:
         for attribute in ("source_type", "nullable", "default", "comment", "on_update", "auto_increment"):
             a, b = old[name].get(attribute), new[name].get(attribute)
             if attribute == "default":
-                a = None if str(a).upper() == "NULL" else a
-                b = None if str(b).upper() == "NULL" else b
-            if attribute in {"source_type", "default", "on_update"}:
+                equal = defaults_equivalent(old[name], new[name])
+                if (equal and default_equivalences is not None and
+                        normalize_expression(a) != normalize_expression(b) and
+                        numeric_default(a, old[name]) is not None and numeric_default(b, new[name]) is not None):
+                    default_equivalences.append({"column": name, "before": a, "after": b,
+                        "before_type": old[name].get("source_type") or old[name].get("type"),
+                        "after_type": new[name].get("source_type") or new[name].get("type"),
+                        "basis": "equal exact numeric literals within both declared numeric types"})
+            elif attribute in {"source_type", "on_update"}:
                 equal = normalize_expression(a) == normalize_expression(b)
             else:
                 equal = a == b
@@ -188,12 +265,14 @@ def main() -> int:
             clickhouse_cluster=args.cluster, clickhouse_replication_path=args.replication_path,
             allow_key_nullability_coercion=args.allow_key_nullability_coercion)
         expected = parser.parse_sql(expected_sql)
-        validation = compare_schemas(expected, target)
+        default_equivalences = []
+        validation = compare_schemas(expected, target, default_equivalences)
         inputs = [args.source, args.target, args.baseline] + ([args.audit_schema] if args.audit_schema else [])
         record = {"status": "FAIL" if has_changes(validation) else "PASS", "stage": "offline_review_failed" if has_changes(validation) else "offline_reconciled",
                   "environment": args.env, "binding": {"baseline_database": args.baseline_database, "table": source["table_name"]},
                   "counts": {"source": len(source["columns"]), "audit": len(audit_columns), "target": len(target["columns"])},
                   "contract_diff": validation, "baseline_diff": compare_schemas(baseline, target),
+                  "default_equivalences": default_equivalences,
                   "notes": notes, "export_warnings": export.get("warnings", []),
                   "inputs": [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in inputs],
                   "not_performed": ["server identity/version checks", "DDL execution", "source NULL/value checks", "data import"]}
