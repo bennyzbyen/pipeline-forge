@@ -46,13 +46,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22.13.0"
-          cache: npm
-          cache-dependency-path: pipeline-forge/[removed website integration]/package-lock.json
-
       - name: Enforce release identity and pinned source
         shell: pwsh
         working-directory: pipeline-forge
@@ -93,27 +86,6 @@ jobs:
           "PIPELINE_FORGE_ASSET_ROOT=$releaseDirectory" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_ARCHIVE=$archivePath" >> $env:GITHUB_ENV
           "PIPELINE_FORGE_CHECKSUM=$checksumPath" >> $env:GITHUB_ENV
-
-      - name: Stage validated downloads for website tests
-        shell: pwsh
-        working-directory: pipeline-forge
-        run: |
-          $downloads = 'outputs/release'
-          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
-          Copy-Item -LiteralPath $env:PIPELINE_FORGE_ARCHIVE -Destination (Join-Path $downloads 'pipeline-forge.zip')
-          Copy-Item -LiteralPath $env:PIPELINE_FORGE_CHECKSUM -Destination (Join-Path $downloads 'pipeline-forge.zip.sha256')
-
-      - name: Install website dependencies
-        working-directory: pipeline-forge/[removed website integration]
-        run: npm ci
-
-      - name: Test website
-        working-directory: pipeline-forge/[removed website integration]
-        run: npm test
-
-      - name: Lint website
-        working-directory: pipeline-forge/[removed website integration]
-        run: npm run lint
 
       - name: Publish validated GitHub release
         shell: pwsh

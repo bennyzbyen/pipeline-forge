@@ -129,7 +129,8 @@ def validate_metadata() -> str:
     require(manifest.get("skills") == "./skills/", "manifest skills path mismatch")
     require(manifest.get("repository") == REPOSITORY_URL, "manifest repository URL mismatch")
     require(manifest.get("license") == "MIT", "manifest license mismatch")
-    require(manifest.get("interface", {}).get("websiteURL", "").startswith("https://"), "website URL must use HTTPS")
+    require(manifest.get("homepage") == REPOSITORY_URL, "manifest homepage must use the plugin repository")
+    require(manifest.get("interface", {}).get("websiteURL") == REPOSITORY_URL, "interface URL must use the plugin repository")
     version = manifest.get("version")
     require(isinstance(version, str) and SEMVER_PATTERN.fullmatch(version) is not None, "manifest version must be valid SemVer")
     return version

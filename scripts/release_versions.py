@@ -26,9 +26,6 @@ SEMVER_PATTERN = re.compile(
 AUTHORITY_PATHS = (
     Path(".agents/plugins/marketplace.json"),
     Path(".codex-plugin/plugin.json"),
-    Path("[removed website integration]/package.json"),
-    Path("[removed website integration]/package-lock.json"),
-    Path("[removed website integration]/lib/site-content.ts"),
     Path("VERSIONING.md"),
     Path("README.md"),
     Path("README.en.md"),
@@ -37,9 +34,6 @@ AUTHORITY_PATHS = (
     Path("CHANGELOG.md"),
 )
 TEXT_VERSION_PATTERNS = {
-    Path("[removed website integration]/lib/site-content.ts"): re.compile(
-        r'(?P<prefix>export const PLUGIN_VERSION = ")(?P<version>[^"]+)(?P<suffix>";)'
-    ),
     Path("VERSIONING.md"): re.compile(
         r"(?P<prefix>The current stable version is `)(?P<version>[^`]+)(?P<suffix>`\.)"
     ),
@@ -62,7 +56,6 @@ MARKETPLACE_COMMAND_PATTERN = re.compile(
     r"(?P<version>[^\s\"`]+)(?P<suffix>)"
 )
 MARKETPLACE_COMMAND_PATHS = (
-    Path("[removed website integration]/lib/site-content.ts"),
     Path("INSTALL.md"),
     Path("README.md"),
     Path("README.en.md"),
@@ -132,11 +125,6 @@ def read_authoritative_versions(root: Path = ROOT) -> dict[str, str]:
     root = root.resolve()
     marketplace = _read_json(root / ".agents/plugins/marketplace.json")
     manifest = _read_json(root / ".codex-plugin/plugin.json")
-    package = _read_json(root / "[removed website integration]/package.json")
-    lock = _read_json(root / "[removed website integration]/package-lock.json")
-    lock_root = lock.get("packages", {}).get("")
-    if not isinstance(lock_root, dict):
-        raise VersionError("website lockfile is missing packages[''] metadata")
     marketplace_plugins = marketplace.get("plugins")
     if (
         not isinstance(marketplace_plugins, list)
@@ -150,9 +138,6 @@ def read_authoritative_versions(root: Path = ROOT) -> dict[str, str]:
 
     versions = {
         "plugin manifest": str(manifest.get("version", "")),
-        "website package": str(package.get("version", "")),
-        "website lockfile": str(lock.get("version", "")),
-        "website lockfile root package": str(lock_root.get("version", "")),
     }
     for relative_path, pattern in TEXT_VERSION_PATTERNS.items():
         versions[relative_path.as_posix()] = _match_text_version(root, relative_path, pattern)
@@ -240,20 +225,6 @@ def prepare_bump(root: Path, new_version: str, release_date: str, notes: list[st
     manifest = _read_json(manifest_path)
     manifest["version"] = new_version
     updates[manifest_path] = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
-
-    package_path = root / "[removed website integration]/package.json"
-    package = _read_json(package_path)
-    package["version"] = new_version
-    updates[package_path] = json.dumps(package, ensure_ascii=False, indent=2) + "\n"
-
-    lock_path = root / "[removed website integration]/package-lock.json"
-    lock = _read_json(lock_path)
-    lock["version"] = new_version
-    lock_root = lock.get("packages", {}).get("")
-    if not isinstance(lock_root, dict):
-        raise VersionError("website lockfile is missing packages[''] metadata")
-    lock_root["version"] = new_version
-    updates[lock_path] = json.dumps(lock, ensure_ascii=False, indent=2) + "\n"
 
     for relative_path, pattern in TEXT_VERSION_PATTERNS.items():
         path = root / relative_path

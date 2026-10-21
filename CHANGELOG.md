@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.2 - 2026-10-21
+
+- Retire the companion website and its build dependencies; distribute plugin downloads through GitHub Releases with independent version and release validation.
+
 ## 2.5.1 - 2026-10-15
 
 - Compare quoted and unquoted numeric defaults by declared numeric type while preserving string, NULL, expression, range and precision differences; record accepted equivalences.

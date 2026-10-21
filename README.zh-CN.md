@@ -36,7 +36,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge
 如果需要锁定已发布的稳定版本，改用：
 
 ```powershell
-codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.5.1
+codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.5.2
 ```
 
 然后在支持的入口完成安装：
@@ -44,7 +44,7 @@ codex plugin marketplace add bennyzbyen/pipeline-forge --ref v2.5.1
 - Codex CLI：重启会话后输入 `/plugins`，选择 PipelineForge 来源并安装 `pipeline-forge`。
 - Codex 桌面端：重启应用，打开 **Plugins**，选择 **PipelineForge** 仓库市场并安装。
 
-如果希望直接下载，也可以从 [PipelineForge 网站](https://github.com/bennyzbyen/pipeline-forge/releases)获取当前插件包，解压后在 `pipeline-forge` 文件夹中运行包内安装助手：
+如果希望直接下载，也可以从 [GitHub Releases](https://github.com/bennyzbyen/pipeline-forge/releases)获取当前插件包，解压后在 `pipeline-forge` 文件夹中运行包内安装助手：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-pipeline-forge.ps1
@@ -95,4 +95,4 @@ Get-ChildItem -LiteralPath 'skills' -Recurse -Filter '*.py' | ForEach-Object { p
 
 ## 版本记录
 
-PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.5.1`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+PipelineForge 遵循[语义化版本规则](VERSIONING.md)，当前稳定版本为 `2.5.2`。发布记录见 [CHANGELOG.md](CHANGELOG.md)。
