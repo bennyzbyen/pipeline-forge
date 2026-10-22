@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 from contextlib import nullcontext
 from html.parser import HTMLParser
@@ -11,6 +12,7 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,7 +27,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
 from pipeline_diagram_contract import validate_svg, validate_spec
 from verify_design_fixtures import write_test_svg, bind_test_diagrams
-from render_pipeline_doc import markdown_to_html, safe_inline_svg, inline_markup
+from render_pipeline_doc import ASSETS, TRUSTED_UI_SVG_ASSET, markdown_to_html, safe_inline_svg, inline_markup
 from validate_pipeline_doc import validate_html
 from pipeline_doc_common import OUTPUT_FORMATS
 
@@ -489,15 +491,73 @@ def test_viewer_security(root: Path) -> dict:
     markup = markdown_to_html("![流程图](security.svg)", root / "security.md", "安全检查")
     expected = {"flow": data["flow"], "targets": []}
     candidate = root / "security.html"
-    candidate.write_text(markup, encoding="utf-8")
+    candidate.write_text(markup, encoding="utf-8", newline="\n")
     errors = []
     validate_html(candidate, expected, errors, {})
     assert not errors, errors
+    trusted_ui = (ASSETS / TRUSTED_UI_SVG_ASSET).read_bytes()
+    assert trusted_ui in markup.encode("utf-8")
+    assert markup.count('data-waterline-ui-effects="1"') == 1
+    assert markup.count('id="pf-glass-control"') == 1
+    assert markup.count('id="pf-glass-toolbar"') == 1
+    assert 'filter:url("#pf-glass-control")' in markup
+    assert 'filter:url("#pf-glass-toolbar")' in markup
+    ui_root = ET.fromstring(trusted_ui)
+    assert ui_root.get("data-waterline-ui-effects") == "1"
+    assert "display:none" not in ui_root.get("style", "").replace(" ", "").lower()
+    ui_filters = {node.get("id"): node for node in ui_root.iter() if node.tag.rsplit("}", 1)[-1] == "filter"}
+    assert set(ui_filters) == {"pf-glass-control", "pf-glass-toolbar"}
+    expected_map_sizes = {"pf-glass-control": (64, 64), "pf-glass-toolbar": (256, 64)}
+    for filter_id, ui_filter in ui_filters.items():
+        primitives = {node.tag.rsplit("}", 1)[-1] for node in ui_filter.iter()}
+        assert {"feImage", "feDisplacementMap"} <= primitives
+        assert "SourceAlpha" not in ET.tostring(ui_filter, encoding="unicode")
+        map_node = next(node for node in ui_filter if node.tag.rsplit("}", 1)[-1] == "feImage")
+        href = map_node.get("href", "")
+        assert href.startswith("data:image/png;base64,")
+        map_image = Image.open(BytesIO(base64.b64decode(href.partition(",")[2], validate=True))).convert("RGBA")
+        assert map_image.size == expected_map_sizes[filter_id]
+        width, height = map_image.size
+        assert map_image.getpixel((width // 2, height // 2)) == (128, 128, 128, 255)
+        assert map_image.getpixel((0, height // 2))[0] > 200
+        assert map_image.getpixel((width - 1, height // 2))[0] < 56
+        assert map_image.getpixel((width // 2, 0))[1] > 200
+        assert map_image.getpixel((width // 2, height - 1))[1] < 56
+    for node in ui_root.iter():
+        for key, value in node.attrib.items():
+            if key.rsplit("}", 1)[-1].lower() == "href":
+                assert value.startswith(("#", "data:"))
+            assert all(url.startswith(("#", "data:")) for url in re.findall(r"url\(\s*['\"]?([^)'\"]+)", value, re.IGNORECASE))
     for addition in ('<script>alert(1)</script>', '<img src="https://example.invalid/p.png">', '<style>body{background:url(other.png)}</style>', '<svg onload="alert(1)"></svg>'):
-        candidate.write_text(markup.replace('</body>', addition+'</body>'), encoding="utf-8")
+        candidate.write_text(markup.replace('</body>', addition+'</body>'), encoding="utf-8", newline="\n")
         errors = []
         validate_html(candidate, expected, errors, {})
         assert errors, addition
+    tampered_ui = markup.replace('data-waterline-ui-effects="1"', 'data-waterline-ui-effects="2"', 1)
+    duplicate_ui = markup.replace("<body>", "<body>" + trusted_ui.decode("utf-8"), 1)
+    forged_ui = markup.replace(
+        "</body>",
+        '<svg data-waterline-ui-effects="1" xmlns="http://www.w3.org/2000/svg"><filter id="pf-glass-control"/></svg></body>',
+    )
+    uppercase_svg = markup.replace(
+        "</body>",
+        '<SVG xmlns="http://www.w3.org/2000/svg" data-engine="diagram-design"><filter id="extra-filter"/></SVG></body>',
+    )
+    business_marker = 'data-engine="diagram-design"'
+    business_marker_at = markup.index(business_marker)
+    business_end = markup.index("</svg>", business_marker_at)
+    business_filter = markup[:business_end] + '<filter id="extra-filter"/>' + markup[business_end:]
+    for label, hostile_markup in (
+        ("tampered trusted asset", tampered_ui),
+        ("duplicate trusted asset", duplicate_ui),
+        ("forged UI marker", forged_ui),
+        ("uppercase extra SVG", uppercase_svg),
+        ("extra business filter", business_filter),
+    ):
+        candidate.write_text(hostile_markup, encoding="utf-8", newline="\n")
+        errors = []
+        validate_html(candidate, expected, errors, {})
+        assert errors, label
     malicious = root / "untrusted.svg"
     for child in ('<script>alert(1)</script>', '<g onload="alert(1)"/>', '<rect fill="url(https://example.invalid/x)"/>', '<foreignObject/>'):
         malicious.write_text('<svg xmlns="http://www.w3.org/2000/svg">'+child+'</svg>', encoding="utf-8")
@@ -509,8 +569,8 @@ def test_viewer_security(root: Path) -> dict:
     link = inline_markup('[链接](https://example.invalid/" onmouseover="alert)')
     probe = NavigationProbe(link)
     assert all(not key.startswith('on') for node in probe.nodes for key in node['attrs'])
-    candidate.write_text(markup, encoding="utf-8")
-    return {"trusted_viewer_only": True, "external_resources_rejected": True, "unsafe_svg_rejected": True, "attribute_injection_escaped": True}
+    candidate.write_text(markup, encoding="utf-8", newline="\n")
+    return {"trusted_viewer_only": True, "trusted_ui_svg_only": True, "ui_edge_refraction_filters": sorted(ui_filters), "svg_case_and_filter_injection_rejected": True, "external_resources_rejected": True, "unsafe_svg_rejected": True, "attribute_injection_escaped": True}
 
 
 def main() -> int:

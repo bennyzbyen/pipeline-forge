@@ -15,10 +15,16 @@ import xml.etree.ElementTree as ET
 from pipeline_doc_report import target_reference
 from pipeline_doc_common import apply_fixed_defaults, blocking_questions, configure_utf8_stdio, expected_headings, load_json, write_json
 from pipeline_diagram_contract import validate_spec, validate_svg
-from render_pipeline_doc import markdown_to_html, render_markdown, split_pipe_row, catalog_spec
+from render_pipeline_doc import TRUSTED_UI_SVG_ASSET, markdown_to_html, render_markdown, split_pipe_row, catalog_spec
 
 
 FORBIDDEN_MARKDOWN = (".xlsx)", "<details>", "</details>", "<summary>", "Microsoft_Excel_Worksheet", "TODO", "TBD", "待确认")
+UI_EFFECTS_MARKER = b"data-waterline-ui-effects"
+
+
+def embedded_svg_blocks(payload: bytes) -> list[bytes]:
+    """Extract complete SVG elements and reject casing/nesting tricks at the caller."""
+    return re.findall(rb"<svg\b.*?</svg\s*>", payload, re.DOTALL | re.IGNORECASE)
 
 
 def normalize_text(value: str) -> str:
@@ -171,7 +177,8 @@ class HTMLSecurityProbe(HTMLParser):
 
 
 def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> str:
-    text = path.read_text(encoding="utf-8")
+    payload = path.read_bytes()
+    text = payload.decode("utf-8")
     lower = text.lower()
     if re.search(r"<th\b[^>]*>\s*catalog\s*</th>", lower):
         errors.append("Target tables must not contain a catalog helper column")
@@ -188,10 +195,27 @@ def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> 
     urls = [url.strip().strip("'\"") for style in styles for url in re.findall(r"url\(([^)]+)\)", style, re.IGNORECASE)]
     if any("@import" in style.lower() for style in styles) or any(not url.startswith(("#", "data:")) for url in urls):
         errors.append("HTML contains external CSS resources")
-    svgs = re.findall(r"<svg\b.*?</svg>", text, re.DOTALL)
-    for index, svg in enumerate(svgs):
+    trusted_ui = (Path(__file__).resolve().parent.parent / "assets" / TRUSTED_UI_SVG_ASSET).read_bytes()
+    svg_payloads = embedded_svg_blocks(payload)
+    svg_openings = len(re.findall(rb"<svg\b", payload, re.IGNORECASE))
+    svg_closings = len(re.findall(rb"</svg\s*>", payload, re.IGNORECASE))
+    if svg_openings != svg_closings or len(svg_payloads) != svg_openings:
+        errors.append("HTML contains malformed or nested SVG markup")
+    if payload.count(trusted_ui) != 1:
+        errors.append("HTML must contain exactly one byte-identical trusted UI effects SVG")
+    trusted_ui_block = trusted_ui.rstrip(b"\r\n")
+    business_svgs = []
+    for svg in svg_payloads:
+        if svg == trusted_ui_block:
+            continue
+        if UI_EFFECTS_MARKER in svg.lower():
+            errors.append("HTML contains a forged UI effects SVG")
+        business_svgs.append(svg)
+    if not business_svgs:
+        errors.append("HTML must contain a reviewed business SVG")
+    for index, svg in enumerate(business_svgs):
         try:
-            validate_svg(ET.fromstring(svg), facts["flow"] if index == 0 else catalog_spec())
+            validate_svg(ET.fromstring(svg.decode("utf-8")), facts["flow"] if index == 0 else catalog_spec())
         except Exception as exc:
             errors.append(f"invalid embedded SVG: {exc}")
     for src in re.findall(r"\bsrc=[\"']([^\"']+)", text, re.IGNORECASE):
@@ -204,7 +228,9 @@ def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> 
         if normalize_text(str(target.get("table") or "")) not in normalized:
             errors.append(f"target missing from HTML: {target.get('table')}")
     metrics["html_tables"] = len(re.findall(r"<table\b", lower))
-    metrics["html_svgs"] = len(re.findall(r"<svg\b", lower))
+    metrics["html_svgs"] = len(svg_payloads)
+    metrics["html_business_svgs"] = len(business_svgs)
+    metrics["html_ui_svgs"] = len(svg_payloads) - len(business_svgs)
     metrics["html_size"] = len(text.encode("utf-8"))
     return text
 

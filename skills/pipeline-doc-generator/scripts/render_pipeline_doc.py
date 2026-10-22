@@ -22,6 +22,12 @@ from pipeline_doc_presentation import connection_note, display_trigger, is_blob_
 from pipeline_diagram_contract import validate_svg_safety
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
+TRUSTED_UI_SVG_ASSET = "document-glass.svg"
+
+
+def trusted_asset_text(name: str) -> str:
+    """Decode a fixed bundled asset without newline translation."""
+    return (ASSETS / name).read_bytes().decode("utf-8")
 
 
 def document_stem(value: str) -> str:
@@ -595,6 +601,7 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
         '<nav class="toc-chapters" aria-label="章节目录"><h2>目录</h2><ul class="toc-list">' + toc_items + '</ul></nav></aside>'
     )
     viewer = ""
+    ui_effects = trusted_asset_text(TRUSTED_UI_SVG_ASSET)
     navigation_script = (ASSETS / "document-navigation.js").read_text(encoding="utf-8")
     navigation_digest = base64.b64encode(hashlib.sha256(navigation_script.encode("utf-8")).digest()).decode("ascii")
     script_policy = f"'sha256-{navigation_digest}'"
@@ -607,7 +614,7 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
     css += (ASSETS / "document-theme.css").read_text(encoding="utf-8")
     viewer += '<script data-waterline-navigation="1">' + navigation_script + '</script>'
     csp = f"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src {script_policy}; base-uri 'none'; object-src 'none'"
-    return "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\"><title>" + html.escape(title) + "</title><style>" + css + "</style></head><body>" + navigation + '<main id="document-main">' + "\n".join(body) + "</main></div>" + viewer + "</body></html>\n"
+    return "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"" + csp + "\"><title>" + html.escape(title) + "</title><style>" + css + "</style></head><body>" + ui_effects + navigation + '<main id="document-main">' + "\n".join(body) + "</main></div>" + viewer + "</body></html>\n"
 
 
 def catalog_spec() -> dict:

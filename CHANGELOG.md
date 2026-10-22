@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.0 - 2026-10-23
+
+- Add offline liquid-glass navigation and diagram controls while preserving clear document tables and print output.
+- Validate the fixed UI refraction SVG separately from reviewed business diagrams, with tampering regressions.
+
 ## 2.5.2 - 2026-10-21
 
 - Retire the companion website and its build dependencies; distribute plugin downloads through GitHub Releases with independent version and release validation.
