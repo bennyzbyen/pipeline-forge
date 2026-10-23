@@ -1,11 +1,11 @@
-.theme-toggle{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));left:18px;z-index:40;width:36px;height:36px;padding:0;border:1px solid #d8dbe1;border-radius:11px;background:#ffffffeb;color:#60646c;box-shadow:0 2px 8px #17203308;cursor:pointer;display:grid;place-items:center;-webkit-tap-highlight-color:transparent}
+.theme-toggle{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));left:7px;z-index:40;width:42px;height:36px;padding:0;border:1px solid #d8dbe1;border-radius:999px;background:#ffffffeb;color:#60646c;box-shadow:0 2px 8px #17203308;cursor:pointer;display:grid;place-items:center;-webkit-tap-highlight-color:transparent}
 .theme-toggle:hover{background:#e9edf3;color:#1d1d1f}.theme-toggle:focus-visible{outline:3px solid #007aff;outline-offset:3px}.theme-toggle:active{transform:scale(.94)}
 .theme-icon{position:absolute;display:block;width:20px;height:20px;pointer-events:none;will-change:transform,opacity;transition:transform .48s cubic-bezier(.22,1,.36,1),opacity .32s ease}
 .theme-sun{opacity:1;transform:rotate(0) scale(1)}.theme-sun:before{content:"";position:absolute;inset:5px;border:1.6px solid currentColor;border-radius:50%}.theme-sun:after{content:"";position:absolute;inset:0;background:repeating-conic-gradient(from -4deg,currentColor 0deg 8deg,transparent 8deg 45deg);mask:radial-gradient(circle,transparent 7px,#000 7.5px);border-radius:50%}
 .theme-moon{opacity:0;transform:rotate(-90deg) scale(.45);background:currentColor;border-radius:50%;mask:radial-gradient(circle at 72% 24%,transparent 8px,#000 8.6px)}
 :root[data-theme="dark"] .theme-sun{opacity:0;transform:rotate(90deg) scale(.45)}:root[data-theme="dark"] .theme-moon{opacity:1;transform:rotate(0) scale(1)}
 @media screen{
-/* Long documents recolor once; animate only the two small theme icons. */
+/* Recolor the document once; motion stays on the small theme capsule and icons. */
 :root[data-theme="dark"]{color-scheme:dark;--ink:#e8e9ed;--muted:#a2a8b4;--line:#383d47;--accent:#79b5ff;--paper:#1c1e23;--wash:#131519}
 :root[data-theme="dark"] .toc{background:#191b20;color:#e8e9ed;border-color:#30343d}
 :root[data-theme="dark"] .toc-header{border-color:#30343d}
@@ -37,9 +37,9 @@ main{background:var(--glass-paper);border:1px solid rgba(255,255,255,.72);box-sh
 .toc-list a:hover{background:rgba(218,232,244,.72)}
 .toc-list a[aria-current="location"]{background:rgba(213,233,255,.88);border-left-color:#1683e7;color:#075fae}
 .toc-list .toc-branch-toggle:hover{background:rgba(209,225,239,.78)}
-.toc-active-glass{position:absolute;left:0;top:0;z-index:0;opacity:0;isolation:isolate;overflow:hidden;pointer-events:none;border-left:3px solid rgba(67,118,163,.7);border-radius:9px;box-shadow:inset 0 1px rgba(255,255,255,.75),inset 0 -1px rgba(95,126,153,.16),0 3px 10px rgba(43,70,96,.08)}
+.toc-active-glass{position:absolute;left:0;top:0;z-index:0;opacity:0;isolation:isolate;overflow:hidden;pointer-events:none;border:1px solid rgba(255,255,255,.86);border-radius:999px;box-shadow:inset 0 1px 1px rgba(255,255,255,.95),inset 0 -1px 2px rgba(64,91,117,.24),inset 1px 0 1px rgba(255,255,255,.75),0 0 0 1px rgba(92,119,145,.16),0 5px 14px rgba(43,70,96,.12)}
 .toc-chapters.has-glass-indicator .toc-active-glass{opacity:1}
-.toc-active-glass::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:linear-gradient(135deg,rgba(255,255,255,.52),rgba(201,218,233,.18)),rgba(218,231,242,.74)}
+.toc-active-glass::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:linear-gradient(175deg,rgba(255,255,255,.65),rgba(255,255,255,.12) 38%,rgba(131,161,184,.12) 76%,rgba(255,255,255,.42)),rgba(236,244,250,.45)}
 .toc-chapters.has-glass-indicator .toc-list a[aria-current="location"]{background:transparent;border-left-color:transparent;color:#075fae}
 .toc-list a[data-drag-preview="true"]{background:transparent;border-left-color:transparent;color:#075fae;font-weight:600}
 .toc-drag-handle{position:absolute;right:4px;top:7px;z-index:3;width:22px;height:25px;padding:0;border:1px solid rgba(91,119,151,.22);border-radius:6px;background:rgba(250,253,255,.7);color:#60788d;box-shadow:inset 0 1px rgba(255,255,255,.76);cursor:grab;touch-action:none}
@@ -65,8 +65,8 @@ th{background:var(--table-head)}
 :root[data-theme="dark"] .toc-list .toc-children{border-color:var(--glass-line)}
 :root[data-theme="dark"] .toc-list a:hover{background:rgba(66,91,118,.46);color:#f4f8fc}
 :root[data-theme="dark"] .toc-list a[aria-current="location"]{background:rgba(37,91,139,.62);color:#a8d6ff;border-left-color:#64b3ff}
-:root[data-theme="dark"] .toc-active-glass{border-left-color:rgba(132,176,213,.7);box-shadow:inset 0 1px rgba(211,234,250,.18),inset 0 -1px rgba(5,13,23,.32),0 4px 12px rgba(0,0,0,.18)}
-:root[data-theme="dark"] .toc-active-glass::before{background:linear-gradient(135deg,rgba(177,210,235,.13),rgba(64,88,111,.12)),rgba(40,62,82,.68)}
+:root[data-theme="dark"] .toc-active-glass{border-color:rgba(226,240,251,.42);box-shadow:inset 0 1px 1px rgba(255,255,255,.55),inset 0 -1px 2px rgba(0,5,12,.55),inset 1px 0 1px rgba(235,245,255,.22),0 0 0 1px rgba(5,13,23,.4),0 5px 15px rgba(0,0,0,.24)}
+:root[data-theme="dark"] .toc-active-glass::before{background:linear-gradient(175deg,rgba(230,243,255,.22),rgba(218,234,247,.04) 40%,rgba(21,39,55,.1) 76%,rgba(225,241,255,.13)),rgba(63,83,101,.42)}
 :root[data-theme="dark"] .toc-chapters.has-glass-indicator .toc-list a[aria-current="location"],:root[data-theme="dark"] .toc-list a[data-drag-preview="true"]{background:transparent;border-left-color:transparent;color:#a8d6ff}
 :root[data-theme="dark"] .toc-drag-handle{background:rgba(34,50,66,.76);border-color:rgba(133,169,204,.25);color:#9db3c6;box-shadow:inset 0 1px rgba(205,231,255,.12)}
 :root[data-theme="dark"] .toc-drag-handle:hover{background:rgba(49,68,87,.94);color:#d7e5f1}
@@ -82,17 +82,11 @@ th{background:var(--table-head)}
 @supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
 @media screen{
 .toc{-webkit-backdrop-filter:blur(24px) saturate(1.16);backdrop-filter:blur(24px) saturate(1.16);background:rgba(238,246,252,.70)}
-.toc-active-glass::before{-webkit-backdrop-filter:blur(14px) saturate(1.16);backdrop-filter:blur(14px) saturate(1.16);background:linear-gradient(135deg,rgba(255,255,255,.4),rgba(192,211,228,.12)),rgba(218,231,242,.58)}
+.toc-active-glass::before{-webkit-backdrop-filter:blur(1px) saturate(1.22);backdrop-filter:blur(1px) saturate(1.22);background:linear-gradient(175deg,rgba(255,255,255,.48),rgba(255,255,255,.05) 38%,rgba(131,161,184,.09) 76%,rgba(255,255,255,.32)),rgba(236,244,250,.13)}
 :is(.toc-toggle-label,.theme-toggle)::before{-webkit-backdrop-filter:blur(16px) saturate(1.25);backdrop-filter:blur(16px) saturate(1.25)}
 :root[data-theme="dark"] .toc{background:rgba(18,31,47,.72)}
-:root[data-theme="dark"] .toc-active-glass::before{background:linear-gradient(135deg,rgba(177,210,235,.11),rgba(64,88,111,.1)),rgba(40,62,82,.56)}
+:root[data-theme="dark"] .toc-active-glass::before{background:linear-gradient(175deg,rgba(230,243,255,.18),rgba(218,234,247,.025) 40%,rgba(21,39,55,.08) 76%,rgba(225,241,255,.1)),rgba(173,202,224,.07)}
 :root[data-theme="dark"] :is(.toc-toggle-label,.theme-toggle){background:transparent}
-}
-}
-
-@supports (filter:url("#pf-glass-toolbar")){
-@media screen{
-.toc-active-glass::before{filter:url("#pf-glass-toolbar")}
 }
 }
 
@@ -102,13 +96,29 @@ th{background:var(--table-head)}
 }
 }
 
+/* Standard lenses retain refracted background echoes; the foreground stays separate. */
+@media screen{
+.theme-toggle{border-color:rgba(255,255,255,.82);box-shadow:inset 0 1px 1px rgba(255,255,255,.96),inset 0 -1px 2px rgba(65,88,110,.24),0 0 0 1px rgba(91,119,151,.2),0 6px 18px rgba(35,62,91,.18);transition:transform .28s cubic-bezier(.2,1.65,.4,1);transform-origin:center}
+.theme-toggle::before{background:linear-gradient(175deg,rgba(255,255,255,.62),rgba(255,255,255,.12) 45%,rgba(106,139,164,.12) 80%,rgba(255,255,255,.38)),rgba(241,248,253,.18);-webkit-backdrop-filter:blur(2px) saturate(1.3);backdrop-filter:blur(2px) saturate(1.3);filter:url("#pf-glass-capsule")}
+.theme-toggle:hover{background:transparent;transform:scale(1.06,1.035)}
+.theme-toggle:active{transform:scale(.9,.86)}
+:root[data-theme="dark"] .theme-toggle{border-color:rgba(229,241,251,.44);box-shadow:inset 0 1px 1px rgba(255,255,255,.52),inset 0 -1px 2px rgba(0,5,12,.55),0 0 0 1px rgba(3,11,21,.45),0 6px 20px rgba(0,0,0,.32)}
+:root[data-theme="dark"] .theme-toggle::before{background:linear-gradient(175deg,rgba(230,243,255,.23),rgba(218,234,247,.035) 45%,rgba(21,39,55,.1) 80%,rgba(225,241,255,.12)),rgba(170,196,218,.09)}
+}
+@supports ((-webkit-backdrop-filter:url("#pf-glass-standard")) or (backdrop-filter:url("#pf-glass-standard"))){
+@media screen{
+.toc-active-glass::before{filter:none;-webkit-backdrop-filter:url("#pf-glass-standard") blur(1px) saturate(1.22);backdrop-filter:url("#pf-glass-standard") blur(1px) saturate(1.22)}
+.theme-toggle::before{filter:none;-webkit-backdrop-filter:url("#pf-glass-capsule") blur(2px) saturate(1.3);backdrop-filter:url("#pf-glass-capsule") blur(2px) saturate(1.3)}
+}
+}
+
 @media(max-width:980px){
 body{background-attachment:scroll}
 .toc{box-shadow:10px 0 32px rgba(24,47,72,.18)}
 main,.toc-toggle:not(:checked)~.layout main{background:var(--glass-paper);border-color:transparent;box-shadow:none}
 }
 @media(pointer:coarse){.toc-drag-handle{top:4px;width:30px;height:31px}.toc-list li:has(>.toc-drag-handle)>a{padding-right:42px}}
-@media(prefers-reduced-motion:reduce){.theme-icon,body,main,.toc,.toc-header,.toc-list a,.toc-active-glass,.toc-toggle-label,.theme-toggle,th,td,code,h1,h2,h3{transition:none}.theme-toggle:active{transform:none}}
+@media(prefers-reduced-motion:reduce){.theme-icon,body,main,.toc,.toc-header,.toc-list a,.toc-active-glass,.toc-toggle-label,.theme-toggle,th,td,code,h1,h2,h3{transition:none}.theme-toggle:hover,.theme-toggle:active{transform:none}}
 @media(forced-colors:active){
 body,main,.toc,.toc-toggle-label,.theme-toggle,.table-wrap,th,td{background:Canvas;background-image:none;color:CanvasText;box-shadow:none;border-color:CanvasText;-webkit-backdrop-filter:none;backdrop-filter:none}
 .toc-active-glass,:is(.toc-toggle-label,.theme-toggle)::before{display:none}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.1 - 2026-10-23
+
+- Refine document navigation with Standard-style clear glass and visible refracted echoes; add an elastic theme capsule while keeping reading tables crisp.
+
 ## 2.7.0 - 2026-10-23
 
 - Anchor the document sidebar to the viewport and restore the restrained neutral glass palette.

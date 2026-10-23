@@ -57,30 +57,65 @@ function scenario(mobile) {
   assert.equal(links[2].attrs['aria-current'], 'location'); // Last short section at page bottom.
 }
 scenario(false); scenario(true);
-function themeScenario(saved, systemDark, storageBlocked) {
+function themeScenario(saved, systemDark, storageBlocked, reduced = false, animationAvailable = true) {
   const attrs = {}, rootAttrs = {}, listeners = {};
+  const motionQuery = { matches: reduced, addEventListener: (_name, action) => { motionQuery.change = action; } };
+  const animations = [];
   let stored = saved;
-  const button = { setAttribute: (key, value) => { attrs[key] = value; },
-    addEventListener: (name, action) => { listeners[name] = action; } };
+  const button = { style: {}, setAttribute: (key, value) => { attrs[key] = value; },
+    getBoundingClientRect: () => ({ left: 7, top: 100, width: 42, height: 36 }),
+    addEventListener: (name, action) => { listeners[name] = action; },
+    animate: animationAvailable ? (keyframes, options) => {
+      const animation = { keyframes, options, cancel() { this.cancelled = true; } };
+      animations.push(animation); return animation;
+    } : undefined };
   const document = { documentElement: { setAttribute: (key, value) => { rootAttrs[key] = value; } },
     getElementById: id => id === 'theme-toggle' ? button : null, querySelector: () => null };
-  const window = { matchMedia: () => ({ matches: systemDark }), localStorage: {
+  const window = { matchMedia: query => query.includes('prefers-reduced-motion') ? motionQuery : { matches: systemDark }, localStorage: {
     getItem: key => { assert.equal(key, 'waterline-theme'); if (storageBlocked) throw Error('disabled'); return stored; },
     setItem: (key, value) => { assert.equal(key, 'waterline-theme'); if (storageBlocked) throw Error('disabled'); stored = value; },
   } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/document-navigation.js'), 'utf8'), { document, window });
   const initial = !storageBlocked && ['light', 'dark'].includes(saved) ? saved : systemDark ? 'dark' : 'light';
   assert.equal(rootAttrs['data-theme'], initial);
+  listeners.pointermove({ pointerType: 'mouse', clientX: 900, clientY: -900 });
+  assert.equal(button.style.transform, reduced ? undefined : 'translate(2.50px,-2.50px) scale(1.060,1.060)');
+  listeners.pointerdown({ button: 0 });
+  assert.equal(button.style.transform, reduced ? '' : 'scale(.9,.86)');
+  listeners.pointermove({ pointerType: 'mouse', clientX: 7, clientY: 100 });
+  assert.equal(button.style.transform, reduced ? '' : 'scale(.9,.86)'); // Press is stable under pointer movement.
+  listeners.pointercancel(); assert.equal(button.style.transform, '');
+  assert.equal(animations.length, 0); // Cancellation cannot toggle or bounce.
+  listeners.pointermove({ pointerType: 'touch', clientX: 7, clientY: 100 });
+  assert.equal(button.style.transform, '');
+  listeners.pointerdown({ button: 2 }); assert.equal(button.style.transform, '');
+  listeners.pointerdown({ button: 0 }); listeners.pointerup();
+  assert.equal(button.style.transform, '');
   listeners.click();
   assert.equal(rootAttrs['data-theme'], initial === 'dark' ? 'light' : 'dark');
   assert.equal(attrs['aria-pressed'], String(rootAttrs['data-theme'] === 'dark'));
   assert(attrs['aria-label'].includes('切换'));
   if (!storageBlocked) assert.equal(stored, rootAttrs['data-theme']);
+  if (!reduced && animationAvailable) {
+    assert.equal(animations.length, 1);
+    assert.equal(animations[0].options.duration, 520);
+    assert.equal(animations[0].options.iterations, undefined); // Finite, never continuous.
+    assert.equal(animations[0].keyframes.at(-1).transform, 'scale(1)');
+  } else assert.equal(animations.length, 0);
   listeners.click(); assert.equal(rootAttrs['data-theme'], initial);
+  if (animations.length) assert.equal(animations[0].cancelled, true); // Rapid clicks replace the previous spring.
+  motionQuery.matches = true; motionQuery.change();
+  assert.equal(button.style.transform, '');
+  if (animations.length) assert.equal(animations.at(-1).cancelled, true);
+  listeners.click(); assert.equal(rootAttrs['data-theme'], initial === 'dark' ? 'light' : 'dark');
+  assert.equal(animations.length, !reduced && animationAvailable ? 2 : 0);
+  listeners.pointerleave(); listeners.blur();
+  assert.equal(button.style.transform, '');
 }
 themeScenario(null, false, false); themeScenario(null, true, false);
 themeScenario('light', true, false); themeScenario('dark', false, false);
 themeScenario('invalid', true, false); themeScenario('dark', false, true);
+themeScenario(null, false, false, true); themeScenario(null, false, false, false, false);
 
 // Nested headings exercise the actual shipped controller, including reloads.
 class Element {
@@ -366,4 +401,4 @@ assert.equal(reduced.headings.get('level-2').scrollCalls[0].behavior, 'auto');
 
 console.log('Navigation: scroll tracking, moving glass indicator, desktop/touch drag threshold, clamp, cancellation, click suppression and keyboard commit passed');
 console.log('Outline: six levels, separate arrows/links, folding, persistence/isolation, ancestor hashes and visible-only selection passed');
-console.log('Theme: system default, saved preference, toggling, accessible labels, invalid preference and unavailable storage passed');
+console.log('Theme: persistence, accessible labels, bounded pointer stretch, press/cancel, finite rebound, rapid clicks, keyboard activation and live reduced motion passed');

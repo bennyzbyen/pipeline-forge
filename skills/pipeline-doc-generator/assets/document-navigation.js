@@ -16,9 +16,55 @@
       themeButton.setAttribute('aria-label', text);
       themeButton.title = text;
     }
+    // A small, bounded elastic capsule; never animate the document's color change.
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let pressed = false;
+    let rebound = null;
+    function resetMotion() {
+      pressed = false;
+      rebound?.cancel();
+      rebound = null;
+      themeButton.style.transform = '';
+    }
+    function releaseMotion() {
+      pressed = false;
+      rebound?.cancel();
+      rebound = null;
+      themeButton.style.transform = '';
+      if (reducedMotion.matches || !themeButton.animate) return;
+      rebound = themeButton.animate([
+        { transform: 'scale(.9,.86)', offset: 0 },
+        { transform: 'scale(1.12,.96)', offset: .36 },
+        { transform: 'scale(.98,1.04)', offset: .65 },
+        { transform: 'scale(1.02,.99)', offset: .84 },
+        { transform: 'scale(1)', offset: 1 },
+      ], { duration: 520, easing: 'cubic-bezier(.2,.7,.3,1)' });
+    }
+    themeButton.addEventListener('pointermove', event => {
+      if (pressed || reducedMotion.matches || event.pointerType === 'touch') return;
+      const rect = themeButton.getBoundingClientRect();
+      const x = Math.max(-1, Math.min(1, (event.clientX - rect.left - rect.width / 2) / (rect.width / 2)));
+      const y = Math.max(-1, Math.min(1, (event.clientY - rect.top - rect.height / 2) / (rect.height / 2)));
+      rebound?.cancel();
+      rebound = null;
+      themeButton.style.transform = 'translate(' + (x * 2.5).toFixed(2) + 'px,' + (y * 2.5).toFixed(2) +
+        'px) scale(' + (1.035 + Math.abs(x) * .025).toFixed(3) + ',' + (1.035 + Math.abs(y) * .025).toFixed(3) + ')';
+    });
+    themeButton.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      resetMotion();
+      pressed = true;
+      if (!reducedMotion.matches) themeButton.style.transform = 'scale(.9,.86)';
+    });
+    themeButton.addEventListener('pointerup', resetMotion);
+    themeButton.addEventListener('pointerleave', resetMotion);
+    themeButton.addEventListener('pointercancel', resetMotion);
+    themeButton.addEventListener('blur', resetMotion);
+    reducedMotion.addEventListener?.('change', resetMotion);
     themeButton.addEventListener('click', () => {
       theme = theme === 'dark' ? 'light' : 'dark';
       paintTheme();
+      releaseMotion();
       try { window.localStorage.setItem(preferenceKey, theme); } catch (_) { /* Optional persistence. */ }
     });
     paintTheme();

@@ -502,15 +502,19 @@ def test_viewer_security(root: Path) -> dict:
     assert markup.count('id="pf-glass-toolbar"') == 1
     assert markup.count('id="pf-glass-nav"') == 1
     assert 'filter:url("#pf-glass-control")' in markup
-    assert 'filter:url("#pf-glass-toolbar")' in markup
+    assert 'backdrop-filter:url("#pf-glass-standard") blur(1px)' in markup
+    assert 'backdrop-filter:url("#pf-glass-capsule") blur(2px)' in markup
+    assert 'filter:url("#pf-glass-capsule")' in markup
     assert '.toc-active-glass::before' in markup
     ui_root = ET.fromstring(trusted_ui)
     assert ui_root.get("data-waterline-ui-effects") == "1"
     assert "display:none" not in ui_root.get("style", "").replace(" ", "").lower()
     ui_filters = {node.get("id"): node for node in ui_root.iter() if node.tag.rsplit("}", 1)[-1] == "filter"}
-    assert set(ui_filters) == {"pf-glass-control", "pf-glass-toolbar", "pf-glass-nav"}
-    expected_map_sizes = {"pf-glass-control": (64, 64), "pf-glass-toolbar": (256, 64), "pf-glass-nav": (64, 256)}
-    expected_scale_ranges = {"pf-glass-control": (10, 16), "pf-glass-toolbar": (18, 28), "pf-glass-nav": (18, 24)}
+    assert set(ui_filters) == {"pf-glass-control", "pf-glass-toolbar", "pf-glass-nav", "pf-glass-standard", "pf-glass-capsule"}
+    expected_map_sizes = {"pf-glass-control": (64, 64), "pf-glass-toolbar": (256, 64), "pf-glass-nav": (64, 256),
+                          "pf-glass-standard": (256, 64), "pf-glass-capsule": (80, 64)}
+    expected_scale_ranges = {"pf-glass-control": (10, 16), "pf-glass-toolbar": (18, 28), "pf-glass-nav": (18, 24),
+                             "pf-glass-standard": (26, 30), "pf-glass-capsule": (16, 20)}
     for filter_id, ui_filter in ui_filters.items():
         primitives = [node.tag.rsplit("}", 1)[-1] for node in ui_filter]
         assert primitives == ["feImage", "feDisplacementMap"]
@@ -531,6 +535,12 @@ def test_viewer_security(root: Path) -> dict:
         assert map_image.getpixel((width - 1, height // 2))[0] < 56
         assert map_image.getpixel((width // 2, 0))[1] > 200
         assert map_image.getpixel((width // 2, height - 1))[1] < 56
+        if filter_id in {"pf-glass-standard", "pf-glass-capsule"}:
+            # The whole lens center is neutral; only its curved perimeter bends.
+            assert map_image.getpixel((width // 2, height // 3)) == (128, 128, 128, 255)
+            assert map_image.getpixel((width // 2, 5))[1] > 150
+            assert map_image.getpixel((8, 8))[0] > 150
+            assert map_image.getpixel((8, 8))[1] > 150
     for node in ui_root.iter():
         for key, value in node.attrib.items():
             if key.rsplit("}", 1)[-1].lower() == "href":
