@@ -503,7 +503,7 @@ def test_viewer_security(root: Path) -> dict:
     assert markup.count('id="pf-glass-nav"') == 1
     assert 'filter:url("#pf-glass-control")' in markup
     assert 'filter:url("#pf-glass-toolbar")' in markup
-    assert 'filter:url("#pf-glass-nav")' in markup
+    assert '.toc-active-glass::before' in markup
     ui_root = ET.fromstring(trusted_ui)
     assert ui_root.get("data-waterline-ui-effects") == "1"
     assert "display:none" not in ui_root.get("style", "").replace(" ", "").lower()

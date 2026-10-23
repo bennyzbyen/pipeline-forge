@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.0 - 2026-10-23
+
+- Anchor the document sidebar to the viewport and restore the restrained neutral glass palette.
+- Add a draggable frosted chapter highlight with accessible keyboard controls and safe pointer cancellation.
+
 ## 2.6.1 - 2026-10-23
 
 - Increase navigation and toolbar translucency, edge highlights, and background refraction while preserving document readability.

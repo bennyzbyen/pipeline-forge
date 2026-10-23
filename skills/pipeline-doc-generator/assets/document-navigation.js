@@ -32,6 +32,21 @@
     .filter(entry => entry.heading);
   if (!entries.length) return;
   const entriesByLink = new Map(entries.map(entry => [entry.link, entry]));
+  const indicator = document.createElement('div');
+  indicator.className = 'toc-active-glass';
+  indicator.setAttribute('aria-hidden', 'true');
+  navigation.appendChild(indicator);
+  navigation.classList.add('has-glass-indicator');
+  const dragHandle = document.createElement('button');
+  dragHandle.type = 'button';
+  dragHandle.className = 'toc-drag-handle';
+  dragHandle.setAttribute('aria-label', '拖动切换章节');
+  dragHandle.title = '拖动切换章节；方向键预览，Enter 打开';
+  let active = null;
+  let preview = null;
+  let dragState = null;
+  let suppressClick = null;
+  let pending = false;
 
   const storageKey = 'waterline-outline-v2-two-levels:' + window.location.pathname;
   let savedBranches = {};
@@ -72,6 +87,7 @@
       paint(expanded);
       savedBranches[id] = expanded;
       persistBranches();
+      if (preview && !linkIsVisible(preview.link)) clearPreview();
       schedule();
     });
     branches.push(branch);
@@ -85,6 +101,171 @@
     }
     return visible;
   }
+  function linkIsVisible(link) {
+    for (let node = link; node && node !== navigation; node = node.parentElement) {
+      if (node.hidden) return false;
+    }
+    return true;
+  }
+  function visibleEntries() {
+    return entries.filter(entry => linkIsVisible(entry.link));
+  }
+  function setIndicator(entry, pointerY) {
+    if (!entry) return;
+    const item = entry.link.getBoundingClientRect();
+    const panel = navigation.getBoundingClientRect();
+    const height = Math.max(1, item.height || item.bottom - item.top);
+    const panelHeight = Math.max(height, panel.height || panel.bottom - panel.top);
+    const width = Math.max(1, item.width || (item.right || 0) - (item.left || 0));
+    const left = Math.max(0, (item.left || panel.left || 0) - (panel.left || 0) + (navigation.scrollLeft || 0));
+    let top = item.top - panel.top + navigation.scrollTop;
+    if (typeof pointerY === 'number') {
+      const minimum = navigation.scrollTop;
+      const maximum = minimum + panelHeight - height;
+      top = Math.max(minimum, Math.min(maximum, pointerY - panel.top + navigation.scrollTop - height / 2));
+    }
+    indicator.style.width = Math.round(width) + 'px';
+    indicator.style.height = Math.round(height) + 'px';
+    indicator.style.transform = 'translate3d(' + Math.round(left) + 'px,' + Math.round(top) + 'px,0)';
+  }
+  function moveHandle(entry) {
+    const item = entry?.link.closest('li');
+    if (item && dragHandle.parentElement !== item) {
+      const restoreFocus = document.activeElement === dragHandle;
+      item.appendChild(dragHandle);
+      if (restoreFocus) dragHandle.focus({ preventScroll: true });
+    }
+  }
+  function setPreview(entry, pointerY) {
+    if (preview) preview.link.removeAttribute('data-drag-preview');
+    preview = entry;
+    if (preview && preview !== active) preview.link.setAttribute('data-drag-preview', 'true');
+    setIndicator(preview || active, pointerY);
+  }
+  function clearPreview() {
+    if (preview) preview.link.removeAttribute('data-drag-preview');
+    preview = null;
+    setIndicator(active);
+  }
+  function select(entry) {
+    if (!entry) return false;
+    const changed = active !== entry;
+    if (active && active !== entry) active.link.removeAttribute('aria-current');
+    active = entry;
+    active.link.setAttribute('aria-current', 'location');
+    if (!dragState) moveHandle(active);
+    if (!preview) setIndicator(active);
+    return changed;
+  }
+  function nearestVisibleEntry(pointerY) {
+    const available = visibleEntries();
+    let nearest = available[0] || active;
+    let distance = Infinity;
+    for (const entry of available) {
+      const rect = entry.link.getBoundingClientRect();
+      const center = rect.top + (rect.height || rect.bottom - rect.top) / 2;
+      const candidate = Math.abs(pointerY - center);
+      if (candidate < distance) { nearest = entry; distance = candidate; }
+    }
+    return nearest;
+  }
+  function clampPointerY(pointerY) {
+    const panel = navigation.getBoundingClientRect();
+    return Math.max(panel.top, Math.min(panel.bottom - 1, pointerY));
+  }
+  function revealEntry(entry) {
+    if (!entry || !toggle.checked) return;
+    const item = entry.link.getBoundingClientRect();
+    const panel = navigation.getBoundingClientRect();
+    if (item.top < panel.top + 12) navigation.scrollTop += item.top - panel.top - 12;
+    else if (item.bottom > panel.bottom - 12) navigation.scrollTop += item.bottom - panel.bottom + 12;
+    setIndicator(entry);
+  }
+  function navigate(entry) {
+    if (!entry) return;
+    select(entry);
+    clearPreview();
+    const hash = '#' + encodeURIComponent(entry.heading.id);
+    if (window.history?.pushState) window.history.pushState(null, '', hash);
+    else window.location.hash = hash;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    entry.heading.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }
+  function finishDrag(commit, pointerId) {
+    if (!dragState || (pointerId !== undefined && dragState.pointerId !== pointerId)) return;
+    const state = dragState;
+    const target = preview;
+    dragState = null;
+    delete navigation.dataset.dragging;
+    if (state.dragging && state.sourceLink) {
+      const token = {};
+      suppressClick = { link: state.sourceLink, token };
+      window.setTimeout?.(() => {
+        if (suppressClick?.token === token) suppressClick = null;
+      }, 0);
+    }
+    if (state.captureElement.hasPointerCapture?.(state.pointerId)) state.captureElement.releasePointerCapture(state.pointerId);
+    if (commit && state.dragging && target) navigate(target);
+    else clearPreview();
+  }
+  function beginDrag(captureElement, sourceLink, event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    suppressClick = null;
+    clearPreview();
+    dragState = { pointerId: event.pointerId, startY: event.clientY, dragging: false, captureElement, sourceLink };
+    try { captureElement.setPointerCapture?.(event.pointerId); } catch (_) { /* Capture can fail after a synthetic event. */ }
+  }
+  function moveDrag(event) {
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    if (!dragState.dragging && Math.abs(event.clientY - dragState.startY) < 6) return;
+    dragState.dragging = true;
+    navigation.dataset.dragging = 'true';
+    event.preventDefault();
+    const pointerY = clampPointerY(event.clientY);
+    setPreview(nearestVisibleEntry(pointerY), pointerY);
+  }
+  dragHandle.addEventListener('pointerdown', event => beginDrag(dragHandle, null, event));
+  dragHandle.addEventListener('pointermove', moveDrag);
+  dragHandle.addEventListener('pointerup', event => finishDrag(true, event.pointerId));
+  dragHandle.addEventListener('pointercancel', event => finishDrag(false, event.pointerId));
+  dragHandle.addEventListener('lostpointercapture', event => finishDrag(false, event.pointerId));
+  for (const entry of entries) {
+    entry.link.setAttribute('draggable', 'false');
+    entry.link.addEventListener('pointerdown', event => {
+      if (entry !== active || event.pointerType === 'touch') return;
+      beginDrag(entry.link, entry.link, event);
+    });
+    entry.link.addEventListener('pointermove', moveDrag);
+    entry.link.addEventListener('pointerup', event => finishDrag(true, event.pointerId));
+    entry.link.addEventListener('pointercancel', event => finishDrag(false, event.pointerId));
+    entry.link.addEventListener('lostpointercapture', event => finishDrag(false, event.pointerId));
+    entry.link.addEventListener('click', event => {
+      if (suppressClick?.link !== entry.link || event.detail === 0) return;
+      suppressClick = null;
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+  dragHandle.addEventListener('keydown', event => {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const available = visibleEntries();
+      if (!available.length) return;
+      const current = preview || active;
+      const currentIndex = Math.max(0, available.indexOf(current));
+      const offset = event.key === 'ArrowUp' ? -1 : 1;
+      setPreview(available[Math.max(0, Math.min(available.length - 1, currentIndex + offset))]);
+      revealEntry(preview);
+      event.preventDefault();
+    } else if (event.key === 'Enter' && preview) {
+      event.preventDefault();
+      navigate(preview);
+    } else if (event.key === 'Escape' && preview) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearPreview();
+    }
+  });
+  dragHandle.addEventListener('blur', clearPreview);
   function openHashAncestors() {
     let id = window.location.hash.slice(1);
     try { id = decodeURIComponent(id); } catch (_) { /* Malformed fragments are harmless. */ }
@@ -100,17 +281,15 @@
     schedule();
   }
 
-  let active = null;
-  let pending = false;
   function reveal() {
-    if (!active || !toggle.checked) return;
-    const item = active.link.getBoundingClientRect();
-    const panel = navigation.getBoundingClientRect();
-    if (item.top < panel.top + 12) navigation.scrollTop += item.top - panel.top - 12;
-    else if (item.bottom > panel.bottom - 12) navigation.scrollTop += item.bottom - panel.bottom + 12;
+    revealEntry(active);
   }
   function update() {
     pending = false;
+    if (dragState) {
+      if (!preview) setIndicator(active);
+      return;
+    }
     const threshold = Math.min(120, window.innerHeight * 0.2);
     let selected = entries[0];
     for (const entry of entries) {
@@ -121,11 +300,7 @@
       selected = entries[entries.length - 1];
     }
     selected = entriesByLink.get(visibleLink(selected.link)) || selected;
-    if (active === selected) return;
-    if (active) active.link.removeAttribute('aria-current');
-    active = selected;
-    active.link.setAttribute('aria-current', 'location');
-    reveal();
+    if (select(selected)) reveal();
   }
   function schedule() {
     if (!pending) { pending = true; window.requestAnimationFrame(update); }
@@ -139,6 +314,12 @@
   if (window.matchMedia('(max-width: 980px)').matches) toggle.checked = false;
   toggle.addEventListener('change', toggleState);
   document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && dragState) {
+      event.preventDefault();
+      finishDrag(false);
+      dragHandle.focus();
+      return;
+    }
     if (event.key === 'Escape' && toggle.checked && !document.querySelector('dialog[open]')) {
       toggle.checked = false;
       toggleState();
@@ -147,6 +328,7 @@
   });
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule);
+  navigation.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('hashchange', openHashAncestors);
   window.addEventListener('load', schedule);
   openHashAncestors();
