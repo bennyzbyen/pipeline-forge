@@ -500,19 +500,27 @@ def test_viewer_security(root: Path) -> dict:
     assert markup.count('data-waterline-ui-effects="1"') == 1
     assert markup.count('id="pf-glass-control"') == 1
     assert markup.count('id="pf-glass-toolbar"') == 1
+    assert markup.count('id="pf-glass-nav"') == 1
     assert 'filter:url("#pf-glass-control")' in markup
     assert 'filter:url("#pf-glass-toolbar")' in markup
+    assert 'filter:url("#pf-glass-nav")' in markup
     ui_root = ET.fromstring(trusted_ui)
     assert ui_root.get("data-waterline-ui-effects") == "1"
     assert "display:none" not in ui_root.get("style", "").replace(" ", "").lower()
     ui_filters = {node.get("id"): node for node in ui_root.iter() if node.tag.rsplit("}", 1)[-1] == "filter"}
-    assert set(ui_filters) == {"pf-glass-control", "pf-glass-toolbar"}
-    expected_map_sizes = {"pf-glass-control": (64, 64), "pf-glass-toolbar": (256, 64)}
+    assert set(ui_filters) == {"pf-glass-control", "pf-glass-toolbar", "pf-glass-nav"}
+    expected_map_sizes = {"pf-glass-control": (64, 64), "pf-glass-toolbar": (256, 64), "pf-glass-nav": (64, 256)}
+    expected_scale_ranges = {"pf-glass-control": (10, 16), "pf-glass-toolbar": (18, 28), "pf-glass-nav": (18, 24)}
     for filter_id, ui_filter in ui_filters.items():
-        primitives = {node.tag.rsplit("}", 1)[-1] for node in ui_filter.iter()}
-        assert {"feImage", "feDisplacementMap"} <= primitives
+        primitives = [node.tag.rsplit("}", 1)[-1] for node in ui_filter]
+        assert primitives == ["feImage", "feDisplacementMap"]
         assert "SourceAlpha" not in ET.tostring(ui_filter, encoding="unicode")
-        map_node = next(node for node in ui_filter if node.tag.rsplit("}", 1)[-1] == "feImage")
+        map_node, displacement = ui_filter
+        low_scale, high_scale = expected_scale_ranges[filter_id]
+        assert low_scale <= float(displacement.get("scale", "0")) <= high_scale
+        assert displacement.get("in") == "SourceGraphic"
+        assert displacement.get("in2") == map_node.get("result")
+        assert displacement.get("xChannelSelector") == "R" and displacement.get("yChannelSelector") == "G"
         href = map_node.get("href", "")
         assert href.startswith("data:image/png;base64,")
         map_image = Image.open(BytesIO(base64.b64decode(href.partition(",")[2], validate=True))).convert("RGBA")

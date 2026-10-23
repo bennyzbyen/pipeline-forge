@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.1 - 2026-10-23
+
+- Increase navigation and toolbar translucency, edge highlights, and background refraction while preserving document readability.
+
 ## 2.6.0 - 2026-10-23
 
 - Add offline liquid-glass navigation and diagram controls while preserving clear document tables and print output.
