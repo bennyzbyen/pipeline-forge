@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.3 - 2026-10-23
+
+- Keep outline labels sharp with edge-only refraction; remove the grip button and theme refraction while preserving direct dragging, keyboard controls and elastic presses.
+
 ## 2.7.2 - 2026-10-23
 
 - Fix document lens sampling above outline text, fit displacement coordinates to the lens, and vary refraction with drag speed and direction.

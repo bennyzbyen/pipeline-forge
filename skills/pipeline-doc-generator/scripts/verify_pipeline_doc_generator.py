@@ -502,9 +502,11 @@ def test_viewer_security(root: Path) -> dict:
     assert markup.count('id="pf-glass-toolbar"') == 1
     assert markup.count('id="pf-glass-nav"') == 1
     assert 'filter:url("#pf-glass-control")' in markup
-    assert 'backdrop-filter:url("#pf-glass-standard") blur(.35px)' in markup
-    assert 'backdrop-filter:url("#pf-glass-capsule") blur(2px)' in markup
-    assert 'filter:url("#pf-glass-capsule")' in markup
+    assert 'backdrop-filter:url("#pf-glass-standard") saturate(1.12)' in markup
+    assert 'url("#pf-glass-standard") blur(' not in markup
+    assert 'backdrop-filter:url("#pf-glass-capsule")' not in markup
+    assert 'filter:url("#pf-glass-capsule")' not in markup
+    assert '.theme-toggle::before{display:none;background:none;filter:none;' in markup
     assert '.toc-active-glass::before' in markup
     ui_root = ET.fromstring(trusted_ui)
     assert ui_root.get("data-waterline-ui-effects") == "1"
@@ -541,10 +543,11 @@ def test_viewer_security(root: Path) -> dict:
             assert ui_filter.get("x") == "0" and ui_filter.get("y") == "0"
             assert ui_filter.get("width") == map_node.get("width") == "256"
             assert ui_filter.get("height") == map_node.get("height") == "64"
-            # A gentle interior gradient magnifies text; the stronger curved rim bends it.
-            assert map_image.getpixel((width // 4, height // 2))[0] > 140
-            assert map_image.getpixel((3 * width // 4, height // 2))[0] < 116
-            assert map_image.getpixel((width // 2, height // 3))[1] > 140
+            # The entire central reading band is neutral, not just one center pixel.
+            for y in range(height // 3, 2 * height // 3 + 1):
+                for x in range(16, width - 16):
+                    assert map_image.getpixel((x, y)) == (128, 128, 128, 255)
+            assert map_image.getpixel((width // 2, 3))[1] > 170
         if filter_id == "pf-glass-capsule":
             assert map_image.getpixel((width // 2, height // 3)) == (128, 128, 128, 255)
             assert map_image.getpixel((width // 2, 5))[1] > 150

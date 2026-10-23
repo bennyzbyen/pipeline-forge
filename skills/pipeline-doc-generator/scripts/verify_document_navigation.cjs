@@ -226,9 +226,9 @@ function outlineScenario({ saved = new Map(), pathname = '/nested.html', hash = 
   };
   flush();
   const indicator = nav.children.find(child => child.classList.contains('toc-active-glass'));
-  const handle = () => items.flatMap(item => item.children).find(child => child.classList?.contains('toc-drag-handle'));
+  const activeLink = () => links.find(link => link.attrs['aria-current'] === 'location');
   return { chain, other, otherChild, otherTable, nav, links, headings, window, document, handlers, documentHandlers,
-    historyCalls, button, click, scrollTo, flush, flushTimers, saved, indicator, handle, lensFilter, lensMap, lensBend, motionQuery };
+    historyCalls, button, click, scrollTo, flush, flushTimers, saved, indicator, activeLink, lensFilter, lensMap, lensBend, motionQuery };
 }
 const folded = outlineScenario();
 assert.equal(folded.chain[0].children.hidden, false);
@@ -278,7 +278,8 @@ const positioned = outlineScenario();
 assert(positioned.nav.classList.contains('has-glass-indicator'));
 assert.equal(positioned.nav.children.filter(child => child.classList.contains('toc-active-glass')).length, 1);
 assert.equal(positioned.indicator.attrs['aria-hidden'], 'true');
-assert.equal(positioned.handle().attrs['aria-label'], '拖动切换章节');
+assert(positioned.activeLink().attrs['aria-description'].includes('直接拖动'));
+assert.equal(positioned.nav.querySelectorAll('.toc-list li').flatMap(item => item.children).some(child => child.className === 'toc-drag-handle'), false);
 assert.equal(positioned.links.every(link => link.attrs.draggable === 'false'), true);
 positioned.chain[0].link.rect.top = 50; positioned.chain[0].link.rect.bottom = 90; positioned.nav.scrollTop = 20;
 positioned.nav.handlers.scroll(); positioned.flush();
@@ -286,10 +287,10 @@ assert.equal(positioned.indicator.style.transform, 'translate3d(14px,60px,0)');
 positioned.chain[0].link.rect.top = -100; positioned.chain[0].link.rect.bottom = -60; positioned.nav.scrollTop = 70;
 positioned.nav.handlers.scroll(); positioned.flush();
 assert.equal(positioned.nav.scrollTop, 70); // Manual directory scrolling is never pulled back to the active row.
-positioned.document.activeElement = positioned.handle();
+positioned.document.activeElement = positioned.activeLink();
 positioned.scrollTo('level-2');
-assert.equal(positioned.handle().parentElement, positioned.chain[1].item);
-assert.equal(positioned.handle().focusOptions.preventScroll, true);
+assert.equal(positioned.activeLink().parentElement, positioned.chain[1].item);
+assert.equal(positioned.document.activeElement, positioned.chain[0].link); // Scroll tracking preserves native link focus.
 
 // Mouse/pen can drag the active row; a gesture below six pixels preserves its normal click.
 const direct = outlineScenario();
@@ -328,12 +329,12 @@ stale.flushTimers();
 const laterRealClick = makeEvent({ detail: 1 }); staleSource.handlers.click(laterRealClick);
 assert.equal(laterRealClick.defaultPrevented, false); // Missing synthetic clicks cannot poison the next input.
 
-// Touch starts only on the handle. Its preview clamps to the panel and excludes folded rows.
+// Touch drags the active link itself; other links retain normal vertical scrolling.
 const touch = outlineScenario();
-touch.chain[0].link.handlers.pointerdown(makeEvent({ pointerId: 3, pointerType: 'touch', button: 0, clientY: 30 }));
-touch.chain[0].link.handlers.pointermove(makeEvent({ pointerId: 3, pointerType: 'touch', clientY: 100 }));
+touch.chain[1].link.handlers.pointerdown(makeEvent({ pointerId: 3, pointerType: 'touch', button: 0, clientY: 30 }));
+touch.chain[1].link.handlers.pointermove(makeEvent({ pointerId: 3, pointerType: 'touch', clientY: 100 }));
 assert.equal(touch.nav.dataset.dragging, undefined);
-const grip = touch.handle();
+const grip = touch.activeLink();
 grip.handlers.pointerdown(makeEvent({ pointerId: 4, pointerType: 'touch', button: 0, clientY: 30 }));
 grip.handlers.pointermove(makeEvent({ pointerId: 4, pointerType: 'touch', clientY: -1000 }));
 assert.equal(touch.indicator.style.transform, 'translate3d(14px,0px,0)');
@@ -349,25 +350,25 @@ assert.equal(touch.nav.dataset.dragging, undefined);
 assert.equal(touch.links.some(link => link.attrs['data-drag-preview']), false);
 
 const lost = outlineScenario();
-lost.handle().handlers.pointerdown(makeEvent({ pointerId: 5, pointerType: 'mouse', button: 0, clientY: 30 }));
-lost.handle().handlers.pointermove(makeEvent({ pointerId: 5, pointerType: 'mouse', clientY: lost.other.link.rect.top + 20 }));
-lost.handle().handlers.lostpointercapture(makeEvent({ pointerId: 5 }));
+lost.activeLink().handlers.pointerdown(makeEvent({ pointerId: 5, pointerType: 'mouse', button: 0, clientY: 30 }));
+lost.activeLink().handlers.pointermove(makeEvent({ pointerId: 5, pointerType: 'mouse', clientY: lost.other.link.rect.top + 20 }));
+lost.activeLink().handlers.lostpointercapture(makeEvent({ pointerId: 5 }));
 assert.equal(lost.historyCalls.length, 0);
 assert.equal(lost.nav.dataset.dragging, undefined);
 
 const escaped = outlineScenario();
-escaped.handle().handlers.pointerdown(makeEvent({ pointerId: 6, pointerType: 'mouse', button: 0, clientY: 30 }));
-escaped.handle().handlers.pointermove(makeEvent({ pointerId: 6, pointerType: 'mouse', clientY: escaped.other.link.rect.top + 20 }));
+escaped.activeLink().handlers.pointerdown(makeEvent({ pointerId: 6, pointerType: 'mouse', button: 0, clientY: 30 }));
+escaped.activeLink().handlers.pointermove(makeEvent({ pointerId: 6, pointerType: 'mouse', clientY: escaped.other.link.rect.top + 20 }));
 const escapeDrag = makeEvent({ key: 'Escape' }); escaped.documentHandlers.keydown(escapeDrag);
 assert.equal(escapeDrag.defaultPrevented, true);
-assert.equal(escaped.handle().focused, true);
+assert.equal(escaped.activeLink().focused, true);
 assert.equal(escaped.historyCalls.length, 0);
 assert.equal(escaped.nav.dataset.dragging, undefined);
 
 // Keyboard preview skips folded descendants; Escape cancels and Enter commits once.
 const keyboard = outlineScenario();
 keyboard.click(keyboard.chain[0]);
-const keyboardHandle = keyboard.handle();
+const keyboardHandle = keyboard.activeLink();
 keyboardHandle.handlers.keydown(makeEvent({ key: 'ArrowDown' }));
 assert.equal(keyboard.other.link.attrs['data-drag-preview'], 'true');
 assert.equal(keyboard.historyCalls.length, 0);
@@ -380,16 +381,16 @@ keyboardHandle.handlers.keydown(makeEvent({ key: 'Enter' }));
 assert.deepEqual(keyboard.historyCalls, ['#other']);
 assert.equal(keyboard.headings.get('other').scrollCalls.length, 1);
 const hiddenPreview = outlineScenario();
-hiddenPreview.handle().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
+hiddenPreview.activeLink().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
 assert.equal(hiddenPreview.chain[1].link.attrs['data-drag-preview'], 'true');
 hiddenPreview.click(hiddenPreview.chain[0]);
 assert.equal(hiddenPreview.chain[1].link.attrs['data-drag-preview'], undefined);
-hiddenPreview.handle().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
-hiddenPreview.handle().handlers.blur();
+hiddenPreview.activeLink().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
+hiddenPreview.activeLink().handlers.blur();
 assert.equal(hiddenPreview.links.some(link => link.attrs['data-drag-preview']), false);
 
 const stableCapture = outlineScenario();
-const capturedHandle = stableCapture.handle();
+const capturedHandle = stableCapture.activeLink();
 capturedHandle.handlers.pointerdown(makeEvent({ pointerId: 8, pointerType: 'mouse', button: 0, clientY: 30 }));
 capturedHandle.handlers.pointermove(makeEvent({ pointerId: 8, pointerType: 'mouse', clientY: stableCapture.chain[1].link.rect.top + 20 }));
 stableCapture.headings.get('one').top = -500; stableCapture.headings.get('level-2').top = -400;
@@ -398,8 +399,8 @@ assert.equal(capturedHandle.parentElement, stableCapture.chain[0].item);
 assert.equal(stableCapture.chain[0].link.attrs['aria-current'], 'location');
 capturedHandle.handlers.pointercancel(makeEvent({ pointerId: 8 }));
 const reduced = outlineScenario({ reduced: true });
-reduced.handle().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
-reduced.handle().handlers.keydown(makeEvent({ key: 'Enter' }));
+reduced.activeLink().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
+reduced.activeLink().handlers.keydown(makeEvent({ key: 'Enter' }));
 assert.equal(reduced.headings.get('level-2').scrollCalls[0].behavior, 'auto');
 
 // Real lens coordinates and speed/direction, rather than a fixed decorative rim.
@@ -408,34 +409,34 @@ assert.equal(optical.lensFilter.attrs.width, '208');
 assert.equal(optical.lensFilter.attrs.height, '38');
 assert.equal(optical.lensMap.attrs.width, '208');
 assert.equal(optical.lensMap.attrs.height, '38');
-assert.equal(optical.lensBend.attrs.scale, '18.00');
-const opticalGrip = optical.handle();
+assert.equal(optical.lensBend.attrs.scale, '10.00');
+const opticalGrip = optical.activeLink();
 opticalGrip.handlers.pointerdown(makeEvent({ pointerId: 9, button: 0, clientY: 30, timeStamp: 1000 }));
 opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 80, timeStamp: 1016 }));
-assert.equal(optical.lensBend.attrs.scale, '40.00');
-assert.equal(optical.indicator.style['--lens-shift'], '2.64px');
-assert.equal(optical.indicator.style['--lens-stretch'], '1.093');
+assert.equal(optical.lensBend.attrs.scale, '27.60');
+assert.equal(optical.indicator.style['--lens-shift'], '1.44px');
+assert.equal(optical.indicator.style['--lens-stretch'], '1.044');
 opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 70, timeStamp: 1032 }));
-assert.equal(optical.lensBend.attrs.scale, '33.00');
-assert.equal(optical.indicator.style['--lens-shift'], '-1.10px');
+assert.equal(optical.lensBend.attrs.scale, '22.00');
+assert.equal(optical.indicator.style['--lens-shift'], '-0.60px');
 opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 60, timeStamp: 1192 }));
-assert.equal(optical.lensBend.attrs.scale, '28.50'); // Same distance, slower motion, less refraction.
+assert.equal(optical.lensBend.attrs.scale, '18.40'); // Same distance, slower motion, less refraction.
 optical.motionQuery.matches = true; optical.motionQuery.change();
-assert.equal(optical.lensBend.attrs.scale, '18.00');
+assert.equal(optical.lensBend.attrs.scale, '10.00');
 assert.equal(optical.indicator.style['--lens-shift'], '0.00px');
 assert.equal(optical.indicator.style['--lens-stretch'], '1');
 opticalGrip.handlers.pointercancel(makeEvent({ pointerId: 9 }));
-assert.equal(optical.lensBend.attrs.scale, '18.00');
+assert.equal(optical.lensBend.attrs.scale, '10.00');
 assert.equal(optical.indicator.style['--lens-stretch'], '1');
 assert.equal(optical.historyCalls.length, 0);
 const releasedLens = outlineScenario();
-releasedLens.handle().handlers.pointerdown(makeEvent({ pointerId: 10, button: 0, clientY: 30 }));
-releasedLens.handle().handlers.pointermove(makeEvent({ pointerId: 10, clientY: 90 }));
-releasedLens.handle().handlers.pointerup(makeEvent({ pointerId: 10 }));
-assert.equal(releasedLens.lensBend.attrs.scale, '18.00');
+releasedLens.activeLink().handlers.pointerdown(makeEvent({ pointerId: 10, button: 0, clientY: 30 }));
+releasedLens.activeLink().handlers.pointermove(makeEvent({ pointerId: 10, clientY: 90 }));
+releasedLens.activeLink().handlers.pointerup(makeEvent({ pointerId: 10 }));
+assert.equal(releasedLens.lensBend.attrs.scale, '10.00');
 assert.equal(releasedLens.indicator.style['--lens-shift'], '0.00px');
 
-console.log('Navigation: scroll tracking, moving glass indicator, desktop/touch drag threshold, clamp, cancellation, click suppression and keyboard commit passed');
+console.log('Navigation: no grip button, direct mouse/touch active-link drag, scroll tracking, bounds, cancellation, click suppression and keyboard commit passed');
 console.log('Outline: six levels, separate arrows/links, folding, persistence/isolation, ancestor hashes and visible-only selection passed');
 console.log('Theme: persistence, accessible labels, bounded pointer stretch, press/cancel, finite rebound, rapid clicks, keyboard activation and live reduced motion passed');
 console.log('Refraction: pixel-aligned filter/map bounds, speed and direction, bounded strength, release/cancel reset and live reduced motion passed');

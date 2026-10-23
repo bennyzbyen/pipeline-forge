@@ -87,11 +87,6 @@
   const lensMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   navigation.appendChild(indicator);
   navigation.classList.add('has-glass-indicator');
-  const dragHandle = document.createElement('button');
-  dragHandle.type = 'button';
-  dragHandle.className = 'toc-drag-handle';
-  dragHandle.setAttribute('aria-label', '拖动切换章节');
-  dragHandle.title = '拖动切换章节；方向键预览，Enter 打开';
   let active = null;
   let preview = null;
   let dragState = null;
@@ -181,22 +176,14 @@
     if (lensFilter && lensMap && lensBend) {
       const moving = typeof pointerY === 'number';
       const delta = moving && !lensMotion.matches ? dragState?.velocity || 0 : 0;
-      const strength = moving && !lensMotion.matches ? 28 + Math.abs(delta) * .5 : 18;
+      const strength = moving && !lensMotion.matches ? 18 + Math.abs(delta) * .4 : 10;
       for (const node of [lensFilter, lensMap]) {
         node.setAttribute('width', String(Math.max(1, Math.round(width - 2))));
         node.setAttribute('height', String(Math.max(1, Math.round(height - 2))));
       }
       lensBend.setAttribute('scale', strength.toFixed(2));
-      indicator.style.setProperty('--lens-shift', (delta * .11).toFixed(2) + 'px');
-      indicator.style.setProperty('--lens-stretch', String(moving && !lensMotion.matches ? 1.045 + Math.abs(delta) * .002 : 1));
-    }
-  }
-  function moveHandle(entry) {
-    const item = entry?.link.closest('li');
-    if (item && dragHandle.parentElement !== item) {
-      const restoreFocus = document.activeElement === dragHandle;
-      item.appendChild(dragHandle);
-      if (restoreFocus) dragHandle.focus({ preventScroll: true });
+      indicator.style.setProperty('--lens-shift', (delta * .06).toFixed(2) + 'px');
+      indicator.style.setProperty('--lens-stretch', String(moving && !lensMotion.matches ? 1.02 + Math.abs(delta) * .001 : 1));
     }
   }
   function setPreview(entry, pointerY) {
@@ -213,10 +200,15 @@
   function select(entry) {
     if (!entry) return false;
     const changed = active !== entry;
-    if (active && active !== entry) active.link.removeAttribute('aria-current');
+    if (active && active !== entry) {
+      active.link.removeAttribute('aria-current');
+      active.link.removeAttribute('aria-description');
+      active.link.removeAttribute('aria-keyshortcuts');
+    }
     active = entry;
     active.link.setAttribute('aria-current', 'location');
-    if (!dragState) moveHandle(active);
+    active.link.setAttribute('aria-description', '可直接拖动切换章节；方向键预览，Enter 打开');
+    active.link.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown Enter Escape');
     if (!preview) setIndicator(active);
     return changed;
   }
@@ -293,21 +285,20 @@
     const pointerY = clampPointerY(event.clientY);
     setPreview(nearestVisibleEntry(pointerY), pointerY);
   }
-  dragHandle.addEventListener('pointerdown', event => beginDrag(dragHandle, null, event));
-  dragHandle.addEventListener('pointermove', moveDrag);
-  dragHandle.addEventListener('pointerup', event => finishDrag(true, event.pointerId));
-  dragHandle.addEventListener('pointercancel', event => finishDrag(false, event.pointerId));
-  dragHandle.addEventListener('lostpointercapture', event => finishDrag(false, event.pointerId));
   for (const entry of entries) {
     entry.link.setAttribute('draggable', 'false');
     entry.link.addEventListener('pointerdown', event => {
-      if (entry !== active || event.pointerType === 'touch') return;
+      if (entry !== active) return;
       beginDrag(entry.link, entry.link, event);
     });
     entry.link.addEventListener('pointermove', moveDrag);
     entry.link.addEventListener('pointerup', event => finishDrag(true, event.pointerId));
     entry.link.addEventListener('pointercancel', event => finishDrag(false, event.pointerId));
     entry.link.addEventListener('lostpointercapture', event => finishDrag(false, event.pointerId));
+    entry.link.addEventListener('keydown', event => {
+      if (entry === active || preview) previewKey(event);
+    });
+    entry.link.addEventListener('blur', () => { if (!dragState) clearPreview(); });
     entry.link.addEventListener('click', event => {
       if (suppressClick?.link !== entry.link || event.detail === 0) return;
       suppressClick = null;
@@ -315,7 +306,7 @@
       event.stopPropagation();
     });
   }
-  dragHandle.addEventListener('keydown', event => {
+  function previewKey(event) {
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       const available = visibleEntries();
       if (!available.length) return;
@@ -328,13 +319,13 @@
     } else if (event.key === 'Enter' && preview) {
       event.preventDefault();
       navigate(preview);
+      active.link.focus({ preventScroll: true });
     } else if (event.key === 'Escape' && preview) {
       event.preventDefault();
       event.stopPropagation();
       clearPreview();
     }
-  });
-  dragHandle.addEventListener('blur', clearPreview);
+  }
   function openHashAncestors() {
     let id = window.location.hash.slice(1);
     try { id = decodeURIComponent(id); } catch (_) { /* Malformed fragments are harmless. */ }
@@ -386,7 +377,7 @@
     if (event.key === 'Escape' && dragState) {
       event.preventDefault();
       finishDrag(false);
-      dragHandle.focus();
+      active.link.focus({ preventScroll: true });
       return;
     }
     if (event.key === 'Escape' && toggle.checked && !document.querySelector('dialog[open]')) {
