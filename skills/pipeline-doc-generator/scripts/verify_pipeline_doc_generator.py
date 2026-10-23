@@ -502,7 +502,7 @@ def test_viewer_security(root: Path) -> dict:
     assert markup.count('id="pf-glass-toolbar"') == 1
     assert markup.count('id="pf-glass-nav"') == 1
     assert 'filter:url("#pf-glass-control")' in markup
-    assert 'backdrop-filter:url("#pf-glass-standard") blur(1px)' in markup
+    assert 'backdrop-filter:url("#pf-glass-standard") blur(.35px)' in markup
     assert 'backdrop-filter:url("#pf-glass-capsule") blur(2px)' in markup
     assert 'filter:url("#pf-glass-capsule")' in markup
     assert '.toc-active-glass::before' in markup
@@ -535,8 +535,17 @@ def test_viewer_security(root: Path) -> dict:
         assert map_image.getpixel((width - 1, height // 2))[0] < 56
         assert map_image.getpixel((width // 2, 0))[1] > 200
         assert map_image.getpixel((width // 2, height - 1))[1] < 56
-        if filter_id in {"pf-glass-standard", "pf-glass-capsule"}:
-            # The whole lens center is neutral; only its curved perimeter bends.
+        if filter_id == "pf-glass-standard":
+            assert ui_filter.get("filterUnits") == "userSpaceOnUse"
+            assert ui_filter.get("primitiveUnits") == "userSpaceOnUse"
+            assert ui_filter.get("x") == "0" and ui_filter.get("y") == "0"
+            assert ui_filter.get("width") == map_node.get("width") == "256"
+            assert ui_filter.get("height") == map_node.get("height") == "64"
+            # A gentle interior gradient magnifies text; the stronger curved rim bends it.
+            assert map_image.getpixel((width // 4, height // 2))[0] > 140
+            assert map_image.getpixel((3 * width // 4, height // 2))[0] < 116
+            assert map_image.getpixel((width // 2, height // 3))[1] > 140
+        if filter_id == "pf-glass-capsule":
             assert map_image.getpixel((width // 2, height // 3)) == (128, 128, 128, 255)
             assert map_image.getpixel((width // 2, 5))[1] > 150
             assert map_image.getpixel((8, 8))[0] > 150

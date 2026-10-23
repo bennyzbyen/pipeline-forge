@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.2 - 2026-10-23
+
+- Fix document lens sampling above outline text, fit displacement coordinates to the lens, and vary refraction with drag speed and direction.
+
 ## 2.7.1 - 2026-10-23
 
 - Refine document navigation with Standard-style clear glass and visible refracted echoes; add an elastic theme capsule while keeping reading tables crisp.

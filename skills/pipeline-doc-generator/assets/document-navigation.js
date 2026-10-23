@@ -81,6 +81,10 @@
   const indicator = document.createElement('div');
   indicator.className = 'toc-active-glass';
   indicator.setAttribute('aria-hidden', 'true');
+  const lensFilter = document.getElementById('pf-glass-standard');
+  const lensMap = lensFilter?.querySelector?.('feImage');
+  const lensBend = lensFilter?.querySelector?.('feDisplacementMap');
+  const lensMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   navigation.appendChild(indicator);
   navigation.classList.add('has-glass-indicator');
   const dragHandle = document.createElement('button');
@@ -173,6 +177,19 @@
     indicator.style.width = Math.round(width) + 'px';
     indicator.style.height = Math.round(height) + 'px';
     indicator.style.transform = 'translate3d(' + Math.round(left) + 'px,' + Math.round(top) + 'px,0)';
+    // SVG backdrop coordinates must match the lens, not the hidden 1px SVG viewport.
+    if (lensFilter && lensMap && lensBend) {
+      const moving = typeof pointerY === 'number';
+      const delta = moving && !lensMotion.matches ? dragState?.velocity || 0 : 0;
+      const strength = moving && !lensMotion.matches ? 28 + Math.abs(delta) * .5 : 18;
+      for (const node of [lensFilter, lensMap]) {
+        node.setAttribute('width', String(Math.max(1, Math.round(width - 2))));
+        node.setAttribute('height', String(Math.max(1, Math.round(height - 2))));
+      }
+      lensBend.setAttribute('scale', strength.toFixed(2));
+      indicator.style.setProperty('--lens-shift', (delta * .11).toFixed(2) + 'px');
+      indicator.style.setProperty('--lens-stretch', String(moving && !lensMotion.matches ? 1.045 + Math.abs(delta) * .002 : 1));
+    }
   }
   function moveHandle(entry) {
     const item = entry?.link.closest('li');
@@ -258,7 +275,8 @@
     if (event.button !== undefined && event.button !== 0) return;
     suppressClick = null;
     clearPreview();
-    dragState = { pointerId: event.pointerId, startY: event.clientY, dragging: false, captureElement, sourceLink };
+    dragState = { pointerId: event.pointerId, startY: event.clientY, lastY: event.clientY,
+      lastTime: event.timeStamp || 0, velocity: 0, dragging: false, captureElement, sourceLink };
     try { captureElement.setPointerCapture?.(event.pointerId); } catch (_) { /* Capture can fail after a synthetic event. */ }
   }
   function moveDrag(event) {
@@ -267,6 +285,11 @@
     dragState.dragging = true;
     navigation.dataset.dragging = 'true';
     event.preventDefault();
+    const now = event.timeStamp || dragState.lastTime + 16;
+    const elapsed = Math.max(8, now - dragState.lastTime);
+    dragState.velocity = Math.max(-24, Math.min(24, (event.clientY - dragState.lastY) * 16 / elapsed));
+    dragState.lastY = event.clientY;
+    dragState.lastTime = now;
     const pointerY = clampPointerY(event.clientY);
     setPreview(nearestVisibleEntry(pointerY), pointerY);
   }
@@ -374,6 +397,10 @@
   });
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule);
+  lensMotion.addEventListener?.('change', () => {
+    if (dragState) dragState.velocity = 0;
+    setIndicator(preview || active, dragState?.dragging ? clampPointerY(dragState.lastY) : undefined);
+  });
   navigation.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('hashchange', openHashAncestors);
   window.addEventListener('load', schedule);

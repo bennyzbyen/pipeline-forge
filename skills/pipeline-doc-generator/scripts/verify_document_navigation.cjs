@@ -121,7 +121,7 @@ themeScenario(null, false, false, true); themeScenario(null, false, false, false
 class Element {
   constructor(tag, classes = '') {
     this.tag = tag; this.className = classes; this.children = []; this.attrs = {};
-    this.handlers = {}; this.dataset = {}; this.style = {}; this.hidden = false; this.textContent = '';
+    this.handlers = {}; this.dataset = {}; this.style = { setProperty(key, value) { this[key] = value; } }; this.hidden = false; this.textContent = '';
     this.scrollTop = 0; this.scrollLeft = 0;
     this.classList = {
       add: name => { if (!this.classList.contains(name)) this.className = (this.className + ' ' + name).trim(); },
@@ -194,15 +194,18 @@ function outlineScenario({ saved = new Map(), pathname = '/nested.html', hash = 
   nav.querySelectorAll = selector => selector === 'a[href^="#"]' ? links : items;
   const toggle = new Element('input'); toggle.checked = true; toggle.focus = () => { toggle.focused = true; };
   const label = {};
+  const lensMap = new Element('feImage'), lensBend = new Element('feDisplacementMap'), lensFilter = new Element('filter');
+  lensFilter.querySelector = selector => selector === 'feImage' ? lensMap : lensBend;
+  const motionQuery = { matches: reduced, addEventListener: (_name, callback) => { motionQuery.change = callback; } };
   const document = {
     documentElement: { scrollHeight: 10000 }, addEventListener: (name, fn) => { documentHandlers[name] = fn; },
-    getElementById: id => id === 'toc-toggle' ? toggle : headings.get(id),
+    getElementById: id => id === 'pf-glass-standard' ? lensFilter : id === 'toc-toggle' ? toggle : headings.get(id),
     querySelector: selector => selector === '.toc-toggle-label' ? label : selector === '.toc-chapters' ? nav : null,
     createElement: tag => new Element(tag),
   };
   const window = {
     innerHeight: 800, scrollY: 0, location: { pathname, hash },
-    matchMedia: query => ({ matches: query.includes('prefers-reduced-motion') ? reduced : false }),
+    matchMedia: query => query.includes('prefers-reduced-motion') ? motionQuery : { matches: false },
     history: { pushState: (_state, _title, target) => { historyCalls.push(target); window.location.hash = target; } },
     addEventListener: (name, fn) => { handlers[name] = fn; }, requestAnimationFrame: fn => frames.push(fn),
     setTimeout: fn => { timers.push(fn); return timers.length; },
@@ -225,7 +228,7 @@ function outlineScenario({ saved = new Map(), pathname = '/nested.html', hash = 
   const indicator = nav.children.find(child => child.classList.contains('toc-active-glass'));
   const handle = () => items.flatMap(item => item.children).find(child => child.classList?.contains('toc-drag-handle'));
   return { chain, other, otherChild, otherTable, nav, links, headings, window, document, handlers, documentHandlers,
-    historyCalls, button, click, scrollTo, flush, flushTimers, saved, indicator, handle };
+    historyCalls, button, click, scrollTo, flush, flushTimers, saved, indicator, handle, lensFilter, lensMap, lensBend, motionQuery };
 }
 const folded = outlineScenario();
 assert.equal(folded.chain[0].children.hidden, false);
@@ -399,6 +402,40 @@ reduced.handle().handlers.keydown(makeEvent({ key: 'ArrowDown' }));
 reduced.handle().handlers.keydown(makeEvent({ key: 'Enter' }));
 assert.equal(reduced.headings.get('level-2').scrollCalls[0].behavior, 'auto');
 
+// Real lens coordinates and speed/direction, rather than a fixed decorative rim.
+const optical = outlineScenario();
+assert.equal(optical.lensFilter.attrs.width, '208');
+assert.equal(optical.lensFilter.attrs.height, '38');
+assert.equal(optical.lensMap.attrs.width, '208');
+assert.equal(optical.lensMap.attrs.height, '38');
+assert.equal(optical.lensBend.attrs.scale, '18.00');
+const opticalGrip = optical.handle();
+opticalGrip.handlers.pointerdown(makeEvent({ pointerId: 9, button: 0, clientY: 30, timeStamp: 1000 }));
+opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 80, timeStamp: 1016 }));
+assert.equal(optical.lensBend.attrs.scale, '40.00');
+assert.equal(optical.indicator.style['--lens-shift'], '2.64px');
+assert.equal(optical.indicator.style['--lens-stretch'], '1.093');
+opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 70, timeStamp: 1032 }));
+assert.equal(optical.lensBend.attrs.scale, '33.00');
+assert.equal(optical.indicator.style['--lens-shift'], '-1.10px');
+opticalGrip.handlers.pointermove(makeEvent({ pointerId: 9, clientY: 60, timeStamp: 1192 }));
+assert.equal(optical.lensBend.attrs.scale, '28.50'); // Same distance, slower motion, less refraction.
+optical.motionQuery.matches = true; optical.motionQuery.change();
+assert.equal(optical.lensBend.attrs.scale, '18.00');
+assert.equal(optical.indicator.style['--lens-shift'], '0.00px');
+assert.equal(optical.indicator.style['--lens-stretch'], '1');
+opticalGrip.handlers.pointercancel(makeEvent({ pointerId: 9 }));
+assert.equal(optical.lensBend.attrs.scale, '18.00');
+assert.equal(optical.indicator.style['--lens-stretch'], '1');
+assert.equal(optical.historyCalls.length, 0);
+const releasedLens = outlineScenario();
+releasedLens.handle().handlers.pointerdown(makeEvent({ pointerId: 10, button: 0, clientY: 30 }));
+releasedLens.handle().handlers.pointermove(makeEvent({ pointerId: 10, clientY: 90 }));
+releasedLens.handle().handlers.pointerup(makeEvent({ pointerId: 10 }));
+assert.equal(releasedLens.lensBend.attrs.scale, '18.00');
+assert.equal(releasedLens.indicator.style['--lens-shift'], '0.00px');
+
 console.log('Navigation: scroll tracking, moving glass indicator, desktop/touch drag threshold, clamp, cancellation, click suppression and keyboard commit passed');
 console.log('Outline: six levels, separate arrows/links, folding, persistence/isolation, ancestor hashes and visible-only selection passed');
 console.log('Theme: persistence, accessible labels, bounded pointer stretch, press/cancel, finite rebound, rapid clicks, keyboard activation and live reduced motion passed');
+console.log('Refraction: pixel-aligned filter/map bounds, speed and direction, bounded strength, release/cancel reset and live reduced motion passed');
