@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.9.1 - 2026-10-29
+
+- Separate production runtime and export evidence from supplied-source re-import assessments; treat the final-row sentinel as an audit warning while retaining strict generation safeguards.
+
 ## 2.9.0 - 2026-10-29
 
 - Separate Java import diagnostics from generated Excel conventions, verify supplied handler fingerprints, and guard Java integer sequences without altering production exports.

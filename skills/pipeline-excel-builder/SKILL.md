@@ -24,6 +24,8 @@ Create a locally reviewable Pipeline Export workbook. This skill does not connec
 
 Explicit user-confirmed values override inferred document values. Production exports are schema/style evidence only unless the user authorizes copying specific business values.
 
+Keep production execution, native platform export and workbook re-import distinct. Accept a user's confirmation that production runs and the file was exported there; an offline preflight does not contradict those facts. A supplied Java file does not prove which handler is deployed. Report deviations as generated-profile or supplied-source re-import findings, never as a verdict that production is broken. Do not clean up historical business values unless requested.
+
 ## Script-First Workflow
 
 1. If only Markdown or DOCX requirement inputs exist, use `data-doc-to-dev-md/scripts/extract_docx_bundle.py --input <paths...>` to produce `structured_facts.json`.
@@ -33,7 +35,7 @@ Explicit user-confirmed values override inferred document values. Production exp
 
 The scripts implement the supplied Java handler's checked contract plus the preserved export profile; their output is not proof of a live import. For failures or changes, consult [Java import compatibility](references/java_import_compatibility.md), which distinguishes confirmed source behavior, stricter template conventions and missing dependencies. Read the schema and fill rules for mapping details.
 
-For an existing export audit, use `scripts/validate_pipeline_excel.py --xlsx <export> --profile java-import --java-source <handler.java> --json-out <audit.json>`. This read-only, conservative preflight separates source-backed import risks from generated-workbook conventions such as TEXT/200, label=name and consecutive text sequences. It does not approve template formatting or runtime compatibility. The default `generated` profile and builder remain strict; a Java-only pass never substitutes for step 3. Default validation also includes a separate `java_import_preflight` result.
+For a re-import audit of an existing export, use `scripts/validate_pipeline_excel.py --xlsx <export> --profile java-import --java-source <handler.java> --json-out <audit.json>`. This read-only, conservative preflight separates source-backed import risks from generated-workbook conventions such as TEXT/200, label=name and consecutive text sequences. Its `assessment_scope` explicitly excludes production runtime, exportability and verification of the deployed importer. The default `generated` profile and builder remain strict; a Java-only pass never substitutes for step 3. Default validation also includes a separate `java_import_preflight` result. A missing final blank sentinel is a warning in this audit: Java still extracts the last record, while skipping its verification. Generated files retain the strict sentinel safeguard.
 
 When a Java handler is supplied, pass `--java-source` to both generation and validation. `source_evidence.status=matched` verifies the reviewed snapshot's bytes; mismatch/unreadable source blocks the operation before publication. Without the file, `baseline_only` means bundled evidence was used, not that current Java was checked. Do not refresh the fingerprint without reviewing the changed source and affected tests.
 

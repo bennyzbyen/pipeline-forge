@@ -21,7 +21,7 @@ SOURCE_SHA256 = "de06a13e0bbf57ecdc36e146b31addb3e3d3ac08e50e2b0e0ccc4bd16adb34c
 def source_evidence(path=None):
     """Bind an optional local handler to the reviewed snapshot, without executing it."""
     result = {"expected_sha256": SOURCE_SHA256, "actual_sha256": None,
-              "status": "baseline_only", "errors": []}
+              "status": "baseline_only", "identity_scope": "supplied_local_file_only", "errors": []}
     if path is not None:
         try:
             result["actual_sha256"] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -99,7 +99,10 @@ def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json
         if missing:
             errors.append(f"{name}: missing physical row shells {missing[:8]}; Java isRowEmpty(null) would fail")
         if last >= 3 and any(c.get("t") is not None or len(c) for c in physical[last]):
-            errors.append(f"{name}: final physical row must be a true blank sentinel; Java verification skips it but extraction includes it")
+            if generation_profile:
+                errors.append(f"{name}: final physical row must be a true blank sentinel; Java verification skips it but extraction includes it")
+            else:
+                warnings.append(f"{name}: final populated physical row is extracted but skipped by Java verification; a blank sentinel is a generation safeguard, not a Java import requirement")
         for number, row in physical.items():
             if number < 3:
                 continue

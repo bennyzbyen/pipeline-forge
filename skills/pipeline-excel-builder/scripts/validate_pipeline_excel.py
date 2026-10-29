@@ -333,11 +333,20 @@ def validate_workbook(path: Path, template_path: Path | None = None,
         raise ValueError(f"Unknown validation profile: {profile}")
     from java_import_contract import template_headers, import_preflight, source_evidence, SOURCE_SHA256
     evidence = source_evidence(java_source_path)
+    assessment_scope = {
+        "checked_operation": "supplied_java_reimport_preflight" if profile == "java-import" else "generated_workbook_preflight",
+        "ok_meaning": "passes_selected_offline_checks",
+        "production_runtime": "not_assessed",
+        "production_exportability": "not_assessed",
+        "deployed_import_handler": "not_verified",
+        "can_infer_production_runtime_failure": False,
+    }
     try:
         wb = load_workbook(path, data_only=False)
     except (OSError, KeyError, IndexError, TypeError, ValueError, ET.ParseError, zipfile.BadZipFile, InvalidFileException) as exc:
         result = unreadable_workbook_result(path, exc)
-        result.update(validation_profile=profile, source_evidence=evidence)
+        result.update(validation_profile=profile, source_evidence=evidence,
+                      assessment_scope=assessment_scope)
         result["errors"].extend(evidence["errors"])
         return result
     errors: list[str] = list(evidence["errors"])
@@ -355,7 +364,8 @@ def validate_workbook(path: Path, template_path: Path | None = None,
     except (OSError, KeyError, IndexError, TypeError, ValueError, ET.ParseError, zipfile.BadZipFile) as exc:
         java_result = {"ok": False, "row_counts": {}, "errors": [f"Java preflight could not complete: {exc}"], "warnings": []}
     limitations = ["XmlParameterHandler schema, enum definitions, datastore UID mapping and service/database side effects were not executed.",
-                  "Preflight rejects ambiguous cells and data-loss risks conservatively; it is not an exact POI/Java emulator."]
+                  "Preflight rejects ambiguous cells and data-loss risks conservatively; it is not an exact POI/Java emulator.",
+                  "Production execution, native export and re-import are separate paths. Findings do not establish production runtime failure or deployed importer behavior."]
     if profile == "java-import":
         if template_path is not None or business_reference_path is not None:
             errors.append("Template/business preservation checks require the generated profile")
@@ -363,6 +373,7 @@ def validate_workbook(path: Path, template_path: Path | None = None,
         wb.close()
         return {"ok": not errors, "workbook": str(path), "validation_profile": profile,
                 "source_sha256": SOURCE_SHA256, "source_evidence": evidence,
+                "assessment_scope": assessment_scope,
                 "row_counts": java_result["row_counts"], "errors": errors,
                 "warnings": java_result["warnings"], "limitations": limitations,
                 "template_comparison": {"performed": False, "sha256": None},
@@ -500,6 +511,7 @@ def validate_workbook(path: Path, template_path: Path | None = None,
     return {
         "source_sha256": SOURCE_SHA256,
         "source_evidence": evidence,
+        "assessment_scope": assessment_scope,
         "validation_profile": profile,
         "java_import_preflight": java_result,
         "template_comparison": {"performed": template_path is not None,
@@ -522,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--business-reference-xlsx", type=Path, help="Pre-edit workbook for exact value/type/blank/XML preservation during format-only repairs")
     parser.add_argument("--java-source", type=Path, help="Optional local handler; a fingerprint mismatch blocks the check")
     parser.add_argument("--profile", choices=("generated", "java-import"), default="generated",
-                        help="generated enforces export conventions; java-import is diagnostic and does not approve template formatting")
+                        help="generated enforces export conventions; java-import checks re-import against supplied source, not production execution or exportability")
     return parser
 
 

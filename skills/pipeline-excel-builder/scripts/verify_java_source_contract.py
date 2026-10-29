@@ -246,13 +246,28 @@ class JavaSourceContract(unittest.TestCase):
         self.assertTrue(any("zero day frequency" in w for w in diagnostic["warnings"]))
         self.assertFalse(validate_workbook(self.output)["ok"])
 
-    def test_java_profile_still_blocks_dropped_rows_and_missing_sentinel(self):
+    def test_java_profile_blocks_orphans_but_only_warns_for_missing_sentinel(self):
         self.build()
         self.edit("Pipeline", {"A3": "unknown", "M3": None})
         diagnostic = validate_workbook(self.output, profile="java-import")
         self.assertTrue(any("orphan rows" in e for e in diagnostic["errors"]))
         self.test_final_record_without_sentinel_rejected()
-        self.assertFalse(validate_workbook(self.output, profile="java-import")["ok"])
+        diagnostic = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(diagnostic["ok"], diagnostic["errors"])
+        self.assertEqual(diagnostic["row_counts"]["Data Utilization"], 1)
+        self.assertTrue(any("not a Java import requirement" in w for w in diagnostic["warnings"]))
+
+    def test_offline_findings_cannot_establish_production_runtime_failure(self):
+        self.build()
+        self.edit("Target & Catalog", {"H3": "registered_catalog"})
+        for profile in ("generated", "java-import"):
+            with self.subTest(profile=profile):
+                result = validate_workbook(self.output, profile=profile)
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("conditional requirement missing" in e for e in result["errors"]))
+                self.assertEqual(result["assessment_scope"]["production_runtime"], "not_assessed")
+                self.assertFalse(result["assessment_scope"]["can_infer_production_runtime_failure"])
+                self.assertEqual(result["source_evidence"]["identity_scope"], "supplied_local_file_only")
 
     def test_java_profile_cannot_claim_template_preservation(self):
         self.build()
