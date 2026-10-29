@@ -21,6 +21,16 @@ Evidence: user-supplied `ImportProjectPipelineTemplateHandler.java`, SHA-256 `de
 | MLP XML | `verification`, 700–714; task reset, 249–259 | Each non-null target-link cell invokes `XmlParameterHandler.getMlpParameter`, even with null XML. No links bypasses that check, but provided XML still reaches processor creation. Preflight every group, not just task1. |
 | Fields | `bathUpsetField`, 396–415 | Type is an external enum; sequence is parsed as a Java integer. HBase prepends its configured family/delimiter itself. Do not add a guessed family prefix. |
 
+## Audit profiles and source identity
+
+Use `validate_pipeline_excel.py --xlsx <export> --profile java-import --java-source <handler.java> --json-out <audit.json>` for a read-only export audit. `generated` remains the default and the only builder preflight. Its result also exposes `java_import_preflight` separately, so generated conventions are not mistaken for Java requirements.
+
+The diagnostic profile omits TEXT/200, label=name, consecutive zero-based text sequences, shared-string-only storage, and the generation policy requiring a schedule for notifications. It still requires a supported export schema, continuous physical rows and a blank sentinel, valid references, unique Catalog registrations, conditional contacts, storage, dates, every task group and XML/JSON. These include conservative guards against silent loss and ambiguous conversion; `ok=true` means no known blockers in that subset, not exact equivalence to all values the Java handler accepts. Fractional numeric values require explicit text because Java rounds them. Integral numeric sequences are accepted; null, empty, noninteger or out-of-range sequences fail `Integer.valueOf` and are blocked. FieldTypeEnum and notification membership remain unverified without their definitions. Zero day frequency is reported as unverified instead of misrepresented as a Java rejection.
+
+`--java-source` binds validation and generation to the reviewed SHA-256 above. Results expose expected/actual hashes and `source_evidence.status`: `matched`, `mismatch`, `unreadable`, or `baseline_only` when omitted. Mismatch/unreadable source blocks the operation; the builder checks before generation and again before atomic publication. The source is read locally and never copied into the package. A changed fingerprint requires method-by-method review and regressions before adopting a new baseline.
+
+Import assembly is DU-driven (`getOneItemsAllData`, 508–531): a pipeline pointing to an unknown DU can disappear from the assembled list even when it has no target links. Diagnose this orphan reference explicitly. Java's `*enable` check only requires non-null; values other than `1` become false. Generated workbooks continue to require `0/1`.
+
 ## Template profile and stricter generation rules
 
 These are deliberate profile/user requirements, not claims that Java itself enforces them:
@@ -77,4 +87,4 @@ Import upserts objects, replaces pipeline tasks (`deleteTaskByProcessUid`) and c
 
 ## Regression checks
 
-`verify_java_source_contract.py` runs 19 source-backed injections plus the existing 17 import regressions. Also run the two synthetic generation cases and three input-robustness cases. Use temporary synthetic fixtures; never copy customer exports, proprietary Java source or credentials into the skill repository. Record the source fingerprint when updating the compatibility profile.
+`verify_java_source_contract.py` runs 28 source-backed injections plus the existing 17 import regressions. Coverage includes profile separation, sequence parsing/range, numeric conversion, notification/schedule policy, source match/drift/unreadable status, orphan references and destination preservation on source drift. Also run template preservation, the two synthetic generation cases and three input-robustness cases. Source-identity tests use synthetic bytes and a temporary mocked baseline; they do not execute Java. Use temporary synthetic fixtures; never copy customer exports, proprietary Java source or credentials into the skill repository. Record the source fingerprint when updating the compatibility profile.

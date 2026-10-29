@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.9.0 - 2026-10-29
+
+- Separate Java import diagnostics from generated Excel conventions, verify supplied handler fingerprints, and guard Java integer sequences without altering production exports.
+
 ## 2.8.1 - 2026-10-29
 
 - Preserve prefixed worksheet row shells and dimension growth under both lxml and standard-library XML serialization; add a deterministic prefixed-template regression.

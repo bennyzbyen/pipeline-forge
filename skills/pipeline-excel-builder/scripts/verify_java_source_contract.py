@@ -1,14 +1,19 @@
 """Synthetic failure injections for the supplied Java handler's observable contracts."""
 from copy import deepcopy
+import hashlib
 import unittest
+from unittest.mock import patch
 import zipfile
 from xml.etree import ElementTree as ET
 
 from openpyxl import load_workbook
 from build_pipeline_excel import rewrite_inline_strings_as_shared_strings
+from build_pipeline_excel import build_workbook
+from java_import_contract import source_evidence
 from pipeline_ooxml import Q, sheet_paths
 from validate_pipeline_excel import validate_workbook
 from verify_java_import_regression import ImportRegression
+from verify_pipeline_excel_synthetic_regression import build_args
 
 
 class JavaSourceContract(unittest.TestCase):
@@ -187,6 +192,98 @@ class JavaSourceContract(unittest.TestCase):
         self.build()
         self.edit("Pipeline", {"O3": "hidden task without header"})
         self.assertIn("outside the declared header", self.errors())
+
+    def test_java_profile_separates_field_conventions(self):
+        self.build()
+        self.edit("Target Field", {"C3": "Business label", "E3": "OTHER_TYPE", "F3": "512", "G3": "42"})
+        result = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(result["ok"], result["errors"])
+        self.assertTrue(any("FieldTypeEnum" in w and "OTHER_TYPE" in w for w in result["warnings"]))
+        self.assertFalse(result["template_comparison"]["performed"])
+        strict = validate_workbook(self.output)
+        self.assertFalse(strict["ok"])
+        self.assertTrue(strict["java_import_preflight"]["ok"])
+
+    def test_java_integer_sequence_is_required_and_bounded(self):
+        self.build()
+        for sequence in (None, "", "1.5", "2147483648", "-2147483649"):
+            with self.subTest(sequence=sequence):
+                self.edit("Target Field", {"G3": sequence})
+                errors = validate_workbook(self.output, profile="java-import")["errors"]
+                self.assertTrue(any("32-bit integer" in e for e in errors), errors)
+        for sequence in ("+42", "-2147483648", "2147483647"):
+            self.edit("Target Field", {"G3": sequence})
+            self.assertTrue(validate_workbook(self.output, profile="java-import")["ok"])
+
+    def test_java_profile_numeric_sequence_and_enable(self):
+        self.build()
+        self.edit("Pipeline", {"D3": "disabled"})
+        def numeric(root):
+            cell = root.find(f"{Q('sheetData')}/{Q('row')}[@r='3']/{Q('c')}[@r='G3']")
+            cell.set("t", "n")
+            cell.find(Q("v")).text = "42.0"
+        self.mutate("Target Field", numeric)
+        result = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(result["ok"], result["errors"])
+        self.assertTrue(any("enable other than 1" in w for w in result["warnings"]))
+        def fractional(root):
+            root.find(f"{Q('sheetData')}/{Q('row')}[@r='3']/{Q('c')}[@r='G3']/{Q('v')}").text = "42.5"
+        self.mutate("Target Field", fractional)
+        self.assertFalse(validate_workbook(self.output, profile="java-import")["ok"])
+
+    def test_java_profile_notification_without_schedule_is_not_generation_approval(self):
+        self.build()
+        self.edit("Pipeline", {"I3": "FAILURE", "J3": "ops@example.com"})
+        diagnostic = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(diagnostic["ok"], diagnostic["errors"])
+        self.assertFalse(validate_workbook(self.output)["ok"])
+
+    def test_java_zero_frequency_remains_unverified(self):
+        self.build()
+        self.edit("Pipeline", {"F3": "每0天 03:00", "G3": "2027-01-01"})
+        diagnostic = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(diagnostic["ok"], diagnostic["errors"])
+        self.assertTrue(any("zero day frequency" in w for w in diagnostic["warnings"]))
+        self.assertFalse(validate_workbook(self.output)["ok"])
+
+    def test_java_profile_still_blocks_dropped_rows_and_missing_sentinel(self):
+        self.build()
+        self.edit("Pipeline", {"A3": "unknown", "M3": None})
+        diagnostic = validate_workbook(self.output, profile="java-import")
+        self.assertTrue(any("orphan rows" in e for e in diagnostic["errors"]))
+        self.test_final_record_without_sentinel_rejected()
+        self.assertFalse(validate_workbook(self.output, profile="java-import")["ok"])
+
+    def test_java_profile_cannot_claim_template_preservation(self):
+        self.build()
+        result = validate_workbook(self.output, template_path=self.template, profile="java-import")
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["template_comparison"]["performed"])
+
+    def test_source_evidence_distinguishes_baseline_match_drift_and_unreadable(self):
+        self.assertEqual(source_evidence()["status"], "baseline_only")
+        source = self.root / "handler.java"
+        source.write_text("// synthetic source evidence\n", encoding="utf-8")
+        actual = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.assertEqual(source_evidence(source)["status"], "mismatch")
+        with patch("java_import_contract.SOURCE_SHA256", actual):
+            self.assertEqual(source_evidence(source)["status"], "matched")
+        self.assertEqual(source_evidence(self.root / "missing.java")["status"], "unreadable")
+
+    def test_source_drift_blocks_diagnostics_and_preserves_existing_output(self):
+        self.build()
+        before = self.output.read_bytes()
+        source = self.root / "handler.java"
+        source.write_text("// changed synthetic handler\n", encoding="utf-8")
+        for profile in ("generated", "java-import"):
+            result = validate_workbook(self.output, java_source_path=source, profile=profile)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["source_evidence"]["status"], "mismatch")
+        args = build_args(self.template, self.root / "facts.json", self.root / "questions.md", self.output)
+        args.java_source = source
+        with self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
+            build_workbook(args)
+        self.assertEqual(self.output.read_bytes(), before)
 
 
 if __name__ == "__main__":

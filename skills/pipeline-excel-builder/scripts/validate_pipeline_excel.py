@@ -326,23 +326,49 @@ def add_import_contract_errors(path, wb, data, errors, template_path=None, schem
 
 
 def validate_workbook(path: Path, template_path: Path | None = None,
-                      business_reference_path: Path | None = None) -> dict[str, Any]:
+                      business_reference_path: Path | None = None,
+                      java_source_path: Path | None = None,
+                      profile: str = "generated") -> dict[str, Any]:
+    if profile not in {"generated", "java-import"}:
+        raise ValueError(f"Unknown validation profile: {profile}")
+    from java_import_contract import template_headers, import_preflight, source_evidence, SOURCE_SHA256
+    evidence = source_evidence(java_source_path)
     try:
         wb = load_workbook(path, data_only=False)
     except (OSError, KeyError, IndexError, TypeError, ValueError, ET.ParseError, zipfile.BadZipFile, InvalidFileException) as exc:
-        return unreadable_workbook_result(path, exc)
-    errors: list[str] = []
+        result = unreadable_workbook_result(path, exc)
+        result.update(validation_profile=profile, source_evidence=evidence)
+        result["errors"].extend(evidence["errors"])
+        return result
+    errors: list[str] = list(evidence["errors"])
     warnings: list[str] = []
     row_counts: dict[str, int] = {}
     data: dict[str, list[dict[str, str]]] = {}
 
-    add_ooxml_storage_errors(path, errors)
-    from java_import_contract import template_headers, validate_java_contract, SOURCE_SHA256
     try:
         schema = template_headers(wb, EXPECTED_HEADERS)
     except ValueError as exc:
         errors.append(str(exc))
         schema = EXPECTED_HEADERS
+    try:
+        java_result = import_preflight(path, wb, schema, strict_json)
+    except (OSError, KeyError, IndexError, TypeError, ValueError, ET.ParseError, zipfile.BadZipFile) as exc:
+        java_result = {"ok": False, "row_counts": {}, "errors": [f"Java preflight could not complete: {exc}"], "warnings": []}
+    limitations = ["XmlParameterHandler schema, enum definitions, datastore UID mapping and service/database side effects were not executed.",
+                  "Preflight rejects ambiguous cells and data-loss risks conservatively; it is not an exact POI/Java emulator."]
+    if profile == "java-import":
+        if template_path is not None or business_reference_path is not None:
+            errors.append("Template/business preservation checks require the generated profile")
+        errors.extend(java_result["errors"])
+        wb.close()
+        return {"ok": not errors, "workbook": str(path), "validation_profile": profile,
+                "source_sha256": SOURCE_SHA256, "source_evidence": evidence,
+                "row_counts": java_result["row_counts"], "errors": errors,
+                "warnings": java_result["warnings"], "limitations": limitations,
+                "template_comparison": {"performed": False, "sha256": None},
+                "business_preservation_checked": False}
+
+    add_ooxml_storage_errors(path, errors)
 
     for sheet, expected in schema.items():
         if sheet not in wb.sheetnames:
@@ -459,7 +485,9 @@ def validate_workbook(path: Path, template_path: Path | None = None,
 
     try:
         add_import_contract_errors(path, wb, data, errors, template_path, schema)
+        from java_import_contract import validate_java_contract
         validate_java_contract(path, wb, data, schema, errors, warnings, strict_json)
+        errors.extend(error for error in java_result["errors"] if error not in errors)
         if business_reference_path is not None:
             from pipeline_preservation import preservation_errors
             if Path(path).resolve() == Path(business_reference_path).resolve():
@@ -471,10 +499,13 @@ def validate_workbook(path: Path, template_path: Path | None = None,
     wb.close()
     return {
         "source_sha256": SOURCE_SHA256,
+        "source_evidence": evidence,
+        "validation_profile": profile,
+        "java_import_preflight": java_result,
         "template_comparison": {"performed": template_path is not None,
                                 "sha256": hashlib.sha256(Path(template_path).read_bytes()).hexdigest() if template_path and Path(template_path).is_file() else None},
         "business_preservation_checked": business_reference_path is not None,
-        "limitations": ["XmlParameterHandler schema, enum definitions, datastore UID mapping and service/database side effects were not executed."],
+        "limitations": limitations,
         "ok": not errors,
         "workbook": str(path),
         "row_counts": row_counts,
@@ -489,13 +520,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--template-xlsx", type=Path, help="Original export for row-boundary and package comparison")
     parser.add_argument("--business-reference-xlsx", type=Path, help="Pre-edit workbook for exact value/type/blank/XML preservation during format-only repairs")
+    parser.add_argument("--java-source", type=Path, help="Optional local handler; a fingerprint mismatch blocks the check")
+    parser.add_argument("--profile", choices=("generated", "java-import"), default="generated",
+                        help="generated enforces export conventions; java-import is diagnostic and does not approve template formatting")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     result = validate_workbook(args.xlsx, template_path=args.template_xlsx,
-                               business_reference_path=args.business_reference_xlsx)
+                               business_reference_path=args.business_reference_xlsx,
+                               java_source_path=args.java_source, profile=args.profile)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)

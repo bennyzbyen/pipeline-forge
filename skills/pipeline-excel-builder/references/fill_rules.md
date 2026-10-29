@@ -8,6 +8,8 @@
 4. PRD tables and paragraphs.
 5. Production Excel examples, only for schema/style reference unless the user explicitly authorizes copying business values.
 
+For an audit of an existing export, use the validator's `--profile java-import` and pass a supplied handler with `--java-source`. Report its conservative import blockers separately from the strict generated profile; do not normalize or rewrite existing business values. Source match proves the reviewed file identity, not deployment. See [Java import compatibility](java_import_compatibility.md#audit-profiles-and-source-identity).
+
 ## Workbook Write Mode
 
 - Default to filling the user-provided Pipeline Export workbook in place.

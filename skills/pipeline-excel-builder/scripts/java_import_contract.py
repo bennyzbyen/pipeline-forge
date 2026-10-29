@@ -4,6 +4,8 @@ Source SHA-256: de06a13e0bbf57ecdc36e146b31addb3e3d3ac08e50e2b0e0ccc4bd16adb34c7
 This is a compatibility preflight, not an execution of the Java service.
 """
 from datetime import date, datetime
+import hashlib
+from pathlib import Path
 import re
 import zipfile
 from xml.etree import ElementTree as ET
@@ -14,6 +16,22 @@ SHEETS = ["Readme", "Data Utilization", "Target & Catalog", "Target Field", "Pip
 TASK_FIELDS = ("name", "description", "link_target_names", "mlp_params")
 EMAIL = re.compile(r"^([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)$")
 SOURCE_SHA256 = "de06a13e0bbf57ecdc36e146b31addb3e3d3ac08e50e2b0e0ccc4bd16adb34c7"
+
+
+def source_evidence(path=None):
+    """Bind an optional local handler to the reviewed snapshot, without executing it."""
+    result = {"expected_sha256": SOURCE_SHA256, "actual_sha256": None,
+              "status": "baseline_only", "errors": []}
+    if path is not None:
+        try:
+            result["actual_sha256"] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            result["status"] = "matched" if result["actual_sha256"] == SOURCE_SHA256 else "mismatch"
+            if result["status"] == "mismatch":
+                result["errors"].append("Java source fingerprint mismatch: review the changed handler before relying on this contract")
+        except OSError as exc:
+            result["status"] = "unreadable"
+            result["errors"].append(f"Java source could not be read ({exc.__class__.__name__})")
+    return result
 
 
 def template_headers(wb, base):
@@ -64,7 +82,8 @@ def check_xml(xml, label, strict_json, errors):
         errors.append(f"{label}: invalid XML/JSON: {exc}")
 
 
-def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json):
+def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json,
+                           generation_profile=True):
     # getSheetAt(1..4), not getSheet(name): source lines 130-133.
     if wb.sheetnames[:5] != SHEETS:
         errors.append("Java sheet position contract: first five sheets must be " + ", ".join(SHEETS))
@@ -121,11 +140,16 @@ def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json
         start = value_date(wb["Pipeline"].cell(number, 7).value, label + " trigger_start", errors)
         end = value_date(wb["Pipeline"].cell(number, 8).value, label + " trigger_end", errors)
         if trigger:
-            match = re.fullmatch(r"每([0-9]*)天 ([01]?[0-9]|2[0-3]):[0-5][0-9]", trigger)
+            period = r"[0-9]*" if generation_profile else r"(?:[+-]?[0-9]+)?"
+            match = re.fullmatch(r"每(" + period + r")天 ([01]?[0-9]|2[0-3]):[0-5][0-9]", trigger)
             if not match:
                 errors.append(f"{label}: pipeline_trigger must use 每天 HH:mm or 每N天 HH:mm, not cron")
-            elif match[1] and (int(match[1]) < 1 or int(match[1]) > 2147483647):
-                errors.append(f"{label}: day frequency must be a positive Java integer (zero is unsafe even though handler accepts it)")
+            elif match[1]:
+                frequency = int(match[1])
+                if frequency < 0 or frequency > 2147483647 or (generation_profile and frequency == 0):
+                    errors.append(f"{label}: day frequency must be a positive Java integer (zero is unsafe even though handler accepts it)")
+                elif frequency == 0:
+                    warnings.append(f"{label}: Java accepts zero day frequency; downstream scheduling semantics remain unverified")
             if start is None:
                 errors.append(f"{label}: a trigger requires pipeline_trigger_start")
             if start and end and end < start:
@@ -134,7 +158,7 @@ def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json
                 warnings.append(f"{label}: is_octopus=1 causes Java to select ALWAYS_RUNNING even with a trigger")
         status = row.get("pipeline_status_notification")
         if status:
-            if not trigger:
+            if not trigger and generation_profile:
                 errors.append(f"{label}: pipeline_status_notification must be blank without a schedule (generation policy)")
             tokens = status.replace("，", ",").split(",")
             if any(not token or token != token.strip() for token in tokens):
@@ -162,3 +186,86 @@ def validate_java_contract(path, wb, data, schema, errors, warnings, strict_json
                     errors.append(f"{task_label}: linked task needs confirmed MLP XML; Java calls getMlpParameter even when XML is null")
             if xml:
                 check_xml(xml, task_label + " MLP", strict_json, errors)
+
+
+def import_preflight(path, wb, schema, strict_json):
+    """Conservative source-backed checks, separate from the TEXT/200 export profile.
+
+    This is not a POI/service emulator: ambiguous cells and known data-loss branches
+    are rejected, and missing enum/parser dependencies remain explicitly unverified.
+    """
+    errors, warnings, data = [], [], {}
+
+    def text_value(cell):
+        value = cell.value
+        if cell.data_type == "n" and isinstance(value, (float, int)) and not isinstance(value, bool) and float(value).is_integer():
+            return str(int(value))
+        return "" if value is None else str(value).strip()
+
+    for name, fields in schema.items():
+        if name not in wb:
+            errors.append(f"Missing sheet: {name}")
+            continue
+        ws = wb[name]
+        actual = [ws.cell(2, c).value for c in range(1, len(fields) + 1)]
+        if actual != fields:
+            errors.append(f"{name}: unsupported export headers; cannot map the reviewed positional contract")
+            continue
+        records = []
+        for number in range(3, ws.max_row + 1):
+            cells = [ws.cell(number, column) for column in range(1, len(fields) + 1)]
+            # Java isRowEmpty checks cell TYPE, so typed empty strings are records too.
+            if not any(c.value is not None or c.data_type in {"s", "inlineStr", "f", "e", "b"} for c in cells):
+                continue
+            row = {key: text_value(c) for key, c in zip(fields, cells)}
+            row["_row"] = str(number)
+            records.append(row)
+            for key in fields:
+                if key.startswith("*") and not row[key]:
+                    errors.append(f"{name} row {number}: missing required column {key}")
+            for c in cells:
+                if c.data_type == "n" and isinstance(c.value, (float, int)) and not isinstance(c.value, bool):
+                    if not float(c.value).is_integer():
+                        errors.append(f"{name} {c.coordinate}: fractional numeric import value needs explicit text; Java rounds it with %.0f")
+        data[name] = records
+
+    def duplicates(values, label):
+        seen, repeated = set(), set()
+        for value in values:
+            if value in seen:
+                repeated.add(value)
+            seen.add(value)
+        errors.extend(f"Duplicate {label}: {value}" for value in sorted(repeated))
+
+    dus, targets, fields, pipelines = (data.get(name, []) for name in SHEETS[1:])
+    du_names = {row["*data_utilization_name"] for row in dus}
+    target_names = {row["*target_name"] for row in targets}
+    duplicates([row["*data_utilization_name"] for row in dus], "data_utilization_name")
+    duplicates([row["*target_name"] for row in targets], "target_name")
+    duplicates([row["dataset_name"] for row in targets if row["dataset_name"]], "dataset_name")
+    duplicates([row["*target_name"] + "/" + row["*field_name"] for row in fields], "target/field key")
+    duplicates([row["*data_utilization_name"] + "/" + row["*pipeline_name"] for row in pipelines], "data_utilization/pipeline_name")
+    for name, rows in ((SHEETS[2], targets), (SHEETS[4], pipelines)):
+        for row in rows:
+            if row["*data_utilization_name"] not in du_names:
+                errors.append(f"{name} row {row['_row']}: unknown data_utilization_name (orphan rows can be dropped by Java assembly)")
+    for row in fields:
+        label = f"Target Field row {row['_row']}"
+        if row["*target_name"] not in target_names:
+            errors.append(f"{label}: unknown target_name")
+        sequence = row.get("field_sequence", "")
+        if not re.fullmatch(r"[+-]?[0-9]+", sequence) or not -2147483648 <= int(sequence) <= 2147483647:
+            errors.append(f"{label}: field_sequence must be a Java 32-bit integer; import parses it even though the header is optional")
+    types = sorted({row["*field_type"] for row in fields if row["*field_type"]})
+    if types:
+        warnings.append("FieldTypeEnum definition was not supplied; membership remains unverified for: " + ", ".join(types))
+    for row in pipelines:
+        if row["*is_octopus"] not in {"0", "1"}:
+            errors.append(f"Pipeline row {row['_row']}: is_octopus must be 0 or 1")
+        if row["*enable"] not in {"0", "1"}:
+            warnings.append(f"Pipeline row {row['_row']}: Java treats enable other than 1 as false")
+    validate_java_contract(path, wb, data, schema, errors, warnings, strict_json,
+                           generation_profile=False)
+    return {"ok": not errors, "row_counts": {key: len(rows) for key, rows in data.items()},
+            "errors": errors, "warnings": warnings,
+            "scope": "conservative offline Java preflight; not an import or runtime verification"}

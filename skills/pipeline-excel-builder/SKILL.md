@@ -33,6 +33,10 @@ Explicit user-confirmed values override inferred document values. Production exp
 
 The scripts implement the supplied Java handler's checked contract plus the preserved export profile; their output is not proof of a live import. For failures or changes, consult [Java import compatibility](references/java_import_compatibility.md), which distinguishes confirmed source behavior, stricter template conventions and missing dependencies. Read the schema and fill rules for mapping details.
 
+For an existing export audit, use `scripts/validate_pipeline_excel.py --xlsx <export> --profile java-import --java-source <handler.java> --json-out <audit.json>`. This read-only, conservative preflight separates source-backed import risks from generated-workbook conventions such as TEXT/200, label=name and consecutive text sequences. It does not approve template formatting or runtime compatibility. The default `generated` profile and builder remain strict; a Java-only pass never substitutes for step 3. Default validation also includes a separate `java_import_preflight` result.
+
+When a Java handler is supplied, pass `--java-source` to both generation and validation. `source_evidence.status=matched` verifies the reviewed snapshot's bytes; mismatch/unreadable source blocks the operation before publication. Without the file, `baseline_only` means bundled evidence was used, not that current Java was checked. Do not refresh the fingerprint without reviewing the changed source and affected tests.
+
 ## Constraints
 
 - Use the exported workbook as the base; do not rebuild it from scratch.
@@ -43,6 +47,7 @@ The scripts implement the supplied Java handler's checked contract plus the pres
 - Preflight unique DU/target/nonblank dataset names, target+field pairs, and DU+pipeline pairs. Task links must point to targets in the same DU. Same pipeline names in different DUs and repeated task names are allowed. Historical exports can contain duplicate business values; validate current facts separately.
 - Validate all 10+4×N Pipeline columns and every task group's name, links and XML. Use the optional ordered `tasks` facts list for multiple tasks; require sufficient groups in the supplied template. Reject fullwidth target-link commas because verification and creation handle them differently.
 - Enforce conditional Catalog fields (title, description and all five contact pairs), storage db/table requirements, Chinese daily schedule syntax and dates, and notification email syntax. Do not invent missing enum members or an XML schema.
+- Validate `field_sequence` as a required signed Java 32-bit integer even though its header lacks `*`: persistence calls `Integer.valueOf`. An export audit reports unknown field-type enum membership explicitly, and retains duplicate Catalog, orphan-reference and task/data-loss blockers. Preserve the original export; never repair historical business facts automatically during an audit.
 - With no confirmed `pipeline_trigger`, leave `pipeline_status_notification` blank. Do not inherit a notification status from a previous year.
 - Consume confirmed `task1_link_target_names` and `task1_mlp_params`. Preserve XML wrapper, execution class, CDATA and parameter text exactly; validate XML and embedded JSON. Check the execution class and required parameters against the current implementation or confirmed contract, including every execution pipeline. Without that evidence report runtime compatibility as unverified.
 - When multiple storage targets share one dataset, require an explicit Catalog `target_name` binding. Never automatically choose HBase/ClickHouse or invent a new dataset name.

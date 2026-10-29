@@ -790,6 +790,11 @@ def write_questions(path: Path, project_name: str, questions: list[str], counts:
 
 
 def build_workbook(args: argparse.Namespace) -> dict[str, int]:
+    from java_import_contract import source_evidence
+    java_source = getattr(args, "java_source", None)
+    evidence = source_evidence(java_source)
+    if evidence["errors"]:
+        raise ValueError("; ".join(evidence["errors"]))
     facts = read_json(args.structured_facts)
     template_path = getattr(args, "original_template_xlsx", None) or args.template_xlsx
     template_bytes = template_path.read_bytes()
@@ -829,7 +834,8 @@ def build_workbook(args: argparse.Namespace) -> dict[str, int]:
         staged = Path(temporary) / "validated.xlsx"
         write_export(frozen_template, staged, tables, schema, ROW_KEY_HEADERS)
         assert_expected_business_values(staged, expected_tables, schema)
-        result = validate_workbook(staged, template_path=frozen_template)
+        result = validate_workbook(staged, template_path=frozen_template,
+                                   java_source_path=java_source)
         if not result["ok"]:
             raise ValueError("Import preflight failed: " + "; ".join(result["errors"]))
         if template_path.read_bytes() != template_bytes:
@@ -861,6 +867,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--questions-out", required=True, type=Path)
     parser.add_argument("--project-name", required=True)
     parser.add_argument("--data-utilization", default="")
+    parser.add_argument("--java-source", type=Path, help="Optional local Java handler; verify its reviewed fingerprint before generation")
     return parser
 
 
