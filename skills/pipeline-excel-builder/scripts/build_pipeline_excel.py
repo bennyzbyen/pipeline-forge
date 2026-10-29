@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+from io import BytesIO
 import json
 import re
 import sys
+import tempfile
 import zipfile
 from collections import OrderedDict, defaultdict
-from copy import copy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -88,7 +91,7 @@ ROW_KEY_HEADERS = {
     DATA_UTILIZATION_SHEET: ["*data_utilization_name"],
     TARGET_SHEET: ["*target_name"],
     FIELD_SHEET: ["*target_name", "*field_name"],
-    PIPELINE_SHEET: ["*pipeline_name"],
+    PIPELINE_SHEET: ["*data_utilization_name", "*pipeline_name"],
 }
 
 
@@ -107,17 +110,24 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def row_headers(ws, count: int) -> list[str]:
-    return [clean(ws.cell(2, col).value) for col in range(1, count + 1)]
+    return ["" if ws.cell(2, col).value is None else str(ws.cell(2, col).value) for col in range(1, count + 1)]
 
 
-def ensure_template(wb) -> None:
+def ensure_template(wb) -> dict[str, list[str]]:
+    from java_import_contract import SHEETS, template_headers
+    if wb.sheetnames[:5] != SHEETS:
+        raise ValueError("Java sheet position contract requires Readme then the four data sheets in order.")
+    schema = template_headers(wb, EXPECTED_HEADERS)
     missing = [sheet for sheet in EXPECTED_HEADERS if sheet not in wb.sheetnames]
     if missing:
         raise ValueError(f"Template is missing required sheets: {missing}")
-    for sheet, expected in EXPECTED_HEADERS.items():
+    for sheet, expected in schema.items():
         actual = row_headers(wb[sheet], len(expected))
         if actual != expected:
             raise ValueError(f"{sheet} headers mismatch. expected={expected!r} actual={actual!r}")
+        if any(ws_value not in (None, "") for ws_value in (wb[sheet].cell(2, c).value for c in range(len(expected) + 1, wb[sheet].max_column + 1))):
+            raise ValueError(f"{sheet}: unsupported additional columns; extend the confirmed schema before generation.")
+    return schema
 
 
 def copy_row_style(ws, source_row: int, target_row: int, max_col: int) -> None:
@@ -289,40 +299,18 @@ def ensure_shared_strings_relationship(xml: bytes) -> bytes:
 
 
 def rewrite_inline_strings_as_shared_strings(path: Path) -> int:
-    """Match production exports by storing text cells in sharedStrings.xml."""
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    string_items: list[str] = []
-    index_by_text: dict[str, int] = {}
-    reference_count = 0
-    converted_cells = 0
-
-    with zipfile.ZipFile(path, "r") as zin:
-        entries: dict[str, bytes] = {}
-        infos: dict[str, zipfile.ZipInfo] = {}
-        for info in zin.infolist():
-            data = zin.read(info.filename)
-            if info.filename.startswith("xl/worksheets/") and info.filename.endswith(".xml"):
-                xml, replacements = convert_inline_string_cells(data.decode("utf-8"), string_items, index_by_text)
-                data = xml.encode("utf-8")
-                reference_count += replacements
-                converted_cells += replacements
-            if info.filename == CONTENT_TYPES_PATH:
-                data = ensure_shared_strings_content_type(data)
-            elif info.filename == WORKBOOK_RELS_PATH:
-                data = ensure_shared_strings_relationship(data)
-            if info.filename != SHARED_STRINGS_PATH:
-                entries[info.filename] = data
-                infos[info.filename] = info
-
-    if converted_cells == 0:
+    """Normalize inline fixtures without invalidating pre-existing shared-string indices."""
+    with zipfile.ZipFile(path) as archive:
+        count = sum(archive.read(name).count(b't="inlineStr"') for name in archive.namelist()
+                    if name.startswith("xl/worksheets/") and name.endswith(".xml"))
+    if not count:
         return 0
-
-    with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-        for filename, data in entries.items():
-            zout.writestr(infos[filename], data)
-        zout.writestr(SHARED_STRINGS_PATH, shared_strings_xml(string_items, reference_count))
-    tmp_path.replace(path)
-    return converted_cells
+    from pipeline_ooxml import write_export
+    with tempfile.TemporaryDirectory(prefix="pipeline_strings_", dir=path.parent) as temporary:
+        staged = Path(temporary) / "shared.xlsx"
+        write_export(path, staged, {}, {}, {})
+        staged.replace(path)
+    return count
 
 
 def ordered_unique(values: list[str]) -> list[str]:
@@ -398,12 +386,9 @@ def contact_name(value: str) -> str:
         non_email = clean(value.replace(email, ""))
         non_email = re.sub(r"[<>()；;，,]+", " ", non_email).strip()
         if non_email:
-            return strip_digits(non_email)
-        local = email.split("@", 1)[0]
-        local = strip_digits(local)
-        parts = [part for part in re.split(r"[._\-\s]+", local) if part]
-        return " ".join(part[:1].upper() + part[1:] for part in parts)
-    return strip_digits(value)
+            return non_email
+        return ""
+    return value
 
 
 def data_utilization_descriptions(facts: dict[str, Any]) -> dict[str, str]:
@@ -420,7 +405,9 @@ def catalog_info_by_table(facts: dict[str, Any]) -> dict[str, dict[str, Any]]:
     catalog: dict[str, dict[str, Any]] = {}
     for item in facts.get("report_catalog_basic_info", []):
         key = normalize_table_key(clean(item.get("data_item")))
-        if key and key not in catalog:
+        if key in catalog:
+            raise ValueError(f"Duplicate Catalog data_item: {key}; provide one confirmed registration.")
+        if key:
             catalog[key] = item
     return catalog
 
@@ -474,7 +461,7 @@ def build_target_rows(
     for item in facts.get("report_targets", []):
         target_name = clean(item.get("target_name"))
         if not target_name or target_name in seen:
-            continue
+            raise ValueError(f"Missing or duplicate target_name: {target_name!r}")
         seen.add(target_name)
         physical = find_physical(item, physical_targets)
         raw_storage = clean(physical.get("storage") or item.get("storage"))
@@ -484,8 +471,10 @@ def build_target_rows(
         db, table_name = split_physical_table(table, database, mapped_storage)
         description = clean(item.get("description") or physical.get("description"))
         catalog = catalog_by_table.get(normalize_table_key(table_name)) or catalog_by_table.get(normalize_table_key(table))
-        if catalog and not is_project_owned_table(table_name, data_utilization or clean(item.get("data_utilization"))):
-            catalog = {}
+        if catalog:
+            binding = clean(catalog.get("target_name") or catalog.get("catalog_target_name"))
+            if binding and binding != target_name:
+                catalog = {}
         if not catalog:
             missing_catalog.append(table_name or target_name)
         business_owner_value = clean(catalog.get("business_owner")) if catalog else ""
@@ -517,11 +506,18 @@ def build_target_rows(
                 "dataset_it_bp_email": extract_email(it_bp_value),
                 "dataset_data_engineer": contact_name(data_engineer_value),
                 "dataset_data_engineer_email": extract_email(data_engineer_value),
-                "dataset_source": "",
+                "dataset_source": clean(catalog.get("source")) if catalog else "",
             }
         )
     for item in missing_catalog:
         questions.append(f"Target & Catalog: no Catalog Basic Info row matched `{item}`.")
+    registrations = [row["dataset_name"] for row in rows if row["dataset_name"]]
+    if len(registrations) != len(set(registrations)):
+        raise ValueError("Duplicate dataset_name across targets. Set Catalog target_name to the confirmed registration target; do not guess or rename datasets.")
+    for item in facts.get("report_catalog_basic_info", []):
+        binding = clean(item.get("target_name") or item.get("catalog_target_name"))
+        if binding and binding not in seen:
+            raise ValueError(f"Catalog binding references unknown target_name: {binding}")
     return rows
 
 
@@ -591,7 +587,7 @@ def build_field_rows(
         for field in mapping.get("fields", []):
             key = field_key(field)
             if not key or key in seen_fields:
-                continue
+                raise ValueError(f"Missing or duplicate field_name for {target}: {key!r}")
             seen_fields.add(key)
             rows.append(
                 {
@@ -674,37 +670,67 @@ def build_pipeline_rows(
     target_rows: list[dict[str, Any]],
     questions: list[str],
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    rows = []
+    seen = set()
     for item in facts.get("report_schedules", []):
         pipeline_name = clean(item.get("pipeline_name"))
-        if not pipeline_name or pipeline_name in seen:
-            continue
-        seen.add(pipeline_name)
-        task_name = clean(item.get("task_name"))
-        link_targets = infer_pipeline_target_links(item, target_rows, data_utilization)
-        if not link_targets:
-            questions.append(f"Pipeline: `{pipeline_name}` skipped because no high-confidence task-target link was inferred.")
-            continue
-        rows.append(
-            {
-                "*data_utilization_name": data_utilization or clean(item.get("data_utilization")),
-                "*pipeline_name": pipeline_name,
-                "pipeline_description": clean(item.get("description")),
-                "*enable": "1",
-                "*is_octopus": "0",
-                "pipeline_trigger": "",
-                "pipeline_trigger_start": "",
-                "pipeline_trigger_end": "",
-                "pipeline_status_notification": "",
-                "pipeline_notification_emails": "",
-                "task1_name": task_name,
-                "task1_description": clean(item.get("description")),
-                "task1_link_target_names": ",".join(link_targets),
-                "task1_mlp_params": "",
-            }
-        )
-        questions.append(f"Pipeline: `{pipeline_name}` MLP params require manual confirmation.")
+        du = data_utilization or clean(item.get("data_utilization"))
+        key = du + "/" + pipeline_name
+        if not pipeline_name or key in seen:
+            raise ValueError(f"Missing or duplicate pipeline_name within data_utilization: {key!r}")
+        seen.add(key)
+        trigger = clean(item.get("pipeline_trigger"))
+        row = {
+            "*data_utilization_name": du,
+            "*pipeline_name": pipeline_name,
+            "pipeline_description": clean(item.get("description")),
+            "*enable": clean(item.get("enable", "1")),
+            "*is_octopus": clean(item.get("is_octopus", "0")),
+            "pipeline_trigger": trigger,
+            "pipeline_trigger_start": clean(item.get("pipeline_trigger_start")) if trigger else "",
+            "pipeline_trigger_end": clean(item.get("pipeline_trigger_end")) if trigger else "",
+            "pipeline_status_notification": clean(item.get("pipeline_status_notification")) if trigger else "",
+            "pipeline_notification_emails": clean(item.get("pipeline_notification_emails")) if trigger else "",
+        }
+        tasks = item.get("tasks")
+        if tasks is None:
+            tasks = [{
+                "name": item.get("task1_name", item.get("task_name")),
+                "description": item.get("task1_description", item.get("description")),
+                "link_target_names": item.get("task1_link_target_names"),
+                "mlp_params": item.get("task1_mlp_params", item.get("mlp_params", "")),
+            }]
+        if not isinstance(tasks, list) or any(not isinstance(task, dict) for task in tasks):
+            raise ValueError(f"Pipeline {key}: tasks must be a list of confirmed task objects")
+        candidates = [target for target in target_rows if target["*data_utilization_name"] == du]
+        known_targets = {target["*target_name"] for target in candidates}
+        for n, task in enumerate(tasks, 1):
+            task_name = clean(task.get("name"))
+            if not task_name:
+                raise ValueError(f"Pipeline {key} task{n}: missing task name would silently skip the task")
+            explicit = task.get("link_target_names")
+            if explicit is None:
+                inferred = dict(item, task_name=task_name, description=task.get("description", ""))
+                links = infer_pipeline_target_links(inferred, candidates, du)
+                if not links:
+                    raise ValueError(f"Pipeline {key} task{n}: supply confirmed link_target_names (an explicit empty list is allowed)")
+                questions.append(f"Pipeline {key} task{n}: inferred target links require confirmation.")
+            else:
+                links = explicit if isinstance(explicit, list) else str(explicit).split(",")
+            if any(not isinstance(link, str) or not link or link != link.strip() for link in links):
+                raise ValueError(f"Invalid explicit target links for {key} task{n}")
+            if len(links) != len(set(links)) or any(link not in known_targets for link in links):
+                raise ValueError(f"Pipeline {key} task{n}: duplicate, unknown or cross-data_utilization task-target link")
+            mlp = task.get("mlp_params", "")
+            if not isinstance(mlp, str):
+                raise ValueError(f"Pipeline {key} task{n}: MLP params must be the confirmed XML string")
+            row.update({f"task{n}_name": task_name,
+                        f"task{n}_description": clean(task.get("description")),
+                        f"task{n}_link_target_names": ",".join(links),
+                        f"task{n}_mlp_params": mlp})
+            if not mlp:
+                questions.append(f"Pipeline {key} task{n}: MLP params require manual confirmation.")
+        rows.append(row)
     return rows
 
 
@@ -765,27 +791,55 @@ def write_questions(path: Path, project_name: str, questions: list[str], counts:
 
 def build_workbook(args: argparse.Namespace) -> dict[str, int]:
     facts = read_json(args.structured_facts)
-    wb = load_workbook(args.template_xlsx)
-    ensure_template(wb)
+    template_path = getattr(args, "original_template_xlsx", None) or args.template_xlsx
+    template_bytes = template_path.read_bytes()
+    wb = load_workbook(BytesIO(template_bytes))
+    schema = ensure_template(wb)
     workbook_path = args.out_xlsx or args.template_xlsx
+    if getattr(args, "original_template_xlsx", None) and workbook_path.resolve() == template_path.resolve():
+        raise ValueError("The independent original template must not be overwritten")
+    output_before = workbook_path.read_bytes() if workbook_path.exists() else None
 
     questions: list[str] = []
     du_rows = build_data_utilization_rows(facts, args.data_utilization, args.project_name)
-    selected_du = args.data_utilization or (du_rows[0]["*data_utilization_name"] if du_rows else "")
+    selected_du = args.data_utilization
     target_rows = build_target_rows(facts, selected_du, questions)
     target_names = [row["*target_name"] for row in target_rows]
     field_rows = build_field_rows(facts, target_names, questions)
     pipeline_rows = build_pipeline_rows(facts, selected_du, target_rows, questions)
+    capacity = (len(schema[PIPELINE_SHEET]) - 10) // 4
+    if any(int(key.split("_", 1)[0][4:]) > capacity for row in pipeline_rows for key in row if key.startswith("task")):
+        raise ValueError("Template has insufficient task column groups; obtain a matching export before generation.")
     add_conflict_questions(facts, len(target_rows), questions)
 
-    write_rows(wb[DATA_UTILIZATION_SHEET], EXPECTED_HEADERS[DATA_UTILIZATION_SHEET], du_rows, ROW_KEY_HEADERS[DATA_UTILIZATION_SHEET])
-    write_rows(wb[TARGET_SHEET], EXPECTED_HEADERS[TARGET_SHEET], target_rows, ROW_KEY_HEADERS[TARGET_SHEET])
-    write_rows(wb[FIELD_SHEET], EXPECTED_HEADERS[FIELD_SHEET], field_rows, ROW_KEY_HEADERS[FIELD_SHEET])
-    write_rows(wb[PIPELINE_SHEET], EXPECTED_HEADERS[PIPELINE_SHEET], pipeline_rows, ROW_KEY_HEADERS[PIPELINE_SHEET])
-
     workbook_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(workbook_path)
-    rewrite_inline_strings_as_shared_strings(workbook_path)
+    from pipeline_ooxml import write_export
+    from pipeline_preservation import assert_expected_business_values
+    from validate_pipeline_excel import validate_workbook
+    tables = dict(zip(EXPECTED_HEADERS, [du_rows, target_rows, field_rows, pipeline_rows]))
+    for sheet in EXPECTED_HEADERS:
+        if sheet != FIELD_SHEET:
+            tables[sheet] = reorder_rows(tables[sheet], existing_row_order(wb[sheet], schema[sheet], ROW_KEY_HEADERS[sheet]), ROW_KEY_HEADERS[sheet])
+    wb.close()
+    expected_tables = deepcopy(tables)
+    # Validate the complete staged package before touching either the source or final path.
+    with tempfile.TemporaryDirectory(prefix="pipeline_export_", dir=workbook_path.parent) as temporary:
+        frozen_template = Path(temporary) / "original-template.xlsx"
+        frozen_template.write_bytes(template_bytes)
+        staged = Path(temporary) / "validated.xlsx"
+        write_export(frozen_template, staged, tables, schema, ROW_KEY_HEADERS)
+        assert_expected_business_values(staged, expected_tables, schema)
+        result = validate_workbook(staged, template_path=frozen_template)
+        if not result["ok"]:
+            raise ValueError("Import preflight failed: " + "; ".join(result["errors"]))
+        if template_path.read_bytes() != template_bytes:
+            raise ValueError("Original template changed during generation; output not replaced")
+        if (workbook_path.read_bytes() if workbook_path.exists() else None) != output_before:
+            raise ValueError("Destination changed during generation; output not replaced")
+        staged_hash = hashlib.sha256(staged.read_bytes()).digest()
+        staged.replace(workbook_path)
+        if hashlib.sha256(workbook_path.read_bytes()).digest() != staged_hash:
+            raise ValueError("Published workbook differs from the validated candidate")
 
     counts = {
         DATA_UTILIZATION_SHEET: len(du_rows),
@@ -800,6 +854,8 @@ def build_workbook(args: argparse.Namespace) -> dict[str, int]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a Pipeline Export Excel workbook from structured facts.")
     parser.add_argument("--template-xlsx", required=True, type=Path)
+    parser.add_argument("--original-template-xlsx", type=Path,
+                        help="Untouched export used for formatting when --template-xlsx is an existing editable destination")
     parser.add_argument("--structured-facts", required=True, type=Path)
     parser.add_argument("--out-xlsx", type=Path, help="Optional copy path. If omitted, the template workbook is filled in place.")
     parser.add_argument("--questions-out", required=True, type=Path)
@@ -812,7 +868,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         counts = build_workbook(args)
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+    except (OSError, KeyError, TypeError, ValueError, ET.ParseError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         print(f"error: Pipeline workbook was not generated: {detail}", file=sys.stderr)
         return 2

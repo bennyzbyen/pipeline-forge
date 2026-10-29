@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.0 - 2026-10-29
+
+- Add Java-import-aware Pipeline Export validation, ordered multi-task mapping and exact template/business-value preservation with atomic publication.
+- Clarify generic source/output identities, connector labels, compact diagram layout and rendered readability checks.
+
 ## 2.7.3 - 2026-10-23
 
 - Keep outline labels sharp with edge-only refraction; remove the grip button and theme refraction while preserving direct dragging, keyboard controls and elastic presses.

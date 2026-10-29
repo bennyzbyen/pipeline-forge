@@ -74,6 +74,7 @@ def synthetic_facts() -> dict[str, object]:
                 "data_utilization": "demo_quality",
                 "pipeline_name": "daily_demo_result",
                 "task_name": "build_demo_result",
+                "task1_mlp_params": "<MLP><class>example.jobs.Demo</class></MLP>",
                 "description": "Synthetic daily pipeline",
             }
         ],

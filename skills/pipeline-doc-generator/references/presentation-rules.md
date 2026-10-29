@@ -41,6 +41,10 @@ When a connection section is required (the sync default, or an explicitly reques
 
 Show data identities, storage/system categories, meaningful Pipeline/process nodes, and accurate relationships. Put a confirmed physical table/path in the node label or optional `identifiers` list. Node IDs and edge relationships stay stable.
 
+- Show source table names and manual-file names by their actual storage group, and show each output table name with a concise business description in the requirement language. Group output identities by actual pipeline/layer and destination; use a shared table list for two stores only when both really receive those same logical tables. Keep HBase and ClickHouse visually distinct. A business object, candidate name, or pending path must not be presented as an established physical identifier.
+- Label connectors with the data, dependency, or write layer they represent; attach each label unambiguously to its arrow. Reduce crossings and excess whitespace without dropping relationships or making names and descriptions too small. For dense flows, use readable grouped or overview/detail views rather than a fixed grid or an unreadable single-page list.
+- Use the platform explicitly specified or evidenced for this project consistently in the diagram and document; a DataEngine choice for one project does not make it a universal default. Preserve any unresolved platform ownership in the audit rather than silently inventing it.
+
 Do not put RowKey, auto-increment rules, field types, TTL, SQL, validation steps, credentials, or execution times in any visible node/edge/group label. Legacy `details` remain in the audited facts/spec but are not displayed. `identifiers` is only for actual identities, not a replacement details field. Never assume RowKey is auto-increment just because a sync is full-refresh.
 
 ## Target And Catalog

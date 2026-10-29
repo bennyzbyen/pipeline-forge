@@ -1,10 +1,10 @@
 # Pipeline Export Excel Schema
 
-Pipeline Export workbooks use five fixed sheets. Data starts at row 3; rows 1 and 2 are template/header rows and must be preserved.
+Pipeline Export workbooks use five fixed sheets in the order below: the supplied Java uses sheet indices. Data starts at row 3; rows 1 and 2 must be preserved. All physical rows through the last row must exist, with a true blank sentinel after the last data record.
 
 The builder should fill the user-provided workbook in place by default. A separate output workbook is only for explicit copy/export requests.
 
-When refilling a workbook that already contains data rows, preserve existing row order by sheet key. Blank cells should remain null/style cells when they already exist in the workbook, but the builder should not create new empty optional cells.
+When refilling a workbook, preserve existing key order except that field rows follow the confirmed dictionary order and zero-based sequence. Preserve the original physical row boundary and styles. Unused tail cells must have no type or value/formula children; never turn blank tails into empty string records. See [Java import compatibility](java_import_compatibility.md) for active optional blank exceptions and Catalog binding rules.
 
 ## Sheets
 
@@ -82,6 +82,8 @@ When refilling a workbook that already contains data rows, preserve existing row
 | M | `task1_link_target_names` | no |
 | N | `task1_mlp_params` | no |
 
+Additional task groups repeat these four fields as `task2_name` through `task2_mlp_params`, etc. Populated headers must be contiguous `10 + 4*N`. Linked tasks require confirmed XML in this generation profile. Null names cause Java to discard the whole group. Conditional requirements are detailed in [Java import compatibility](java_import_compatibility.md).
+
 ## Storage Type Mapping
 
 | Evidence | Workbook value |
@@ -91,7 +93,7 @@ When refilling a workbook that already contains data rows, preserve existing row
 | HBase | `HBASE` |
 | HDFS / FS path | `HDFS` |
 | MSSQL | `MSSQL` |
-| MySQL | `MYSQL` |
+| MySQL | Unsupported by the supplied Java persistence switch; do not generate `MYSQL` for this handler. |
 
 ## Field Type
 
@@ -105,4 +107,4 @@ When refilling a workbook that already contains data rows, preserve existing row
 
 Blank optional cells should be absent/null cells in workbook XML, not empty inline string cells like `<c t="inlineStr"></c>`. This is especially important for Pipeline timing columns.
 
-All non-empty text cells should be stored through `xl/sharedStrings.xml` as shared-string references (`t="s"`). Production exports use shared strings, and the platform importer can miss values stored as inline strings (`t="inlineStr"`), including `Data Utilization` names.
+Preserve the export's shared-string profile (`xl/sharedStrings.xml`, `t="s"`). The supplied Java reads POI STRING values, which can include inline strings; inline storage alone is not a demonstrated import failure. `TEXT`, `200`, label equality and consecutive text sequence are preserved template conventions, not universal Java requirements.
