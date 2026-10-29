@@ -12,6 +12,7 @@ NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 ET.register_namespace("", NS)
 Q = lambda name: f"{{{NS}}}{name}"
+XML_PREFIX = r"(?:[A-Za-z_][\w.-]*:)?"
 
 
 def sheet_paths(entries):
@@ -57,10 +58,14 @@ def write_export(template: Path, output: Path, tables, headers, keys):
         if name not in tables:
             continue
         xml = entries[path].decode("utf-8")
-        match = re.search(r"<sheetData(?:\s[^>]*)?>(.*?)</sheetData>|<sheetData\s*/>", xml, re.S)
+        match = re.search(
+            rf"<(?P<tag>{XML_PREFIX}sheetData)\b(?P<attrs>[^>]*?)(?:>(?P<body>.*?)</(?P=tag)>|/>)",
+            xml, re.S)
         if match is None:
             raise ValueError(f"Unsupported sheetData serialization: {name}")
-        raw_rows = re.findall(r"<row\b[^>]*?/>|<row\b[^>]*>.*?</row>", match.group(1) or "", re.S)
+        raw_rows = [row.group(0) for row in re.finditer(
+            rf"<(?P<tag>{XML_PREFIX}row)\b[^>]*?(?:/>|>.*?</(?P=tag)>)",
+            match.group("body") or "", re.S)]
         # Parse in the worksheet's namespace context: production rows can contain
         # attributes such as x14ac:dyDescent with declarations only on the root.
         parsed = {int(row.get("r")): deepcopy(row)
@@ -115,10 +120,11 @@ def write_export(template: Path, output: Path, tables, headers, keys):
                     ET.SubElement(cell, Q("v")).text = intern(str(value))
             row[:] = sorted(row, key=lambda c: column_number(re.sub(r"\d", "", c.get("r", ""))))
             result.append(ET.tostring(row, encoding="unicode"))
-        replacement = "<sheetData>" + "".join(result) + "</sheetData>"
+        replacement = (f'<{match.group("tag")}{match.group("attrs")}>'
+                       + "".join(result) + f'</{match.group("tag")}>')
         xml = xml[:match.start()] + replacement + xml[match.end():]
         if last > max(parsed, default=2):
-            xml = re.sub(r'(<dimension\b[^>]*ref=")[^"]+("[^>]*/>)',
+            xml = re.sub(rf'(<{XML_PREFIX}dimension\b[^>]*ref=")[^"]+("[^>]*/>)',
                          lambda m: m[1] + f"A1:{column_letter(len(headers[name]))}{last}" + m[2], xml)
         entries[path] = xml.encode("utf-8")
 

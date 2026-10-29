@@ -167,6 +167,32 @@ class TemplatePreservation(unittest.TestCase):
         row = ET.fromstring(parts[pipeline_ooxml.sheet_paths(parts)['Pipeline']]).find(f"{pipeline_ooxml.Q('sheetData')}/{pipeline_ooxml.Q('row')}[@r='3']")
         self.assertEqual('0.3', row.get(f'{{{namespace}}}dyDescent'))
 
+    def test_prefixed_worksheet_headers_and_dimensions_survive_growth(self):
+        prior = self.output
+        self.output = self.template
+        try:
+            ET.register_namespace('sheet', pipeline_ooxml.NS)
+            self.mutate('Target Field', lambda root: None)
+        finally:
+            ET.register_namespace('', pipeline_ooxml.NS)
+            self.output = prior
+        with zipfile.ZipFile(self.template) as archive:
+            parts = {name: archive.read(name) for name in archive.namelist()}
+        part = pipeline_ooxml.sheet_paths(parts)['Target Field']
+        self.assertIn(b'<sheet:sheetData>', parts[part])
+        self.assertIn(b'<sheet:row ', parts[part])
+        for number in range(25):
+            self.facts['report_field_mappings'][0]['fields'].append(
+                {'target_field': f'prefixed_extra_{number}'})
+        self.build()
+        result = validate_workbook(self.output, self.template)
+        self.assertTrue(result['ok'], result['errors'])
+        with zipfile.ZipFile(self.output) as archive:
+            root = ET.fromstring(archive.read(part))
+        self.assertEqual('A1:G30', root.find(pipeline_ooxml.Q('dimension')).get('ref'))
+        self.assertIsNotNone(root.find(
+            f"{pipeline_ooxml.Q('sheetData')}/{pipeline_ooxml.Q('row')}[@r='30']"))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

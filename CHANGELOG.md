@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.1 - 2026-10-29
+
+- Preserve prefixed worksheet row shells and dimension growth under both lxml and standard-library XML serialization; add a deterministic prefixed-template regression.
+
 ## 2.8.0 - 2026-10-29
 
 - Add Java-import-aware Pipeline Export validation, ordered multi-task mapping and exact template/business-value preservation with atomic publication.
