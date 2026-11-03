@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.2 - 2026-11-02
+
+- Correct requirement table roles, field lineage and declared value or join constraints while preserving pending business rules.
+- Fix legacy report write metadata, exact integer serialization and declared formula edge cases.
+- Keep optional offline evaluation in source development tools instead of packaged skills.
+
 ## 2.9.1 - 2026-10-29
 
 - Separate production runtime and export evidence from supplied-source re-import assessments; treat the final-row sentinel as an audit warning while retaining strict generation safeguards.

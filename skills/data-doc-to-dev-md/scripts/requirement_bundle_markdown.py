@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 import re
 from pathlib import Path
 
 from docx_bundle_ooxml import Paragraph, SheetSummary, compact_text, safe_name
+from document_sections import DocumentSection
 
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
@@ -21,36 +23,40 @@ def read_markdown(path: Path) -> str:
 
 
 def split_markdown_row(line: str) -> list[str]:
-    """Split a GFM pipe row while preserving escaped pipes and inline code."""
+    """Split pipe rows while preserving escaped pipes and paired inline code."""
     text = line.strip()
     if text.startswith("|"):
         text = text[1:]
     if text.endswith("|") and not text.endswith(r"\|"):
         text = text[:-1]
 
-    cells: list[str] = []
-    current: list[str] = []
-    escaped = False
-    in_code = False
-    for index, char in enumerate(text):
-        if escaped:
-            current.append(char)
-            escaped = False
-            continue
+    runs = {match.start(): match.group() for match in re.finditer(r"`+", text)}
+    remaining = Counter(len(marker) for marker in runs.values())
+    cells, current = [], []
+    code_length, index = 0, 0
+    while index < len(text):
+        char = text[index]
         if char == "\\" and index + 1 < len(text) and text[index + 1] == "|":
-            escaped = True
+            current.append("|")
+            index += 2
             continue
         if char == "`":
-            in_code = not in_code
-            current.append(char)
+            marker = runs[index]
+            length = len(marker)
+            remaining[length] -= 1
+            if code_length == length:
+                code_length = 0
+            elif not code_length and remaining[length]:
+                code_length = length
+            current.append(marker)
+            index += length
             continue
-        if char == "|" and not in_code:
+        if char == "|" and not code_length:
             cells.append(compact_text("".join(current)))
             current = []
-            continue
-        current.append(char)
-    if escaped:
-        current.append("\\")
+        else:
+            current.append(char)
+        index += 1
     cells.append(compact_text("".join(current)))
     return cells
 
@@ -120,6 +126,7 @@ def parse_markdown_evidence(
     fence_marker = ""
     current_heading = source_path.stem
     recent_text = ""
+    section = DocumentSection()
 
     def add_paragraph(style: str, value: str) -> None:
         nonlocal recent_text
@@ -134,6 +141,7 @@ def parse_markdown_evidence(
                 source_doc_name=source_path.name,
             )
         )
+        section.feed(normalized, style)
         if style not in {"Metadata", "CodeBlock"} and not style.startswith("Heading"):
             recent_text = normalized
 
@@ -146,7 +154,7 @@ def parse_markdown_evidence(
         line = lines[index]
         stripped = line.strip()
         if in_fence:
-            if stripped.startswith(fence_marker):
+            if re.fullmatch(re.escape(fence_marker[0]) + "{" + str(len(fence_marker)) + ",}", stripped):
                 add_paragraph("CodeBlock", "\n".join(code_buffer))
                 code_buffer.clear()
                 in_fence = False
@@ -155,10 +163,11 @@ def parse_markdown_evidence(
                 code_buffer.append(line)
             index += 1
             continue
-        if stripped.startswith("```") or stripped.startswith("~~~"):
+        opening = re.match(r"(`{3,}|~{3,})", stripped)
+        if opening:
             flush_paragraph()
             in_fence = True
-            fence_marker = stripped[:3]
+            fence_marker = opening.group(1)
             index += 1
             continue
 
@@ -176,19 +185,35 @@ def parse_markdown_evidence(
             if len(header) >= 2 and is_table_separator(lines[index + 1], len(header)):
                 flush_paragraph()
                 rows = [header]
+                issues = []
+                header_line = index + 1
                 index += 2
                 while index < len(lines) and lines[index].strip() and "|" in lines[index]:
                     row = split_markdown_row(lines[index])
+                    if index + 1 < len(lines) and len(row) >= 2 and is_table_separator(lines[index + 1], len(row)):
+                        break  # The next adjacent table owns its own header and separator.
                     if len(row) != len(header):
-                        break
+                        short = len(row) < len(header)
+                        issues.append({"code": "MARKDOWN_ROW_PADDED" if short else "MARKDOWN_ROW_TOO_WIDE",
+                            "severity": "WARNING" if short else "ERROR", "line": index + 1,
+                            "expected_columns": len(header), "actual_columns": len(row),
+                            "message": "Missing trailing cells were padded as empty." if short else
+                                       "Extra cells have ambiguous ownership; the row remains in source evidence and was not mapped."})
+                        if not short:
+                            index += 1
+                            continue
+                        row += [""] * (len(header) - len(row))
                     rows.append(row)
                     index += 1
-                if max_rows:
+                if max_rows and len(rows) > max_rows:
+                    issues.append({"code": "MARKDOWN_TABLE_TRUNCATED", "severity": "ERROR", "line": header_line,
+                                   "message": f"Only {max_rows} of {len(rows)} table rows were exported by the requested limit."})
                     rows = rows[:max_rows]
                 context = " / ".join(part for part in (current_heading, recent_text) if part)
-                summaries.append(
-                    _write_markdown_table(rows, tables_dir, len(summaries) + 1, source_path, doc_index, context)
-                )
+                summary = _write_markdown_table(rows, tables_dir, len(summaries) + 1, source_path, doc_index, context)
+                summary.extraction_issues = issues
+                summary.section_role = section.role
+                summaries.append(summary)
                 continue
 
         list_item = LIST_RE.match(line)
@@ -235,6 +260,11 @@ def write_markdown_evidence(
         )
     else:
         lines.append("- None")
+    issues = [(summary, issue) for summary in summaries for issue in summary.extraction_issues]
+    if issues:
+        lines.extend(["", "## Extraction Issues", ""])
+        lines.extend(f"- {issue['severity']} {issue['code']} {source_path.name}:{issue['line']} "
+                     f"({summary.sheet_name}): {issue['message']}" for summary, issue in issues)
     lines.extend(["", "## Source Content", "", source_text.rstrip(), ""])
     path.write_text("\n".join(lines), encoding="utf-8")
 

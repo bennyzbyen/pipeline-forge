@@ -6,10 +6,12 @@ from __future__ import annotations
 import csv
 import re
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 import xml.etree.ElementTree as ET
+
+from document_sections import DocumentSection
 
 
 NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -71,6 +73,8 @@ class SheetSummary:
     source_doc_index: int = 1
     source_doc_name: str = ""
     context_text: str = ""
+    extraction_issues: list[dict] = field(default_factory=list)
+    section_role: str = ""
 
 
 def extract_docx_paragraphs(docx_path: Path) -> tuple[list[Paragraph], int, list[str]]:
@@ -80,26 +84,30 @@ def extract_docx_paragraphs(docx_path: Path) -> tuple[list[Paragraph], int, list
             raise ValueError(f"{docx_path} does not contain word/document.xml")
         root = ET.fromstring(document_xml)
 
-        paragraphs: list[Paragraph] = []
-        for paragraph in root.iter(qn(NS_W, "p")):
-            texts = [node.text or "" for node in paragraph.iter(qn(NS_W, "t"))]
-            text = compact_text("".join(texts))
-            if not text:
-                continue
-            style = ""
-            p_style = paragraph.find(f"./{qn(NS_W, 'pPr')}/{qn(NS_W, 'pStyle')}")
-            if p_style is not None:
-                style = p_style.attrib.get(qn(NS_W, "val"), "")
-            paragraphs.append(Paragraph(style=style, text=text))
+        return _docx_paragraphs(root, docx)
 
-        table_count = sum(1 for _ in root.iter(qn(NS_W, "tbl")))
-        embedded = [
-            entry.filename
-            for entry in docx.infolist()
-            if entry.filename.startswith("word/embeddings/")
-            and entry.filename.lower().endswith(".xlsx")
-        ]
-        return paragraphs, table_count, embedded
+
+def _docx_paragraphs(root: ET.Element, docx: zipfile.ZipFile) -> tuple[list[Paragraph], int, list[str]]:
+    paragraphs: list[Paragraph] = []
+    for paragraph in root.iter(qn(NS_W, "p")):
+        texts = [node.text or "" for node in paragraph.iter(qn(NS_W, "t"))]
+        text = compact_text("".join(texts))
+        if not text:
+            continue
+        style = ""
+        p_style = paragraph.find(f"./{qn(NS_W, 'pPr')}/{qn(NS_W, 'pStyle')}")
+        if p_style is not None:
+            style = p_style.attrib.get(qn(NS_W, "val"), "")
+        paragraphs.append(Paragraph(style=style, text=text))
+
+    table_count = sum(1 for _ in root.iter(qn(NS_W, "tbl")))
+    embedded = [
+        entry.filename
+        for entry in docx.infolist()
+        if entry.filename.startswith("word/embeddings/")
+        and entry.filename.lower().endswith(".xlsx")
+    ]
+    return paragraphs, table_count, embedded
 
 
 def read_document_relationships(docx: zipfile.ZipFile) -> dict[str, str]:
@@ -143,22 +151,46 @@ def extract_embedding_contexts(docx_path: Path, window: int = 4) -> dict[str, st
         if not rels:
             return contexts
         root = ET.fromstring(document_xml)
-        body = root.find(qn(NS_W, "body"))
-        if body is None:
-            return contexts
-        recent_texts: list[str] = []
-        for element in list(body):
-            current_text = element_text(element)
-            ids = embedding_rel_ids(element, rels)
-            for rel_id in ids:
-                workbook_name = target_basename(rels[rel_id])
-                context_parts = recent_texts[-window:]
-                if current_text:
-                    context_parts = context_parts + [current_text]
-                contexts[workbook_name] = "\n".join(context_parts)
+        return _embedding_contexts(root, rels, window)
+
+
+def _embedding_contexts(root: ET.Element, rels: dict[str, str], window: int = 4) -> dict[str, str]:
+    contexts: dict[str, str] = {}
+    if not rels:
+        return contexts
+    body = root.find(qn(NS_W, "body"))
+    if body is None:
+        return contexts
+    recent_texts: list[str] = []
+    for element in list(body):
+        current_text = element_text(element)
+        ids = embedding_rel_ids(element, rels)
+        for rel_id in ids:
+            workbook_name = target_basename(rels[rel_id])
+            context_parts = recent_texts[-window:]
             if current_text:
-                recent_texts.append(current_text)
+                context_parts = context_parts + [current_text]
+            contexts[workbook_name] = "\n".join(context_parts)
+        if current_text:
+            recent_texts.append(current_text)
     return contexts
+
+
+def _table_sections(root: ET.Element, rels: dict[str, str] | None = None) -> tuple[dict[int, str], dict[str, str]]:
+    word_roles, embedded_roles = {}, {}
+    body = root.find(qn(NS_W, "body"))
+    section = DocumentSection()
+    for element in body if body is not None else []:
+        if element.tag == qn(NS_W, "p"):
+            style = element.find(f"./{qn(NS_W, 'pPr')}/{qn(NS_W, 'pStyle')}")
+            section.feed(element_text(element), style.attrib.get(qn(NS_W, "val"), "") if style is not None else "")
+        for table in element.iter(qn(NS_W, "tbl")):
+            word_roles[id(table)] = section.role
+        for rel_id in embedding_rel_ids(element, rels or {}):
+            name = target_basename(rels[rel_id])
+            previous = embedded_roles.get(name, section.role)
+            embedded_roles[name] = section.role if previous == section.role else "ambiguous"
+    return word_roles, embedded_roles
 
 
 def col_index(cell_ref: str) -> int:
@@ -249,6 +281,15 @@ def iter_sheet_rows(
             yield values
 
 
+def _limit_table_rows(rows: list[list[str]], max_rows: int) -> tuple[list[list[str]], list[dict]]:
+    if max_rows > 0 and len(rows) > max_rows:
+        return rows[:max_rows], [{
+            "code": "TABLE_EXTRACTION_TRUNCATED", "severity": "ERROR", "export_limit": max_rows,
+            "message": f"Additional non-empty rows exist beyond the requested limit of {max_rows}; re-extract without a limit before using this table.",
+        }]
+    return rows, []
+
+
 def extract_xlsx_tables(
     workbook_name: str,
     workbook_bytes: bytes,
@@ -280,7 +321,9 @@ def extract_xlsx_tables(
             sheet_root = ET.fromstring(sheet_xml)
             dimension_node = sheet_root.find(qn(NS_X, "dimension"))
             dimension = dimension_node.attrib.get("ref", "") if dimension_node is not None else ""
-            rows = list(iter_sheet_rows(sheet_root, shared_strings, max_rows=max_rows))
+            read_limit = max_rows + 1 if max_rows > 0 else max_rows
+            rows = list(iter_sheet_rows(sheet_root, shared_strings, max_rows=read_limit))
+            rows, issues = _limit_table_rows(rows, max_rows)
             if not rows:
                 continue
 
@@ -302,6 +345,7 @@ def extract_xlsx_tables(
                     csv_path=csv_path,
                     row_count=len(rows),
                     headers=headers,
+                    extraction_issues=issues,
                 )
             )
     return summaries
@@ -333,28 +377,43 @@ class io_bytes:
 
 def extract_embedded_tables(docx_path: Path, tables_dir: Path, max_rows: int) -> list[SheetSummary]:
     tables_dir.mkdir(parents=True, exist_ok=True)
-    summaries: list[SheetSummary] = []
-    contexts = extract_embedding_contexts(docx_path)
     with zipfile.ZipFile(docx_path) as docx:
-        entries = [
-            entry
-            for entry in docx.infolist()
-            if entry.filename.startswith("word/embeddings/")
-            and entry.filename.lower().endswith(".xlsx")
-        ]
-        for index, entry in enumerate(entries, start=1):
-            workbook_bytes = docx.read(entry.filename)
-            workbook_name = Path(entry.filename).name
-            extracted = extract_xlsx_tables(
-                workbook_name=workbook_name,
-                workbook_bytes=workbook_bytes,
-                tables_dir=tables_dir,
-                workbook_index=index,
-                max_rows=max_rows,
-            )
-            for summary in extracted:
-                summary.context_text = contexts.get(workbook_name, "")
-            summaries.extend(extracted)
+        document_xml = read_zip_text(docx, "word/document.xml")
+        rels = read_document_relationships(docx)
+        contexts, roles = {}, {}
+        if document_xml and rels:
+            root = ET.fromstring(document_xml)
+            contexts = _embedding_contexts(root, rels)
+            _word_roles, roles = _table_sections(root, rels)
+        return _embedded_tables(docx, tables_dir, max_rows, contexts, roles)
+
+
+def _embedded_tables(docx: zipfile.ZipFile, tables_dir: Path, max_rows: int, contexts: dict[str, str],
+                     roles: dict[str, str] | None = None) -> list[SheetSummary]:
+    summaries: list[SheetSummary] = []
+    entries = [
+        entry
+        for entry in docx.infolist()
+        if entry.filename.startswith("word/embeddings/")
+        and entry.filename.lower().endswith(".xlsx")
+    ]
+    for index, entry in enumerate(entries, start=1):
+        workbook_bytes = docx.read(entry.filename)
+        workbook_name = Path(entry.filename).name
+        extracted = extract_xlsx_tables(
+            workbook_name=workbook_name,
+            workbook_bytes=workbook_bytes,
+            tables_dir=tables_dir,
+            workbook_index=index,
+            max_rows=max_rows,
+        )
+        for summary in extracted:
+            summary.context_text = contexts.get(workbook_name, "")
+            summary.section_role = (roles or {}).get(workbook_name, "")
+            if summary.section_role == "ambiguous":
+                summary.extraction_issues.append({"code": "TABLE_SECTION_AMBIGUOUS", "severity": "ERROR",
+                    "message": "The same embedded workbook occurs in different section roles; resolve its ownership."})
+        summaries.extend(extracted)
     return summaries
 
 
@@ -369,50 +428,83 @@ def word_cell_text(cell: ET.Element) -> str:
 
 def extract_word_tables(docx_path: Path, tables_dir: Path, max_rows: int) -> list[SheetSummary]:
     tables_dir.mkdir(parents=True, exist_ok=True)
-    summaries: list[SheetSummary] = []
     with zipfile.ZipFile(docx_path) as docx:
         document_xml = read_zip_text(docx, "word/document.xml")
         if not document_xml:
-            return summaries
+            return []
         root = ET.fromstring(document_xml)
-        for table_index, table in enumerate(root.iter(qn(NS_W, "tbl")), start=1):
-            rows: list[list[str]] = []
-            for row in table.findall(qn(NS_W, "tr")):
-                if max_rows and len(rows) >= max_rows:
-                    break
-                values = [word_cell_text(cell) for cell in row.findall(qn(NS_W, "tc"))]
-                if any(value.strip() for value in values):
-                    rows.append(values)
-            if not rows:
-                continue
+        return _word_tables(root, tables_dir, max_rows)
 
-            header_index = next(
-                (
-                    index
-                    for index, row in enumerate(rows)
-                    if any("字段key" in cell or "字段名" in cell for cell in row)
-                ),
-                0,
-            )
-            if header_index > 0:
-                rows = rows[header_index:]
 
-            max_width = max(len(row) for row in rows)
-            rows = [row + [""] * (max_width - len(row)) for row in rows]
-            csv_name = f"word_table_{table_index:03d}.csv"
-            csv_path = tables_dir / csv_name
-            with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
-                writer = csv.writer(handle)
-                writer.writerows(rows)
-            summaries.append(
-                SheetSummary(
-                    workbook_name="word/document.xml",
-                    sheet_name=f"word_table_{table_index:03d}",
-                    dimension=f"{len(rows)}x{max_width}",
-                    csv_path=csv_path,
-                    row_count=len(rows),
-                    headers=[compact_text(str(value)) for value in rows[0]][:12],
-                    source="word",
-                )
+def _word_tables(root: ET.Element, tables_dir: Path, max_rows: int,
+                 roles: dict[int, str] | None = None) -> list[SheetSummary]:
+    summaries: list[SheetSummary] = []
+    if roles is None:
+        roles, _embedded_roles = _table_sections(root)
+    for table_index, table in enumerate(root.iter(qn(NS_W, "tbl")), start=1):
+        rows: list[list[str]] = []
+        for row in table.findall(qn(NS_W, "tr")):
+            if max_rows and len(rows) >= max_rows + 1:
+                break
+            values = [word_cell_text(cell) for cell in row.findall(qn(NS_W, "tc"))]
+            if any(value.strip() for value in values):
+                rows.append(values)
+        rows, issues = _limit_table_rows(rows, max_rows)
+        if not rows:
+            continue
+
+        header_index = next(
+            (
+                index
+                for index, row in enumerate(rows)
+                if any("字段key" in cell or "字段名" in cell for cell in row)
+            ),
+            0,
+        )
+        if header_index > 0:
+            rows = rows[header_index:]
+
+        max_width = max(len(row) for row in rows)
+        rows = [row + [""] * (max_width - len(row)) for row in rows]
+        csv_name = f"word_table_{table_index:03d}.csv"
+        csv_path = tables_dir / csv_name
+        with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle)
+            writer.writerows(rows)
+        summaries.append(
+            SheetSummary(
+                workbook_name="word/document.xml",
+                sheet_name=f"word_table_{table_index:03d}",
+                dimension=f"{len(rows)}x{max_width}",
+                csv_path=csv_path,
+                row_count=len(rows),
+                headers=[compact_text(str(value)) for value in rows[0]][:12],
+                source="word",
+                extraction_issues=issues,
+                section_role=roles.get(id(table), ""),
             )
+        )
     return summaries
+
+
+def extract_docx_evidence(
+    docx_path: Path,
+    tables_dir: Path,
+    word_tables_dir: Path,
+    max_rows: int,
+) -> tuple[list[Paragraph], int, list[SheetSummary], list[SheetSummary]]:
+    """Share one document read/parse within an extraction; retain standalone APIs."""
+    with zipfile.ZipFile(docx_path) as docx:
+        document_xml = read_zip_text(docx, "word/document.xml")
+        if not document_xml:
+            raise ValueError(f"{docx_path} does not contain word/document.xml")
+        root = ET.fromstring(document_xml)
+        paragraphs, table_count, _embedded = _docx_paragraphs(root, docx)
+        rels = read_document_relationships(docx)
+        word_roles, embedded_roles = _table_sections(root, rels)
+        word_tables_dir.mkdir(parents=True, exist_ok=True)
+        word_summaries = _word_tables(root, word_tables_dir, max_rows, word_roles)
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        contexts = _embedding_contexts(root, rels)
+        sheet_summaries = _embedded_tables(docx, tables_dir, max_rows, contexts, embedded_roles)
+    return paragraphs, table_count, sheet_summaries, word_summaries

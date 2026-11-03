@@ -144,8 +144,7 @@ def _target_name(item: Mapping[str, Any]) -> str:
 
 def _matches_name(candidate: Any, names: set[str]) -> bool:
     value = clean(candidate).lower()
-    short = value.rsplit(".", 1)[-1]
-    return bool(value and (value in names or short in names))
+    return bool(value and value in names)
 
 
 def _target_records(facts: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -178,10 +177,8 @@ def _target_records(facts: Mapping[str, Any]) -> list[dict[str, Any]]:
         matching_mappings = [
             candidate
             for candidate in mappings
-            if any(
-                _matches_name(candidate.get(key), names)
-                for key in ("inferred_target_name", "inferred_physical_table", "declared_table")
-            )
+            if _matches_name(candidate.get("inferred_physical_table") or candidate.get("declared_table")
+                             or candidate.get("inferred_target_name"), names)
         ]
         matching_writes = [candidate for candidate in writes if _matches_name(candidate.get("target"), names)]
         record["field_mappings"] = unique(matching_mappings)

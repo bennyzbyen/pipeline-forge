@@ -57,32 +57,39 @@ def source_kind(source: Dict[str, Any]) -> str:
     return "other"
 
 
+def _unique_physical_target(targets: List[Dict[str, Any]]) -> Dict[str, Any]:
+    unique = {}
+    for target in targets:
+        storage = clean_text(target.get("storage")).lower()
+        kind = "clickhouse" if "clickhouse" in storage else "hbase" if "hbase" in storage else storage
+        unique.setdefault((kind, clean_text(target.get("table"))), target)
+    return next(iter(unique.values())) if len(unique) == 1 else {}
+
+
 def match_physical_target(logical: Dict[str, Any], physical_targets: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if logical.get("requires_confirmation"):
+        return {}
+    table = clean_text(logical.get("physical_table"))
+    if table:
+        return _unique_physical_target([target for target in physical_targets if clean_text(target.get("table")) == table])
     desc = clean_text(logical.get("description"))
-    for target in physical_targets:
-        if clean_text(target.get("description")) == desc:
-            return target
-    return {}
+    return _unique_physical_target([target for target in physical_targets
+                                    if desc and clean_text(target.get("description")) == desc])
 
 
 def match_mapping_physical_target(mapping: Dict[str, Any], physical_targets: List[Dict[str, Any]]) -> Dict[str, Any]:
-    inferred_table = clean_text(mapping.get("inferred_physical_table"))
-    inferred_desc = clean_text(mapping.get("inferred_target_description"))
-    inferred_name = clean_text(mapping.get("inferred_target_name"))
-    for target in physical_targets:
-        target_table = clean_text(target.get("table"))
-        target_name = clean_text(target.get("table_name"))
-        if inferred_table and inferred_table == target_table:
-            return target
-        if inferred_name and inferred_name in {target_table, target_name}:
-            return target
-    if inferred_table or inferred_name:
+    if mapping.get("requires_confirmation") or mapping.get("target_requires_confirmation"):
         return {}
-    for target in physical_targets:
-        target_desc = clean_text(target.get("description"))
-        if inferred_desc and inferred_desc == target_desc:
-            return target
-    return {}
+    inferred_table = clean_text(mapping.get("inferred_physical_table") or mapping.get("declared_table"))
+    if inferred_table:
+        return _unique_physical_target([target for target in physical_targets if clean_text(target.get("table")) == inferred_table])
+    inferred_name = clean_text(mapping.get("inferred_target_name"))
+    if inferred_name:
+        return _unique_physical_target([target for target in physical_targets if inferred_name in
+                                        {clean_text(target.get("table")), clean_text(target.get("table_name"))}])
+    inferred_desc = clean_text(mapping.get("inferred_target_description"))
+    return _unique_physical_target([target for target in physical_targets
+                                    if inferred_desc and clean_text(target.get("description")) == inferred_desc])
 
 
 def infer_component_kind(
@@ -188,6 +195,9 @@ def _contract_output_names(execution_contract: Dict[str, Any], unit: Dict[str, A
     names = set(str(item) for item in execution_contract.get("outputs", {}).keys()) if isinstance(execution_contract.get("outputs"), dict) else set()
     for item in (unit or {}).get("covered_tables", []) or []:
         names.add(clean_text(item))
+    writes = execution_contract.get("writes") or {}
+    if isinstance(writes, dict):
+        names.update(clean_text(item.get("table")) for item in writes.values() if isinstance(item, dict))
     return {clean_text(item).lower() for item in names if clean_text(item)}
 
 
@@ -216,6 +226,10 @@ def _unit_sources(execution_contract: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _matches_selected_target(item: Dict[str, Any], selected: set[str]) -> bool:
+    physical = clean_text(item.get("physical_table") or item.get("table")).lower()
+    qualified = {name for name in selected if "." in name}
+    if "." in physical and qualified:
+        return physical in qualified
     values = {
         clean_text(item.get(key)).lower()
         for key in ("target_name", "physical_table", "table", "table_name", "name")
@@ -263,8 +277,12 @@ def build_plan(facts: Dict[str, Any], code_unit_id: str = "") -> Dict[str, Any]:
     outputs = []
     for index, mapping in enumerate(field_mappings):
         logical = logical_targets[index] if index < len(logical_targets) else {}
-        physical = match_mapping_physical_target(mapping, physical_targets) or match_physical_target(logical, physical_targets)
-        if not physical and len(physical_targets) == 1:
+        physical = match_mapping_physical_target(mapping, physical_targets)
+        may_infer = not (mapping.get("inferred_physical_table") or mapping.get("declared_table")
+                         or mapping.get("requires_confirmation") or mapping.get("target_requires_confirmation"))
+        if not physical and may_infer:
+            physical = match_physical_target(logical, physical_targets)
+        if not physical and may_infer and len(physical_targets) == 1:
             logical_storage = clean_text(logical.get("storage")).lower()
             physical_storage = clean_text(physical_targets[0].get("storage")).lower()
             if not logical_storage or logical_storage == physical_storage:
@@ -293,10 +311,7 @@ def build_plan(facts: Dict[str, Any], code_unit_id: str = "") -> Dict[str, Any]:
         outputs = [
             output
             for output in outputs
-            if {
-                clean_text(output.get("target_name")).lower(),
-                clean_text(output.get("physical_table")).lower(),
-            }.intersection(selected_output_names)
+            if _matches_selected_target(output, selected_output_names)
         ]
         physical_targets = [
             item for item in physical_targets if _matches_selected_target(item, selected_output_names)

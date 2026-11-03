@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
+import re
 from pathlib import Path
 
 from docx_bundle_ooxml import Paragraph, SheetSummary
-from technical_contract import build_contract_v2
+from technical_contract import build_contract_v2, stable_question_id, add_contract_question, storage_kind
 
 
 def detect_project_type(facts: dict) -> str:
@@ -92,12 +92,26 @@ def build_question_groups_v2(
     target_storage = " ".join(str(item.get("storage", "")).lower() for item in physical_targets + facts.get("report_targets", []))
     has_clickhouse_target = bool(facts.get("report_clickhouse_targets")) or "clickhouse" in target_storage
     has_hbase_target = "hbase" in target_storage
-    report_source_text = json.dumps(facts.get("report_sources", []), ensure_ascii=False).lower()
-    has_fs_evidence = any(marker in all_text or marker in report_source_text for marker in ["gateway", "fs", "留痕", "文件目录"])
+    fs_text = re.sub(r"(?:不使用|无需使用)\s*(?:fs|gateway)(?![a-z0-9_])|"
+                     r"\bwithout\s+(?:fs|gateway)\b|\bno\s+(?:fs|gateway)\s+(?:required|needed)\b", "", all_text)
+    has_fs_evidence = bool(re.search(r"(?<![a-z0-9_])(?:fs|gateway)(?![a-z0-9_])|留痕|文件目录", fs_text)) or any(
+        re.search(r"(?<![a-z0-9])(?:fs|gateway)(?![a-z0-9])", str(source.get("storage", "")).lower())
+        or storage_kind(source.get("storage"), source.get("table_or_path")) == "fs"
+        or str(source.get("table_or_path", "")).lower().startswith(("fs://", "gateway://"))
+        for source in facts.get("report_sources", []))
     component_kinds = {item.get("component_kind") for item in facts.get("component_hints", [])}
     blocking: list[dict[str, str]] = []
     deployment: list[dict[str, str]] = []
     non_blocking: list[dict[str, str]] = []
+    for issue in facts.get("extraction_issues", []):
+        if issue.get("severity") == "ERROR":
+            question_id = stable_question_id("CG", "EXTRACTION", issue.get("source_doc_index"),
+                                            issue.get("source_csv"), issue.get("line"), issue.get("code"))
+            location = issue.get("source_doc_name", "")
+            location += f":{issue['line']}" if issue.get("line") is not None else f"/{issue.get('source_sheet', '')}"
+            add_contract_question(blocking, question_id, "blocking_codegen",
+                f"Resolve {issue['code']} at {location}: {issue['message']}",
+                extraction_code=issue["code"])
     add_open_question(deployment, "TC-DP-001", "deployment_confirmation", "生成代码时目标项目目录是哪一个？")
     add_open_question(
         deployment,

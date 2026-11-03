@@ -7,14 +7,16 @@ import csv
 import re
 from pathlib import Path
 
-from docx_bundle_ooxml import SheetSummary, compact_text
+from docx_bundle_ooxml import Paragraph, SheetSummary, compact_text
+from source_reference import selected_columns
+from document_sections import DocumentSection
 
 
 def cell_value(row: dict[str, str], *names: str) -> str:
-    normalized_names = {normalize_header(name) for name in names}
     for name in names:
         if name in row:
             return compact_text(str(row.get(name, "")))
+    normalized_names = {normalize_header(name) for name in names}
     for key, value in row.items():
         if normalize_header(key) in normalized_names:
             return compact_text(str(value or ""))
@@ -32,6 +34,37 @@ def normalize_header(value: str) -> str:
     return re.sub(r"[\s_　]+", "", str(value or "")).lower()
 
 
+class TableColumns:
+    """Resolve column keys once per header layout; never cache row values."""
+    def __init__(self, headers):
+        self.headers = tuple(headers)
+        self.names = set(self.headers)
+        self.normalized = [(name, normalize_header(name)) for name in self.headers]
+        self.aliases = {}
+        self.patterns = {}
+
+    def value(self, row: dict[str, str], *names: str) -> str:
+        if names not in self.aliases:
+            exact = next((name for name in names if name in self.names), None)
+            if exact is not None:
+                self.aliases[names] = (exact, True)
+            else:
+                normalized = {normalize_header(name) for name in names}
+                key = next((name for name, value in self.normalized if value in normalized), None)
+                self.aliases[names] = (key, False)
+        key, exact = self.aliases[names]
+        if key is None:
+            return ""
+        value = row.get(key, "") if exact else row.get(key) or ""
+        return compact_text(str(value))
+
+    def contains(self, row: dict[str, str], *patterns: str) -> str:
+        if patterns not in self.patterns:
+            self.patterns[patterns] = next((name for name in self.headers if all(part in name for part in patterns)), None)
+        key = self.patterns[patterns]
+        return compact_text(str(row.get(key) or "")) if key is not None else ""
+
+
 def has_header(headers: list[str], *names: str) -> bool:
     normalized_headers = {normalize_header(header) for header in headers}
     return any(normalize_header(name) in normalized_headers for name in names)
@@ -43,12 +76,7 @@ def split_cell_lines(value: str) -> list[str]:
 
 
 def split_field_names(value: str) -> list[str]:
-    parts = split_cell_lines(value)
-    if len(parts) == 1:
-        tokens = [item.strip() for item in re.split(r"\s+", parts[0]) if item.strip()]
-        if len(tokens) > 1 and all(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", token) for token in tokens):
-            return tokens
-    return parts
+    return selected_columns(value)
 
 
 def split_table_names(value: str) -> list[str]:
@@ -204,11 +232,17 @@ def provenance_from_summary(summary: SheetSummary) -> dict[str, str | int]:
     }
     if summary.context_text:
         provenance["source_context"] = summary.context_text
+    if summary.section_role:
+        provenance["source_section_role"] = summary.section_role
     return provenance
 
 
 def add_provenance(row: dict, summary: SheetSummary) -> dict:
     row.update(provenance_from_summary(summary))
+    errors = [dict(issue) for issue in summary.extraction_issues if issue.get("severity") == "ERROR"]
+    if errors:
+        row["requires_confirmation"] = True
+        row["extraction_issues"] = errors
     return row
 
 
@@ -268,3 +302,46 @@ def first_fields(rows: list[dict[str, str]], limit: int = 12) -> list[str]:
         if len(values) >= limit:
             break
     return values
+
+
+def table_identity(value: str) -> str:
+    """Normalize spelling without discarding a declared database or schema."""
+    parts = compact_text(str(value or "")).lower().split(".")
+    return ".".join(part[1:-1] if len(part) > 1 and (part[0], part[-1]) in
+                    {("`", "`"), ('"', '"'), ("[", "]")} else part for part in parts)
+
+
+def matching_tables(value: str, tables: list[dict], *keys: str) -> list[dict]:
+    wanted = table_identity(value)
+    if not wanted:
+        return []
+    matches = {}
+    for table in tables:
+        names = [(key, table_identity(table[key])) for key in keys if table.get(key)]
+        if "." in wanted:
+            matched = any(wanted == name for _key, name in names)
+        else:
+            alias = normalized_table_key(wanted)
+            matched = any(normalized_table_key(name) == alias if key == "target_name" else
+                          name.rsplit(".", 1)[-1] in {wanted, alias} for key, name in names)
+        if matched:
+            identity = table_identity(table.get("physical_table") or table.get("table")
+                                      or table.get("target_name") or table.get("table_name", ""))
+            storage = str(table.get("storage", "")).lower()
+            kind = "clickhouse" if "clickhouse" in storage else "hbase" if "hbase" in storage else storage
+            matches.setdefault((kind, identity), table)
+    return list(matches.values())
+
+
+def paragraph_sections(paragraphs: list[Paragraph]) -> list[tuple[Paragraph, str]]:
+    """Keep source/target/example context local to its document and section."""
+    result = []
+    document, section = None, DocumentSection()
+    for paragraph in paragraphs:
+        if not compact_text(paragraph.text):
+            continue
+        identity = (paragraph.source_doc_index, paragraph.source_doc_name)
+        if identity != document:
+            document, section = identity, DocumentSection()
+        result.append((paragraph, section.feed(paragraph.text, paragraph.style)))
+    return result

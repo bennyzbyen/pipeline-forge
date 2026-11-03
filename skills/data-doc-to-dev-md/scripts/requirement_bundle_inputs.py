@@ -8,9 +8,7 @@ from pathlib import Path
 from docx_bundle_ooxml import (
     Paragraph,
     SheetSummary,
-    extract_docx_paragraphs,
-    extract_embedded_tables,
-    extract_word_tables,
+    extract_docx_evidence,
     safe_name,
 )
 from docx_bundle_render import write_extracted_markdown
@@ -82,9 +80,8 @@ def extract_document_to_dirs(
     max_table_rows: int,
     doc_index: int,
 ) -> tuple[list[Paragraph], int, list[SheetSummary], list[SheetSummary]]:
-    paragraphs, table_count, _embedded = extract_docx_paragraphs(docx_path)
-    word_summaries = extract_word_tables(docx_path, word_tables_dir, max_rows=max_table_rows)
-    sheet_summaries = extract_embedded_tables(docx_path, tables_dir, max_rows=max_table_rows)
+    paragraphs, table_count, sheet_summaries, word_summaries = extract_docx_evidence(
+        docx_path, tables_dir, word_tables_dir, max_table_rows)
     annotate_document_context(paragraphs, sheet_summaries + word_summaries, docx_path, doc_index)
     write_extracted_markdown(
         extracted_dir / "extracted_document.md",

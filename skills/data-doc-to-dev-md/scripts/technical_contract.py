@@ -10,9 +10,15 @@ made explicit.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import defaultdict
 from typing import Any, Iterable, Mapping
+
+from source_reference import (
+    column_identifier, is_file_location, selected_columns, simple_identifier,
+    source_identity, source_text, storage_kind,
+)
 
 
 CONTRACT_VERSION = 2
@@ -83,31 +89,10 @@ def provenance(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def storage_kind(value: Any, location: Any = "") -> str:
-    text = f"{clean(value)} {clean(location)}".lower()
-    if "hbase" in text:
-        return "hbase"
-    if "clickhouse" in text:
-        return "clickhouse"
-    if "mssql" in text or "sql server" in text:
-        return "mssql"
-    if "mysql" in text:
-        return "mysql"
-    if "gateway" in text or "文件" in text or clean(location).startswith(("/", "\\")):
-        return "fs"
-    return "other"
-
-
 def looks_physical(value: Any) -> bool:
-    text = clean(value)
-    return bool(
-        text
-        and (
-            re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", text)
-            or text.startswith(("/", "\\"))
-            or re.fullmatch(r"[A-Za-z0-9_\-]+", text)
-        )
-    )
+    text = str(value or "").strip()
+    return bool(simple_identifier(text) or is_file_location(text)
+                or re.fullmatch(r"[A-Za-z0-9_\-]+", text))
 
 
 def source_location(source: Mapping[str, Any]) -> tuple[str, str]:
@@ -115,14 +100,23 @@ def source_location(source: Mapping[str, Any]) -> tuple[str, str]:
         source.get("physical_table"),
         source.get("table"),
         source.get("path"),
-        source.get("description"),
         source.get("table_or_path"),
+        source.get("description"),
     ]
     for candidate in candidates:
         if looks_physical(candidate):
-            return clean(candidate), "confirmed"
+            return source_text(candidate), "confirmed"
     fallback = clean(source.get("table_or_path") or source.get("description"))
     return fallback, "needs_confirmation" if fallback else "missing"
+
+
+def explicit_source_locations(source: Mapping[str, Any]) -> list[str]:
+    locations: dict[str, str] = {}
+    for key in ("physical_table", "table", "path", "table_or_path"):
+        value = str(source.get(key) or "").strip()
+        if looks_physical(value) and ("." in value or is_file_location(value)):
+            locations.setdefault(source_identity(value), value)
+    return list(locations.values())
 
 
 def predicates(expression: Any) -> list[dict[str, str]]:
@@ -180,7 +174,7 @@ def build_field_contracts(facts: Mapping[str, Any]) -> list[dict[str, Any]]:
                 {
                     "id": f"field_{mapping_index:03d}_{field_index:03d}",
                     "target": target,
-                    "physical_source_table": clean(field.get("source_table")),
+                    "physical_source_table": source_text(field.get("source_table")),
                     "physical_source_field": source_field,
                     "logical_field": clean(field.get("field_name")),
                     "target_field": target_field,
@@ -202,31 +196,38 @@ def build_source_contracts(facts: Mapping[str, Any]) -> list[dict[str, Any]]:
         raw_sources = list(facts.get("cot_report_tables", []) or [])
     for index, source in enumerate(raw_sources, start=1):
         location, status = source_location(source)
-        required_columns = source.get("fields") or source.get("source_fields") or []
-        if isinstance(required_columns, str):
-            required_columns = unique(re.split(r"[,，;；\s]+", required_columns))
+        required_columns = selected_columns(source.get("fields") or source.get("source_fields") or [])
+        kind = storage_kind(source.get("storage"), location)
         contracts.append(
             {
                 "id": f"source_{index:03d}",
-                "logical_name": clean(source.get("table_or_path") or source.get("name") or source.get("report_table")),
-                "storage_kind": storage_kind(source.get("storage"), location),
+                "logical_name": source_text(source.get("table_or_path") or source.get("name") or source.get("report_table")),
+                "storage_kind": kind,
                 "exact_location": location,
                 "location_status": status,
                 "grain": clean(source.get("grain")),
                 "business_time_field": clean(source.get("business_time_field") or source.get("time_field")),
-                "required_columns": [clean(item) for item in required_columns if clean(item)],
+                "required_columns": required_columns,
                 "missing_policy": clean(source.get("missing_policy")),
                 "range_contract": {
                     "selection": clean(source.get("range") or source.get("source_range")),
                     "rowkey": clean(source.get("rowkey") or source.get("rowkey_rule")),
                     "index": clean(source.get("index") or source.get("index_name")),
-                    "file_path": location if storage_kind(source.get("storage"), location) == "fs" else "",
+                    "file_path": location if kind == "fs" else "",
                     "final_request_validation": clean(source.get("final_request_validation")),
                 },
                 "status": "confirmed" if status == "confirmed" else "needs_confirmation",
                 "provenance": provenance(source),
             }
         )
+        if source.get("extraction_issues"):
+            contracts[-1]["extraction_issues"] = [dict(item) for item in source["extraction_issues"]]
+            if any(item.get("severity") == "ERROR" for item in source["extraction_issues"]):
+                contracts[-1]["status"] = "needs_confirmation"
+        locations = explicit_source_locations(source)
+        if len(locations) > 1:
+            contracts[-1].update(location_status="needs_confirmation", status="needs_confirmation",
+                                 location_candidates=locations)
     return contracts
 
 
@@ -430,6 +431,116 @@ def issue(code: str, severity: str, path: str, message: str) -> dict[str, str]:
     return {"code": code, "severity": severity, "path": path, "message": message}
 
 
+def build_source_reference_index(contract: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a call-local lookup; never retain it across requirement revisions."""
+    exact, logical, short = defaultdict(list), defaultdict(list), defaultdict(list)
+    records, seen = [], set()
+    for source in contract.get("source_contracts", []) or []:
+        semantic = {key: value for key, value in source.items() if key not in {"id", "provenance"}}
+        signature = json.dumps(semantic, sort_keys=True, ensure_ascii=False, default=str)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        position = len(records)
+        records.append({"source": source, "columns": set(selected_columns(source.get("required_columns")))})
+        location = source.get("exact_location")
+        identity = source_identity(location)
+        if identity:
+            exact[identity].append(position)
+            if not is_file_location(location) and source.get("storage_kind") != "fs":
+                short[identity.rsplit(".", 1)[-1]].append(position)
+        alias = source_identity(source.get("logical_name"))
+        if alias:
+            logical[alias].append(position)
+    targets, short_targets = defaultdict(list), defaultdict(list)
+    fields = contract.get("field_contracts", []) or []
+    for position, field in enumerate(fields):
+        target = clean(field.get("target")).lower()
+        targets[target].append(position)
+        short_targets[target.rsplit(".", 1)[-1]].append(position)
+    return {"exact": exact, "logical": logical, "short": short, "records": records,
+            "fields": fields, "targets": targets, "short_targets": short_targets}
+
+
+def _matching_source_positions(table: str, reference_index: Mapping[str, Any]) -> list[int]:
+    identity = source_identity(table)
+    matches = reference_index["exact"].get(identity) or reference_index["logical"].get(identity)
+    if not matches and "." not in identity and not is_file_location(table):
+        matches = reference_index["short"].get(identity)
+    return matches or []
+
+
+def _validate_source_fields(fields: Iterable[Mapping[str, Any]], reference_index: Mapping[str, Any]) -> tuple[list[dict], list[dict]]:
+    errors, warnings = [], []
+    for index, field in enumerate(fields):
+        table = str(field.get("physical_source_table") or "").strip()
+        column = clean(field.get("physical_source_field"))
+        path = f"field_contracts[{index}]"
+        if not table:
+            continue  # Constants and calculated outputs need not name a physical source.
+        if not looks_physical(table):
+            warnings.append(issue("FIELD_SOURCE_REFERENCE_UNVERIFIED", "WARNING", path,
+                                  "Review complex or multi-source references against the execution contract."))
+            continue
+        matches = _matching_source_positions(table, reference_index)
+        if not matches:
+            errors.append(issue("FIELD_SOURCE_UNDECLARED", "ERROR", path,
+                                f"Source {table} is not declared for field {field.get('target_field', '')}."))
+            continue
+        if len(matches) != 1:
+            errors.append(issue("FIELD_SOURCE_AMBIGUOUS", "ERROR", path,
+                                f"Source {table} matches multiple declared sources; supply its exact identity."))
+            continue
+        if not column:
+            continue
+        name = column_identifier(column)
+        if not name:
+            warnings.append(issue("FIELD_SOURCE_COLUMN_EXPRESSION_UNVERIFIED", "WARNING", path,
+                                  "Review the source-column expression against its declared inputs."))
+            continue
+        columns = reference_index["records"][matches[0]]["columns"]
+        if not columns:
+            warnings.append(issue("FIELD_SOURCE_COLUMNS_UNVERIFIED", "WARNING", path,
+                                  f"No selected-column inventory is available for {table}; field existence was not checked."))
+        elif name not in columns:
+            errors.append(issue("FIELD_SOURCE_COLUMN_UNDECLARED", "ERROR", path,
+                                f"Field {table}.{column} is absent from the declared selected-column inventory."))
+    return errors, warnings
+
+
+def validate_field_source_references(contract: Mapping[str, Any]) -> tuple[list[dict], list[dict]]:
+    return _validate_source_fields(contract.get("field_contracts", []) or [], build_source_reference_index(contract))
+
+
+def unit_source_reference_errors(contract: Mapping[str, Any], target_names: Iterable[str], *,
+                                 reference_index: Mapping[str, Any] | None = None) -> list[dict]:
+    names = {clean(name).lower() for name in target_names if clean(name)}
+    qualified = any("." in name for name in names)
+    if reference_index is None:
+        reference_index = build_source_reference_index(contract)
+    selected = set()
+    for name in names:
+        selected.update(reference_index["targets"].get(name, []))
+        if not qualified:
+            selected.update(reference_index["short_targets"].get(name, []))
+    fields = [reference_index["fields"][position] for position in sorted(selected)]
+    errors, _warnings = _validate_source_fields(fields, reference_index)
+    errors.extend(issue("FIELD_MAPPING_UNCONFIRMED", "ERROR", "field_contracts",
+                        f"Target field {field.get('target_field', '')} still has unconfirmed mapping evidence.")
+                  for field in fields if field.get("status") == "needs_confirmation")
+    used = {position for field in fields
+            for position in _matching_source_positions(str(field.get("physical_source_table") or ""), reference_index)}
+    for position in sorted(used):
+        source = reference_index["records"][position]["source"]
+        if any(item.get("severity") == "ERROR" for item in source.get("extraction_issues", [])):
+            errors.append(issue("SOURCE_EVIDENCE_INCOMPLETE", "ERROR", "source_contracts",
+                                f"Source {source.get('exact_location', '')} has incomplete extraction evidence."))
+        if len(source.get("location_candidates") or []) > 1:
+            errors.append(issue("SOURCE_LOCATION_CONFLICT", "ERROR", "source_contracts",
+                                "Explicit locations disagree for a source used by this code unit."))
+    return errors
+
+
 def stable_question_id(prefix: str, *semantic_parts: Any) -> str:
     semantic_key = ":".join(clean(part).lower() for part in semantic_parts).encode("utf-8")
     digest = hashlib.sha1(semantic_key).hexdigest()[:6].upper()
@@ -497,7 +608,17 @@ def validate_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
         if clean(conflict.get("status")).lower() != "resolved":
             errors.append(issue(clean(conflict.get("code")) or "EVIDENCE_CONFLICT", "ERROR", f"conflicts[{index}]", "Conflicting requirement evidence must be resolved explicitly."))
 
+    reference_errors, reference_warnings = validate_field_source_references(contract)
+    errors.extend(reference_errors)
+    warnings.extend(reference_warnings)
+
     for index, source in enumerate(contract.get("source_contracts", []) or []):
+        if any(item.get("severity") == "ERROR" for item in source.get("extraction_issues", [])):
+            errors.append(issue("SOURCE_EVIDENCE_INCOMPLETE", "ERROR", f"source_contracts[{index}].extraction_issues",
+                                f"Source {source.get('exact_location', '')} has incomplete extraction evidence."))
+        if len(source.get("location_candidates") or []) > 1:
+            errors.append(issue("SOURCE_LOCATION_CONFLICT", "ERROR", f"source_contracts[{index}].location_candidates",
+                                "Explicit physical source locations disagree; resolve their evidence before code generation."))
         if clean(source.get("location_status")) != "confirmed":
             blockers.append(issue("SOURCE_LOCATION_UNCONFIRMED", "DEPLOYMENT_BLOCKER", f"source_contracts[{index}].exact_location", "Exact physical source location is not confirmed."))
         range_contract = source.get("range_contract") if isinstance(source.get("range_contract"), Mapping) else {}
@@ -614,6 +735,15 @@ def build_contract_v2(facts: Mapping[str, Any], base_contract: Mapping[str, Any]
         }
     )
     validation = validate_contract(contract)
+    for validation_issue in validation["errors"]:
+        if not validation_issue["code"].startswith(("FIELD_SOURCE_", "SOURCE_LOCATION_CONFLICT", "SOURCE_EVIDENCE_INCOMPLETE")):
+            continue
+        question_id = stable_question_id("CG", validation_issue["code"], validation_issue["path"])
+        add_contract_question(open_questions, question_id, "blocking_codegen", validation_issue["message"],
+                              validation_code=validation_issue["code"], path=validation_issue["path"])
+        blockers.append(f"[{question_id}] {validation_issue['message']}")
+    blockers = unique(blockers)
+    contract["blockers"] = blockers
     for validation_issue in validation["deployment_blockers"]:
         question_id = stable_question_id("DP", validation_issue.get("code"), validation_issue.get("path"))
         add_contract_question(

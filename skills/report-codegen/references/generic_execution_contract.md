@@ -65,6 +65,32 @@ Supported kinds:
 
 Every source requires an exact `columns` list. Non-injected sources also require `location`.
 
+### Declared Value And Grain Constraints
+
+Sources and outputs may declare `column_constraints` and `unique_by`. These are optional, evidence-backed rules, not inferred business defaults. Unspecified types and nullability remain unknown; existing contracts without these properties retain their behavior.
+
+```json
+{
+  "columns": ["store", "day", "amount"],
+  "unique_by": ["store", "day"],
+  "column_constraints": {
+    "store": {"type": "String", "nullable": false},
+    "day": {"type": "Date", "min_from": "params.start", "max_from": "params.stop", "max_inclusive": false},
+    "amount": {"type": "Decimal(18,2)", "min": "0", "nullable": true}
+  }
+}
+```
+
+Supported constraint types are `String`, `Int8/16/32/64/128/256`, matching `UInt` types, `Float32/64`, `Decimal(P,S)` (1–76 precision), `Date`, and whole-second `DateTime`. Declare nullability separately with a boolean `nullable`; nullable values are not coerced into defaults. Unsupported constraint types are errors. Existing write `column_types` remain a separate target/wire declaration.
+
+Numeric checks reject fractional integers, overflow, non-finite non-null values, and excess decimal precision/scale. Exact integer and decimal text is checked without passing through binary floats or rounding; floating input may already have lost precision upstream. Trailing fractional zeros are acceptable when the value is exactly representable at the declared scale. Values and DataFrame dtypes remain unchanged by validation. Explicit integer value constraints reject booleans; legacy integer wire formatting still maps boolean flags to 0/1 when no stricter value rule is declared.
+
+`Date` uses strict ISO dates or native dates/midnight timestamps. `DateTime` accepts ISO datetime text or native timestamps at whole-second precision; it does not discard fractional seconds or assume a timezone. Aware values are compared as UTC instants, including explicit fold/offset information, while the original values remain unchanged. Bounds use either literal `min` / `max` or `min_from` / `max_from` from `params.<key>` or `time_range.<key>`. Bounds are inclusive unless their boolean `min_inclusive` / `max_inclusive` is false. Numeric bounds are finite comparison thresholds, so they may lie outside the column range or use finer decimal scale; only row values must fit the declared storage type. Missing, inverted, invalid or timezone-incompatible bounds fail even on an empty frame; an equal-bound half-open range permits only an empty/non-valued population. Empty frames do not create missing rows or values.
+
+`unique_by` is an ordered list of distinct declared columns. Repeated key tuples, including repeated null-key tuples, fail. A single null key remains permitted unless `nullable: false` is also declared. Use this for confirmed source uniqueness and output/aggregate grain. It does not infer a primary key from field names.
+
+The shared `declared_constraints.py` helper is copied into generated `data_utils/`. Source checks run before transformations; output checks run on projected results. Put a date-window bound on the output when filtering is responsible for selecting that window; source bounds assert that all input rows already satisfy it. Storage preflights all outputs with these declarations before the first client/write call, so a bad declared output cannot follow a successful write from the same call. This is validation preflight, not an atomic multi-target transaction.
+
 ## Steps
 
 Steps run in list order. Each `id` must be unique and may refer only to sources or earlier steps.
@@ -75,10 +101,10 @@ Supported operations:
 - `filter`: `input` plus `conditions` using `eq`, `ne`, `in`, `not_in`, `gt`, `ge`, `lt`, `le`, `isnull`, `notnull`, or literal `contains`.
 - `rename`: `input` plus `columns` as old-to-new mapping.
 - `derive`: `input` plus named expressions.
-- `join`: `left`, `right`, `how`, and either `on` or equal-length `left_on` / `right_on`.
+- `join`: `left`, `right`, `how`, and either `on` or equal-length `left_on` / `right_on`; optional `validate` declares `one_to_one`, `one_to_many`, `many_to_one`, or `many_to_many`.
 - `aggregate`: `input`, optional `group_by`, and named aggregations.
 - `union`: two or more prior `inputs`.
-- `deduplicate`: `input`, `subset`, and optional `keep`.
+- `deduplicate`: `input`, `subset`, and optional `keep` (`first`, `last`, or boolean `false`). False removes every row belonging to a duplicated key; omitted `keep` retains the first row.
 
 Supported derive expressions:
 
@@ -89,7 +115,24 @@ Supported derive expressions:
 - `add`, `subtract`, `multiply`, `divide`: operands use `{ "column": "x" }`, `{ "value": 1 }`, or `{ "value_from": "params.rate" }`
 - `concat`: operands plus optional `separator`
 
+Division propagates null operands and replaces a zero denominator with null, for both data columns and scalar literals/runtime parameters. An explicit `fill_value` replaces a missing division result; omitting it preserves null. Use a fill only when the requirement confirms that default. Operation order comes from the declared steps and operand order; the interpreter does not parse prose formulas or infer rounding, caps, or classification rules.
+
 Supported aggregations are `sum`, `count`, `nunique`, `min`, `max`, `mean`, `first`, and `last`.
+
+Join cardinality uses the [pandas merge validation semantics](https://pandas.pydata.org/docs/reference/api/pandas.merge.html): uniqueness on both sides, left only, or right only respectively. `many_to_many` explicitly permits multiplication; an omitted declaration keeps the existing merge behavior. Null-key matching is unchanged; declare source null constraints when null keys are forbidden. Deduplication follows [pandas keep semantics](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.drop_duplicates.html). Grouping retains null-key groups and existing count/sum behavior; only confirmed output grain is enforced.
+
+### Static Column Lineage
+
+Validation propagates the declared source columns through each step before scaffolding. Every filter, projection, rename key, derive operand, join key, grouping key, explicit aggregation column, deduplication key, and output column must exist in its input schema. Errors identify the exact contract property with `unknown_input_column`; invalid or duplicate column names and ambiguous join suffixes are also rejected. Field names retain their exact case and spaces. Only `select` / `project` accept `source` as an alias for `input`.
+
+- `select` / `project` keep their ordered subset; `filter` and `deduplicate` preserve columns.
+- `rename` removes old names and keeps column positions. Swaps are valid; name collisions are errors.
+- `derive` follows mapping insertion order, so an expression may use an earlier derived column. Overwrites keep the original position. Literals and `value_from` paths are values, not field references.
+- `join` follows the runtime's key handling and `_x` / `_y` default suffixes, or an explicit pair of string/null suffixes. Output names must remain unique.
+- `aggregate` keeps only grouping keys and named aggregate outputs. `count` without an explicit column retains the runtime fallback.
+- `union` keeps the first-seen union of input columns, including heterogeneous schemas.
+
+These checks use column metadata only; they do not execute data or establish formula correctness. An invalid upstream schema remains an error without speculative downstream field diagnostics. Valid contracts keep the existing validation result shape and runtime behavior.
 
 Example:
 
@@ -148,6 +191,10 @@ Example:
 ```
 
 Supported write modes are `append` and `replace_where`. Predicates use one equality or a non-empty `all` list with confirmed identifiers and `time_range.<key>` or `params.<key>` values. Empty output defaults to preserving rows (`block_destructive_replace`/`skip`); `reject` raises; `clear_slice` requires `empty_snapshot_confirmed=true` and bounded replacement predicates. Missing outputs are errors. See `lifecycle_contracts.md` for completion and recovery semantics.
+
+For legacy v1 contracts that omit write `columns`, the writer uses that output's ordered columns. Omitted v1 types preserve values without type coercion. Prepared file writes use those same projected columns. V2 still requires explicit write columns and types for deployment; a non-empty output must never be written with zero columns.
+
+Integer wire formatting validates the declared signed/unsigned range and formats each value exactly. Canonical integer ranges and legacy `INT`/`INTEGER`/`INT1` signed/unsigned aliases follow the [ClickHouse integer definitions](https://clickhouse.com/docs/reference/data-types/int-uint). Native integer columns use exact extrema checks; numeric text uses exact scalar parsing. Large integers mixed with nulls must not pass through a floating intermediate; this applies to both `insert_df` and `insert_file`. Unknown decimal rounding or business-default rules remain unresolved rather than being invented by validation.
 
 `DELETE` followed by `INSERT` is non-atomic. Strict deployment blocks it unless the contract supplies an atomic/recoverable strategy or explicitly acknowledges the non-atomic risk. For `insert_file`, staging must use explicit ordered columns, UTF-8 without BOM or header, `\\N` nulls, integer-safe formatting, and second-precision datetimes.
 

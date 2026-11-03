@@ -7,6 +7,8 @@ import copy
 import hashlib
 import json
 import re
+import sys
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -77,4 +79,9 @@ def select_code_unit(facts: Mapping[str, Any], code_unit_id: str, expected_route
         raise ValueError(
             f"code unit {unit.get('code_unit_id')} routes to {unit.get('codegen_route')}, not {expected_route}"
         )
+    doc_scripts = Path(__file__).resolve().parents[2] / "data-doc-to-dev-md" / "scripts"
+    if str(doc_scripts) not in sys.path:
+        sys.path.append(str(doc_scripts))
+    from code_unit_contract import refresh_code_unit_readiness
+    refresh_code_unit_readiness(facts, unit)
     return unit

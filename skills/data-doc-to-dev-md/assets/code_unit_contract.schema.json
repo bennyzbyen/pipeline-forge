@@ -75,6 +75,7 @@
             }
           },
           "tests": {"type": "array"},
+          "derived_blockers": {"type": "array", "items": {"type": "string"}},
           "readiness": {
             "type": "object",
             "required": ["ready_for_codegen", "blockers"],

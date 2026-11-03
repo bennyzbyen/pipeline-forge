@@ -10,19 +10,23 @@ from docx_bundle_bysku import (
     project_text_blob,
 )
 from docx_bundle_ooxml import Paragraph, SheetSummary, compact_text
+from source_reference import source_identity, storage_identity, selected_columns, storage_kind
 from docx_bundle_tables import (
+    TableColumns,
     add_provenance,
     append_unique_by_key,
     best_context_match,
     cell_value,
-    cell_value_contains,
     first_fields,
     has_header,
     has_headers,
     normalized_table_key,
+    table_identity,
+    matching_tables,
+    paragraph_sections,
     preamble_text,
+    provenance_from_summary,
     read_csv_table,
-    split_cell_lines,
     split_field_names,
     split_table_names,
     table_name_from_text,
@@ -30,108 +34,92 @@ from docx_bundle_tables import (
 
 
 def report_targets_from_paragraphs(paragraphs: list[Paragraph] | None) -> list[dict]:
-    if not paragraphs:
-        return []
+    records = paragraph_sections(paragraphs or [])
     targets: list[dict] = []
     seen: set[str] = set()
-    texts = [compact_text(paragraph.text) for paragraph in paragraphs if compact_text(paragraph.text)]
-    for index, text in enumerate(texts):
-        if "clickhouse" not in text.lower():
+    for index, (paragraph, role) in enumerate(records[:-1]):
+        text = compact_text(paragraph.text)
+        if role not in {"", "target"} or "clickhouse" not in text.lower():
             continue
-        if index + 1 >= len(texts):
+        next_paragraph, next_role = records[index + 1]
+        if next_role not in {"", "target"} or (paragraph.source_doc_index, paragraph.source_doc_name) != (next_paragraph.source_doc_index, next_paragraph.source_doc_name):
             continue
-        table = texts[index + 1]
-        if "." not in table or " " in table:
+        table = compact_text(next_paragraph.text)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", table_identity(table)):
             continue
-        description = texts[index + 2] if index + 2 < len(texts) else ""
         if table in seen:
             continue
         seen.add(table)
-        targets.append(
-            {
-                "storage": text,
-                "table": table,
-                "database": table.split(".", 1)[0],
-                "table_name": table.split(".", 1)[1],
-                "description": description,
-            }
-        )
+        description = ""
+        if index + 2 < len(records):
+            detail, detail_role = records[index + 2]
+            if detail_role in {"", "target"} and (detail.source_doc_index, detail.source_doc_name) == (paragraph.source_doc_index, paragraph.source_doc_name):
+                description = compact_text(detail.text)
+        targets.append({"storage": text, "table": table, "database": table.split(".", 1)[0],
+                        "table_name": table.split(".", 1)[1], "description": description,
+                        "source_doc_index": paragraph.source_doc_index, "source_doc_name": paragraph.source_doc_name})
     return targets
 
 
 def hbase_targets_from_paragraphs(paragraphs: list[Paragraph] | None) -> list[dict]:
-    if not paragraphs:
-        return []
+    records = paragraph_sections(paragraphs or [])
     targets: list[dict] = []
     seen: set[str] = set()
-    texts = [compact_text(paragraph.text) for paragraph in paragraphs if compact_text(paragraph.text)]
-    in_target_section = False
-    for index, text in enumerate(texts):
-        lower_text = text.lower()
-        if "data target" in lower_text or "target management" in lower_text:
-            in_target_section = True
-        if in_target_section and ("datahub pipeline" in lower_text or "data pipeline management" in lower_text):
-            in_target_section = False
-        if not in_target_section and "hbase:" not in lower_text:
+    for index, (paragraph, role) in enumerate(records):
+        text = compact_text(paragraph.text)
+        if role not in {"", "target"} or "hbase" not in text.lower():
             continue
-        if "hbase" not in lower_text:
+        if role != "target" and "hbase:" not in text.lower():
             continue
-
-        window = " ".join(texts[index : index + 4])
-        matches = re.findall(r"(?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+", window)
-        for table in matches:
-            if not re.search(r"[A-Za-z_]", table):
-                continue
-            if table.startswith("l0_") or table in seen:
+        texts = [compact_text(item.text) for item, item_role in records[index:index + 5]
+                 if item_role in {"", "target"} and (item.source_doc_index, item.source_doc_name) == (paragraph.source_doc_index, paragraph.source_doc_name)]
+        for table in re.findall(r"(?:[A-Za-z0-9_]+\.)+[A-Za-z0-9_]+", " ".join(texts[:4])):
+            if not re.search(r"[A-Za-z_]", table) or table.startswith("l0_") or table in seen:
                 continue
             seen.add(table)
-            description = ""
-            for candidate in texts[index : index + 5]:
-                if candidate != table and table not in candidate and "hbase" not in candidate.lower():
-                    description = candidate
-                    break
-            targets.append(
-                {
-                    "storage": "hbase",
-                    "database": table.split(".", 1)[0],
-                    "table_name": table.split(".", 1)[1],
-                    "table": table,
-                    "description": description,
-                }
-            )
+            description = next((item for item in texts if item != table and table not in item and "hbase" not in item.lower()), "")
+            targets.append({"storage": "hbase", "database": table.split(".", 1)[0],
+                            "table_name": table.split(".", 1)[1], "table": table, "description": description,
+                            "source_doc_index": paragraph.source_doc_index, "source_doc_name": paragraph.source_doc_name})
     return targets
 
 
 def report_field_rows(rows: list[dict[str, str]]) -> list[dict]:
     fields: list[dict] = []
+    layouts = {}
     for row in rows:
-        key = cell_value(row, "Key", "字段 key", "字段key", "字段", "Column", "Field")
-        field_name = cell_value(row, "字段名称", "字段名")
+        headers = tuple(row)
+        if headers not in layouts:
+            layouts[headers] = TableColumns(headers)
+        value = layouts[headers].value
+        contains = layouts[headers].contains
+        key = value(row, "Key", "字段 key", "字段key", "字段", "Column", "Field")
+        field_name = value(row, "字段名称", "字段名")
         if not key and not field_name:
             continue
         formula = (
-            cell_value(row, "计算逻辑", "报表字段逻辑", "字段逻辑", "字段公式", "数据源+字段公式", "数据源 + 字段公式")
-            or cell_value_contains(row, "字段公式")
-            or cell_value_contains(row, "数据源", "公式")
-            or cell_value_contains(row, "报表字段", "逻辑")
+            value(row, "计算逻辑", "报表字段逻辑", "字段逻辑", "字段公式", "数据源+字段公式", "数据源 + 字段公式")
+            or contains(row, "字段公式")
+            or contains(row, "数据源", "公式")
+            or contains(row, "报表字段", "逻辑")
         )
         fields.append(
             {
                 "target_field": key,
                 "field_name": field_name,
-                "source_category": cell_value(row, "数据源分类"),
-                "source_desc": cell_value(row, "数据源描述", "来源库表", "数据源"),
-                "source_storage": cell_value(row, "数据源位置", "存放地"),
-                "source_table": cell_value(row, "数据表", "数据源表", "源数据表"),
-                "source_field": cell_value(row, "数据源对应的字段", "数据源字段key", "数据源字段 key", "来源字段"),
+                "source_category": value(row, "数据源分类"),
+                "source_desc": value(row, "数据源描述", "来源库表", "数据源"),
+                "source_storage": value(row, "数据源位置", "存放地"),
+                "source_table": value(row, "数据表", "数据源表", "源数据表"),
+                "source_field": value(row, "数据源对应的字段", "数据源字段key", "数据源字段 key", "来源字段"),
                 "calculation_logic": formula,
-                "eo_order_logic": cell_value_contains(row, "EO+ERP"),
-                "dms_order_logic": cell_value_contains(row, "DMS"),
-                "sample": cell_value(row, "字段样例", "示例", "数据样例"),
-                "field_type": cell_value(row, "字段类型", "Type"),
-                "field_order": cell_value(row, "字段顺序"),
-                "display": cell_value(row, "字段是否显示"),
-                "remark": cell_value(row, "备注", "变更记录", "更新记录"),
+                "eo_order_logic": contains(row, "EO+ERP"),
+                "dms_order_logic": contains(row, "DMS"),
+                "sample": value(row, "字段样例", "示例", "数据样例"),
+                "field_type": value(row, "字段类型", "Type"),
+                "field_order": value(row, "字段顺序"),
+                "display": value(row, "字段是否显示"),
+                "remark": value(row, "备注", "变更记录", "更新记录"),
             }
         )
     return fields
@@ -160,111 +148,53 @@ def _extract_physical_and_source_table(headers: list[str], rows: list[dict[str, 
             )
         return True
 
-    if has_headers(headers, ["Description", "Data Storage", "Database", "Table Name"]):
-        for row in rows:
-            table_name = cell_value(row, "Table Name")
-            database = cell_value(row, "Database")
-            if not table_name:
-                continue
-            table = f"{database}.{table_name}" if database else table_name
-            if any(target.get("table") == table for target in facts["report_clickhouse_targets"]):
-                continue
-            target = add_provenance(
-                {
-                    "storage": cell_value(row, "Data Storage"),
-                    "database": database,
-                    "table_name": table_name,
-                    "table": table,
-                    "description": cell_value(row, "Description"),
-                },
-                summary,
-            )
-            facts["report_clickhouse_targets"].append(target)
-            append_unique_by_key(facts["report_physical_targets"], dict(target), "table")
-        return True
+    english = has_headers(headers, ["Description", "Data Storage", "Database", "Table Name"])
+    physical_chinese = has_headers(headers, ["位置", "数据库", "数据表名", "数据表"])
+    range_layout = has_headers(headers, ["位置", "数据表名", "数据表"]) and has_header(headers, "取数范围", "数据范围")
+    usage_layout = has_headers(headers, ["分类", "位置", "数据表", "数据表名"]) and has_header(headers, "使用字段")
+    if not (english or physical_chinese or range_layout or usage_layout):
+        return False
 
-    if has_headers(headers, ["位置", "数据库", "数据表名", "数据表"]):
-        current_storage = ""
-        current_database = ""
-        for row in rows:
-            storage = cell_value(row, "位置") or current_storage
-            database = cell_value(row, "数据库") or current_database
-            description = cell_value(row, "数据表名")
-            table_name = cell_value(row, "数据表")
-            if cell_value(row, "位置"):
-                current_storage = storage
-            if cell_value(row, "数据库"):
-                current_database = database
-            if not table_name:
+    is_source = summary.section_role == "source" or (
+        summary.section_role != "target" and not english and not physical_chinese)
+    columns = TableColumns(headers)
+    value = columns.value
+    current_storage = current_database = ""
+    for row in rows:
+        storage = value(row, "Data Storage" if english else "位置")
+        database = value(row, "Database" if english else "数据库")
+        if physical_chinese:
+            storage, database = storage or current_storage, database or current_database
+            current_storage, current_database = storage, database
+        description = value(row, "Description" if english else "数据表名")
+        table_name = value(row, "Table Name" if english else "数据表")
+        table = f"{database}.{table_name}" if table_name and database else table_name
+        if not english and "." in table_name:
+            table = table_name
+        if is_source:
+            location = table or description
+            if not location:
                 continue
-            table = table_name if "." in table_name or not database else f"{database}.{table_name}"
-            target = add_provenance(
-                {
-                    "storage": storage,
-                    "database": database,
-                    "table_name": table_name.rsplit(".", 1)[-1],
-                    "table": table,
-                    "description": description,
-                },
-                summary,
-            )
-            append_unique_by_key(facts["report_physical_targets"], target, "table")
-            if "clickhouse" in storage.lower():
+            source = {
+                "storage": storage, "table_or_path": location, "table_names": split_table_names(location),
+                "description": description,
+                "range": value(row, "备注") if usage_layout else value(row, "取数范围", "数据范围", "Range", "Selection"),
+                "fields": split_field_names(value(row, "使用字段") if usage_layout else value(row, "字段", "Columns", "Fields")),
+                "join_filter": value(row, "备注") if usage_layout else value(row, "关联、过滤信息", "Join Filter"),
+            }
+            if usage_layout:
+                source["category"] = value(row, "分类")
+            facts["report_sources"].append(add_provenance(source, summary))
+        elif table_name:
+            target = add_provenance({"storage": storage, "database": database,
+                "table_name": table_name if english else table_name.rsplit(".", 1)[-1],
+                "table": table, "description": description}, summary)
+            if not any(item.get("table") == table and storage_identity(item.get("storage")) == storage_identity(storage)
+                       for item in facts["report_physical_targets"]):
+                facts["report_physical_targets"].append(target)
+            if storage_kind(storage) == "clickhouse":
                 append_unique_by_key(facts["report_clickhouse_targets"], dict(target), "table")
-        return True
-
-    if (
-        has_headers(headers, ["位置", "数据表名", "数据表"])
-        and has_header(headers, "取数范围", "数据范围")
-    ):
-        for row in rows:
-            source_name = cell_value(row, "数据表名")
-            physical_table = cell_value(row, "数据表")
-            if not source_name and not physical_table:
-                continue
-            facts["report_sources"].append(
-                add_provenance(
-                    {
-                        "storage": cell_value(row, "位置"),
-                        "table_or_path": physical_table or source_name,
-                        "table_names": split_table_names(physical_table or source_name),
-                        "description": source_name,
-                        "range": cell_value(row, "取数范围", "数据范围"),
-                        "fields": split_cell_lines(cell_value(row, "字段")),
-                        "join_filter": cell_value(row, "关联、过滤信息"),
-                    },
-                    summary,
-                )
-            )
-        return True
-
-    if (
-        has_headers(headers, ["分类", "位置", "数据表", "数据表名"])
-        and has_header(headers, "使用字段")
-    ):
-        for row in rows:
-            source_name = cell_value(row, "数据表名")
-            physical_table = cell_value(row, "数据表")
-            if not source_name and not physical_table:
-                continue
-            fields = split_field_names(cell_value(row, "使用字段"))
-            facts["report_sources"].append(
-                add_provenance(
-                    {
-                        "storage": cell_value(row, "位置"),
-                        "table_or_path": physical_table or source_name,
-                        "table_names": split_table_names(physical_table or source_name),
-                        "description": source_name,
-                        "range": cell_value(row, "备注"),
-                        "fields": fields,
-                        "join_filter": cell_value(row, "备注"),
-                        "category": cell_value(row, "分类"),
-                    },
-                    summary,
-                )
-            )
-        return True
-    return False
+    return True
 
 
 def _extract_business_and_catalog_table(headers: list[str], rows: list[dict[str, str]], summary: SheetSummary, facts: dict) -> bool:
@@ -508,21 +438,18 @@ def _map_cot_field_dictionaries(facts: dict, field_dicts: list[dict]) -> None:
 
 
 def _match_report_targets_to_physical_tables(facts: dict) -> None:
-    report_targets = facts.get("report_targets", [])
     report_physical_targets = facts.get("report_physical_targets", []) or facts.get("report_clickhouse_targets", [])
-    for target in report_targets:
-        target_key = normalized_table_key(target.get("target_name", ""))
-        if not target_key:
-            continue
-        for physical_target in report_physical_targets:
-            physical_key = normalized_table_key(
-                physical_target.get("table", "") or physical_target.get("table_name", "")
-            )
-            if target_key and target_key == physical_key:
-                target["physical_table"] = physical_target.get("table", "")
-                target["database"] = physical_target.get("database", "")
-                target["physical_description"] = physical_target.get("description", "")
-                break
+    for target in facts.get("report_targets", []):
+        value = target.get("physical_table") or target.get("target_name", "")
+        matches = matching_tables(value, report_physical_targets, "table", "table_name")
+        if len(matches) == 1:
+            physical_target = matches[0]
+            target["physical_table"] = physical_target.get("table", "")
+            target["database"] = physical_target.get("database", "")
+            target["physical_description"] = physical_target.get("description", "")
+        elif len(matches) > 1:
+            target["requires_confirmation"] = True
+            target["physical_table_candidates"] = [item.get("table", "") for item in matches]
 
 
 def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) -> None:
@@ -531,27 +458,16 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
     for index, item in enumerate(report_field_dicts):
         previously_unconfirmed = bool(item.get('requires_confirmation') or item.get('target_requires_confirmation'))
         item['requires_confirmation'] = True
-        declared_key = normalized_table_key(item.get("declared_table", ""))
-        matched_target = None
-        matched_physical_target = None
-        if declared_key:
-            matched_target = next(
-                (
-                    target
-                    for target in report_targets
-                    if normalized_table_key(target.get("target_name", "")) == declared_key
-                    or normalized_table_key(target.get("physical_table", "")) == declared_key
-                ),
-                None,
-            )
-            matched_physical_target = next(
-                (
-                    target
-                    for target in report_physical_targets
-                    if normalized_table_key(target.get("table", "") or target.get("table_name", "")) == declared_key
-                ),
-                None,
-            )
+        declared = item.get("declared_table", "")
+        logical_matches = matching_tables(declared, report_targets, "target_name", "physical_table")
+        physical_matches = matching_tables(declared, report_physical_targets, "table", "table_name")
+        matched_target = logical_matches[0] if len(logical_matches) == 1 else None
+        matched_physical_target = physical_matches[0] if len(physical_matches) == 1 else None
+        if len(logical_matches) > 1 or (not matched_target and len(physical_matches) > 1):
+            item["physical_table_candidates"] = [target.get("physical_table") or target.get("table", "")
+                                                 for target in logical_matches + physical_matches]
+            facts["report_field_mappings"].append(item)
+            continue
 
         if matched_target:
             item['requires_confirmation'] = previously_unconfirmed or bool(matched_target.get('requires_confirmation'))
@@ -569,14 +485,14 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
             facts["inferences"].append(
                 f"{item['csv']} is mapped to {item['inferred_physical_table']} by declared table {item.get('declared_table', '')}."
             )
-        elif index < len(report_targets):
+        elif not declared and index < len(report_targets):
             item["inferred_target_name"] = report_targets[index].get("target_name", "")
             item["inferred_target_description"] = report_targets[index].get("description", "")
             item["inferred_physical_table"] = report_targets[index].get("physical_table", "")
             facts["inferences"].append(
                 f"{item['csv']} is mapped to {item['inferred_target_name']} by report target order."
             )
-        elif index < len(report_physical_targets):
+        elif not declared and index < len(report_physical_targets):
             physical_target = report_physical_targets[index]
             item["inferred_target_name"] = physical_target.get("table_name", "") or physical_target.get("table", "")
             item["inferred_target_description"] = physical_target.get("description", "")
@@ -589,14 +505,29 @@ def _map_report_field_dictionaries(facts: dict, report_field_dicts: list[dict]) 
 
 def _infer_sources_from_field_mappings(facts: dict) -> None:
     existing_sources = {
-        (item.get("storage", ""), item.get("table_or_path", ""))
+        (storage_identity(item.get("storage")), source_identity(item.get("table_or_path"))): item
         for item in facts.get("report_sources", [])
     }
+    inferred_columns = {key: set(selected_columns(source.get("fields")))
+                        for key, source in existing_sources.items()
+                        if source.get("source_kind") == "inferred_from_field_mapping"}
     for mapping in facts.get("report_field_mappings", []):
         for field in mapping.get("fields", []):
             source_table = field.get("source_table", "")
             source_storage = field.get("source_storage", "")
-            if not source_table or (source_storage, source_table) in existing_sources:
+            if not source_table:
+                continue
+            key = (storage_identity(source_storage), source_identity(source_table))
+            if key in existing_sources:
+                source = existing_sources[key]
+                # Aggregate mapped columns only for inferred sources; explicit matrices stay authoritative.
+                if source.get("source_kind") == "inferred_from_field_mapping":
+                    columns = source.setdefault("fields", [])
+                    seen = inferred_columns[key]
+                    for column in selected_columns(field.get("source_field")):
+                        if column not in seen:
+                            columns.append(column)
+                            seen.add(column)
                 continue
             facts["report_sources"].append(
                 {
@@ -605,7 +536,7 @@ def _infer_sources_from_field_mappings(facts: dict) -> None:
                     "table_names": split_table_names(source_table),
                     "description": field.get("source_desc", ""),
                     "range": "",
-                    "fields": [field.get("source_field", "")] if field.get("source_field") else [],
+                    "fields": selected_columns(field.get("source_field")),
                     "join_filter": field.get("calculation_logic", ""),
                     "category": field.get("source_category", ""),
                     "source_doc_index": mapping.get("source_doc_index", 1),
@@ -615,13 +546,14 @@ def _infer_sources_from_field_mappings(facts: dict) -> None:
                     "source_kind": "inferred_from_field_mapping",
                 }
             )
-            existing_sources.add((source_storage, source_table))
+            existing_sources[key] = facts["report_sources"][-1]
+            inferred_columns[key] = set(facts["report_sources"][-1]["fields"])
 
 
 def _detect_field_rule_conflicts(facts: dict) -> None:
     conflicts_by_field: dict[tuple[str, str], dict] = {}
     for mapping in facts.get("report_field_mappings", []):
-        target_key = normalized_table_key(
+        target_key = table_identity(
             mapping.get("inferred_physical_table", "")
             or mapping.get("inferred_target_name", "")
             or mapping.get("declared_table", "")
@@ -684,6 +616,13 @@ def build_structured_facts(
     report_field_dicts: list[dict] = []
 
     for summary in sheet_summaries:
+        if summary.section_role != "example":
+            for issue in summary.extraction_issues:
+                facts.setdefault("extraction_issues", []).append({**issue, **provenance_from_summary(summary)})
+        if summary.section_role in {"example", "ambiguous"}:
+            facts.setdefault("excluded_evidence", []).append({**provenance_from_summary(summary),
+                "reason": "example_only" if summary.section_role == "example" else "section_ownership_unresolved"})
+            continue
         headers, rows, preamble = read_csv_table(summary.csv_path)
         if not headers or not rows:
             continue
@@ -715,7 +654,7 @@ def build_structured_facts(
     for index, name in documents:
         counts = {key: sum(row.get('source_doc_index') == index for row in facts[key]) for key in tracked}
         recognized = {row.get('source_csv') for key in tracked for row in facts[key] if row.get('source_doc_index') == index}
-        unrecognized = [s.csv_path.name for s in sheet_summaries if s.source_doc_index == index and s.csv_path.name not in recognized]
+        unrecognized = [s.csv_path.name for s in sheet_summaries if s.source_doc_index == index and s.csv_path.name not in recognized and s.section_role not in {"example", "ambiguous"}]
         facts['extraction_coverage'].append({'source_doc_index': index, 'source_doc_name': name,
                                              'recognized_counts': counts, 'tables_without_tracked_facts': unrecognized,
                                              'zero_means': 'not_recognized_not_business_absent'})

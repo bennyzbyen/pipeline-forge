@@ -6,6 +6,7 @@ eval/exec or dynamically import user-provided functions.
 """
 
 from common_utils.all_modules import Dict, logger, pd
+from data_utils.declared_constraints import JOIN_VALIDATIONS, validate_frame
 
 
 def _require_columns(df: pd.DataFrame, columns, context: str) -> None:
@@ -82,12 +83,15 @@ def _expression(df: pd.DataFrame, expression: dict, time_range: dict, params: di
         elif op == "multiply":
             result = result * operand
         elif op == "divide":
-            denominator = operand.replace(0, pd.NA) if isinstance(operand, pd.Series) else (pd.NA if operand == 0 else operand)
+            denominator = operand.replace(0, pd.NA) if isinstance(operand, pd.Series) else (pd.NA if pd.isna(operand) or operand == 0 else operand)
+            if not isinstance(result, pd.Series) and pd.isna(result):
+                result = pd.NA
             result = result / denominator
         else:
             raise ValueError(f"unsupported expression op: {op}")
     if op == "divide" and expression.get("fill_value") is not None:
-        result = result.fillna(expression.get("fill_value"))
+        fill_value = expression["fill_value"]
+        result = result.fillna(fill_value) if isinstance(result, pd.Series) else (fill_value if pd.isna(result) else result)
     return result
 
 
@@ -154,6 +158,10 @@ def _run_step(frames: Dict[str, pd.DataFrame], step: dict, time_range: dict, par
             "how": step.get("how") or "left",
             "suffixes": tuple(step.get("suffixes") or ["_x", "_y"]),
         }
+        if "validate" in step:
+            if not isinstance(step["validate"], str) or step["validate"] not in JOIN_VALIDATIONS:
+                raise ValueError("join has an unsupported cardinality declaration")
+            kwargs["validate"] = step["validate"]
         if step.get("on"):
             kwargs["on"] = list(step["on"])
             _require_columns(left, kwargs["on"], "join left")
@@ -186,7 +194,7 @@ def _run_step(frames: Dict[str, pd.DataFrame], step: dict, time_range: dict, par
         df = frames[step["input"]]
         subset = list(step.get("subset") or [])
         _require_columns(df, subset, "deduplicate")
-        return df.drop_duplicates(subset=subset, keep=step.get("keep") or "first").reset_index(drop=True)
+        return df.drop_duplicates(subset=subset, keep=step.get("keep", "first")).reset_index(drop=True)
     raise ValueError(f"unsupported execution-contract step: {op}")
 
 
@@ -197,6 +205,9 @@ def execute_contract(
     execution_contract: dict,
 ) -> Dict[str, pd.DataFrame]:
     frames: Dict[str, pd.DataFrame] = {name: df.copy() for name, df in source_data.items()}
+    for source_name, source in (execution_contract.get("sources") or {}).items():
+        if source_name in frames:
+            validate_frame(frames[source_name], source, f"sources.{source_name}", time_range, params)
     for step in execution_contract.get("steps") or []:
         step_id = step["id"]
         logger.info("contract_step_start id={} op={}", step_id, step.get("op"))
@@ -209,5 +220,6 @@ def execute_contract(
         columns = list(output.get("columns") or [])
         _require_columns(df, columns, f"output {output_name}")
         outputs[output_name] = df.loc[:, columns].copy()
+        validate_frame(outputs[output_name], output, f"outputs.{output_name}", time_range, params)
         logger.info("contract_output_ready output={} rows={} columns={}", output_name, len(df), len(columns))
     return outputs

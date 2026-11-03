@@ -18,6 +18,16 @@ from cot_config.plugin_config import (
 )
 
 
+_ROW_TRANSLATION = str.maketrans({
+    "\n": "",
+    "\r": "",
+    "\t": "",
+    "'": "",
+    '"': "",
+    "\x1D": "",
+})
+
+
 def get_mysql_url(mysql_table):
     if mysql_table in store_report_generator_table_list:
         return mysql_store_report_generator_url, mysql_store_report_generator_params
@@ -34,21 +44,7 @@ class ETLSource:
 
     @staticmethod
     def process_row(row):
-        trans_table = str.maketrans({
-            "\n": "",
-            "\r": "",
-            "\t": "",
-            "'": "",
-            '"': "",
-            "\x1D": "",
-        })
-        cleaned = []
-        for value in row:
-            if isinstance(value, str):
-                cleaned.append(value.translate(trans_table))
-            else:
-                cleaned.append(value)
-        return cleaned
+        return [value.translate(_ROW_TRANSLATION) if isinstance(value, str) else value for value in row]
 
     def fetch_sync_mode(self, mysql_table, last_update_time_column, last_timestamp):
         query_changed = f"SELECT count(1) FROM {mysql_table} WHERE `{last_update_time_column}` > '{last_timestamp}'"

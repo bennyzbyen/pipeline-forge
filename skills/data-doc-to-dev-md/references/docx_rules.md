@@ -11,9 +11,13 @@
 
 - Keep original field names, table names, Chinese labels, and formulas.
 - Export embedded Excel sheets and Word tables to CSV with UTF-8 BOM so Excel on Windows can open Chinese text.
+- With a positive export row limit, inspect one additional non-empty row to detect truncation. Preserve row-selection semantics and report `TABLE_EXTRACTION_TRUNCATED` in evidence, facts and blocking questions. Do not trust Excel dimensions as proof that no rows remain. Incomplete field/source evidence blocks its dependent code units; unrelated units retain their own readiness.
 - Do not infer table grain, rowkey, delete conditions, or schedule unless explicitly present.
 - Any missing business rule belongs in `questions.md`.
 - In multi-document projects, keep source-document provenance on extracted facts so PRD and waterline evidence can be audited separately.
+- Share explicit source/target/example section roles across paragraphs, Word tables and embedded workbooks. Keep roles local to the document and heading hierarchy. Source inventories do not become output targets, and only actual ClickHouse target rows enter `report_clickhouse_targets`.
+- Preserve example tables in extracted evidence, record their exclusion under `excluded_evidence`, and exclude their rows and extraction errors from formal business facts. A deeper heading inside an example does not promote it into a requirement. A workbook reused in conflicting roles stays unassigned with `TABLE_SECTION_AMBIGUOUS`.
+- Store explicit table roles as `source_section_role` provenance. Unsectioned legacy layouts retain their header-based route. Prepared header lookups retain exact-key precedence, first matching normalized/contains keys, field order and existing empty-value handling; they cache column keys only for the current parsing call.
 - When PRD and waterline facts overlap, prefer waterline/DataEngine facts for physical tables, field dictionaries, target storage, and schedules; use PRD facts for business goals, KPI descriptions, abnormal rules, UI aggregation, and feedback behavior. Record material conflicts in `questions.md`.
 
 ## Common DataEngine Document Signals
@@ -74,7 +78,12 @@ For DataEngine report docs, detect these embedded Excel shapes:
 - Target field logic: headers like `Key`/`字段 key`/`字段key`, `字段名称`/`字段名`, `数据源位置`, `数据表`, `数据源描述`/`来源库表`, `数据源对应的字段`/`来源字段`, `计算逻辑`.
 - Word正文 field tables may contain an explanatory first row before the actual header row; the extractor should detect the real header row and skip the preamble.
 - HBase physical target matrices may have headers like `位置`, `数据表`, `数据表名`; treat `Data Hub Hbase` plus a table such as `l1_cot.store_yield_grade_p` as a physical target, not a ClickHouse target.
-- QAS-style Target Management may name logical targets as `clickhouse_qas_*` while physical tables are `abnormal_monitor.qas_*`; match them by stripping the `clickhouse_` prefix and comparing the table suffix.
+- Preserve database/schema qualifiers when binding dictionaries and grouping conflicts. An explicit `database.table` must match that exact physical identity; never fall back to a same-named table in another database.
+- QAS-style logical targets may use `clickhouse_qas_*` while physical tables use `abnormal_monitor.qas_*`. Apply the logical prefix convention only when matching logical aliases, retain real physical prefixes, and confirm short-name bindings only when the physical candidate is unique. Multiple candidates remain unresolved.
+- Paragraph source/target context is local to each document and section. Source sections, examples, code blocks, and version numbers are not automatic output-target evidence; retain them in extracted material.
+- Prefer explicit physical source locations over descriptions, and exact physical identities over logical aliases. Validate simple identifiers, including paired SQL quote wrappers, against declared sources and selected columns. A short name must have one physical candidate. Preserve the existing table spelling policy and column case; complex expressions and missing inventories remain review limits, not database-existence claims.
+- Normalize known storage names and simple comma/semicolon/whitespace column lists consistently across extraction and contracts. Keep the original evidence and column order, and retain authoritative source inventories when inferring missing sources. Keep formulas intact.
+- Treat FS/Gateway URIs and file paths separately from database identifiers. Preserve path case and internal spaces, require URI content after the scheme, and do not infer path aliases from basenames. Source-reference indexes are local to one validation; rebuild after revisions.
 
 ## Recognized PRD Rule Matrices
 

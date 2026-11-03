@@ -196,6 +196,7 @@ from pathlib import Path
 
 from common_utils.all_modules import Dict, logger, pd
 from params_configs.execution_contract import execution_contract
+from data_utils.declared_constraints import parse_type, parsed_value, validate_frame
 
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$")
@@ -257,6 +258,14 @@ class DataStorage:
     def _prepare(self, output_name: str, df: pd.DataFrame, write: dict) -> pd.DataFrame:
         columns = list(write.get("columns") or [])
         column_types = list(write.get("column_types") or [])
+        if execution_contract.get("version", 1) == 1:
+            # Compatibility: v1 permits omitted write metadata; retain ordered output columns.
+            if not columns:
+                columns = list((execution_contract.get("outputs") or {}).get(output_name, {}).get("columns") or [])
+            if not column_types:
+                column_types = [""] * len(columns)
+        if not columns:
+            raise ValueError(f"output {output_name} requires ordered target columns")
         missing = [column for column in columns if column not in df.columns]
         if missing:
             raise ValueError(f"output {output_name} is missing target columns: {missing}")
@@ -266,12 +275,34 @@ class DataStorage:
         for column, target_type in zip(columns, column_types):
             normalized_type = str(target_type or "").lower().replace("nullable(", "").rstrip(")")
             if normalized_type.startswith(("int", "uint")):
-                numeric = pd.to_numeric(prepared[column], errors="coerce")
-                invalid = prepared[column].notna() & numeric.isna()
-                fractional = numeric.notna() & ((numeric % 1) != 0)
-                if invalid.any() or fractional.any():
-                    raise ValueError(f"{output_name}.{column} requires integer-compatible values")
-                prepared[column] = numeric.map(lambda value: None if pd.isna(value) else str(int(value)))
+                integer_type = str(target_type).strip()
+                if integer_type.lower().startswith("nullable(") and integer_type.endswith(")"):
+                    integer_type = integer_type[9:-1]
+                type_info = parse_type(integer_type)
+                def integer_text(value):
+                    try:
+                        if pd.isna(value):
+                            return None
+                        if pd.api.types.is_bool(value):
+                            value = int(value)
+                        return str(int(parsed_value(value, type_info)))
+                    except (ValueError, TypeError, OverflowError):
+                        raise ValueError(f"{output_name}.{column} requires an in-range integer") from None
+                series = prepared[column]
+                if series.dtype.kind in {"i", "u"}:
+                    present = series.dropna() if series.hasnans else series
+                    if not present.empty:
+                        try:
+                            parsed_value(int(present.min()), type_info)
+                            parsed_value(int(present.max()), type_info)
+                        except (ValueError, TypeError, OverflowError):
+                            raise ValueError(f"{output_name}.{column} requires an in-range integer") from None
+                    if series.hasnans:
+                        prepared[column] = pd.Series([None if pd.isna(value) else str(int(value)) for value in series.array], index=series.index, dtype=object)
+                    else:
+                        prepared[column] = series.astype(str)
+                else:
+                    prepared[column] = series.map(integer_text)
             elif normalized_type.startswith("datetime"):
                 parsed = pd.to_datetime(prepared[column], errors="coerce")
                 invalid = prepared[column].notna() & parsed.isna()
@@ -282,7 +313,7 @@ class DataStorage:
 
     def _insert_file(self, client, table: str, df: pd.DataFrame, write: dict):
         wire = write.get("staging_wire_format") or {}
-        columns = list(write.get("columns") or [])
+        columns = list(df.columns)
         insert_file_fn = self.params.get("clickhouse_insert_file")
         if insert_file_fn is None:
             from clickhouse_connect.driver.tools import insert_file as insert_file_fn
@@ -354,6 +385,11 @@ class DataStorage:
 
     def run(self):
         logger.info("component_start component=contract_report layer=data_storage")
+        for name, declaration in (execution_contract.get("outputs") or {}).items():
+            if "column_constraints" in declaration or "unique_by" in declaration:
+                if self.outputs.get(name) is None:
+                    raise ValueError(f"output {name} is unavailable for constraint validation")
+                validate_frame(self.outputs[name], declaration, f"outputs.{name}", self.time_range, self.params)
         client = self._client()
         writes = execution_contract.get("writes") or {}
         return [self._write_one(client, name, self.outputs[name], writes[name]) for name in writes]

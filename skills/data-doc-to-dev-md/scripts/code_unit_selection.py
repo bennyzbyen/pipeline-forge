@@ -6,14 +6,14 @@ from __future__ import annotations
 import copy
 from typing import Any, Mapping
 
-from code_unit_contract import clean, slug, validate_code_unit_contract
+from code_unit_contract import clean, slug, validate_code_unit_contract, refresh_code_unit_readiness
 
 
 def select_code_unit(facts: Mapping[str, Any], code_unit_id: str = "", expected_route: str = "") -> dict[str, Any] | None:
     if not any(key in facts for key in ("project_contract", "code_unit_plan", "code_units")):
         return None
     validation = validate_code_unit_contract(facts)
-    if validation["status"] != "passed":
+    if set(validation["errors"]) - set(validation.get("readiness_errors", [])):
         raise ValueError("invalid code-unit contract: " + "; ".join(validation["errors"]))
     plan = facts["code_unit_plan"]
     if plan.get("status") != "confirmed":
@@ -34,6 +34,7 @@ def select_code_unit(facts: Mapping[str, Any], code_unit_id: str = "", expected_
         raise ValueError(
             f"code unit {unit.get('code_unit_id')} routes to {unit.get('codegen_route')}, not {expected_route}"
         )
+    refresh_code_unit_readiness(facts, unit)
     readiness = unit.get("readiness") if isinstance(unit.get("readiness"), Mapping) else {}
     if readiness.get("ready_for_codegen") is not True or readiness.get("blockers"):
         raise ValueError(

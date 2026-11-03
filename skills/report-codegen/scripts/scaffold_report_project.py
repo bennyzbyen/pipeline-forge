@@ -97,6 +97,7 @@ def copy_minimal_project(target: Path) -> None:
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+    shutil.copy2(Path(__file__).with_name("declared_constraints.py"), target / "data_utils" / "declared_constraints.py")
 
 
 def split_fields(fields: List[str]) -> List[str]:

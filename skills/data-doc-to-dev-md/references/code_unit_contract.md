@@ -61,6 +61,12 @@ Every entry in `structured_facts.json.code_units[]` is independently selectable 
 - one bounded `execution_contract` with sources, steps, outputs, writes, state/watermark, retry, rerun, empty-output behavior, and failure behavior;
 - unit-specific tests, readiness, and blockers.
 
+Current requirements, not a cached ready flag, govern unit selection. Validation reports `unit_readiness` for each unit and rejects a stored ready flag when its current requirements fail. Independent valid units remain selectable when the only failures are stale readiness in other units.
+
+`SOURCE_EVIDENCE_INCOMPLETE` blocks units that reference a source with extraction errors. Incomplete field dictionaries remain unconfirmed. Preserve independent unit readiness, and re-extract incomplete evidence before resolving its diagnostic. A batch validation shares a call-local reference index; a later revision builds a new one.
+
+`derived_blockers` optionally records blockers generated from execution completeness and current field/source evidence. Revisions recompute those blockers and retain manual or legacy unclassified blockers. Reuse the original mapping confirmation when boundaries have not changed; preserve the confirmation audit and report downstream revalidation separately.
+
 One waterline may appear in multiple units only when each binding declares a distinct `execution_slice`. Multiple waterlines may share one unit when their hard state, write, deployment, failure, and route boundaries are compatible. A user override may merge different algorithms into a branching implementation, but cannot override incompatible state, write transaction, deployment, failure-isolation, or codegen-route boundaries.
 
 Generated code directories receive `CODE_UNIT_CONTRACT.json`. It is a read-only snapshot for audit and tests, not a new source of truth.

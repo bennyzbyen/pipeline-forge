@@ -5,7 +5,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from code_unit_contract import validate_code_unit_contract, derive_waterlines, evidence_fingerprint, _contract_complete, _combined_execution_contract
+from technical_contract import validate_contract
+from code_unit_contract import validate_code_unit_contract, derive_waterlines, evidence_fingerprint, refresh_code_unit_readiness, _combined_execution_contract
 
 
 def fingerprint(value):
@@ -62,9 +63,7 @@ def revise(facts, change, *, require_user_confirmation=False):
         unit['execution_contract'] = copy.deepcopy(contract)
         for field in ('state', 'retry', 'rerun', 'empty_output_semantics', 'failure_semantics'):
             unit[field] = copy.deepcopy(contract.get(field) or {})
-        blockers = list(dict.fromkeys(unit.get('blockers', []) + _contract_complete(contract, unit['codegen_route'])))
-        unit['blockers'] = blockers
-        unit['readiness'] = {'ready_for_codegen': not blockers, 'blockers': blockers}
+        refresh_code_unit_readiness(result, unit)
         affected.append(ident)
     # Recompute derived evidence without invoking confirm() or rewriting its audit.
     current_fingerprint = evidence_fingerprint(derive_waterlines(result))
@@ -76,7 +75,24 @@ def revise(facts, change, *, require_user_confirmation=False):
     ready = all(u['readiness']['ready_for_codegen'] for u in units.values())
     result['project_contract']['overall_readiness'] = 'ready_for_codegen' if ready else 'partially_blocked'
     if isinstance(result.get('codegen_contract'), dict):
-        result['codegen_contract']['ready_for_codegen'] = ready
+        codegen = result['codegen_contract']
+        if 'field_contracts' in codegen or 'source_contracts' in codegen:
+            validation = validate_contract(codegen)
+            codegen['validation_result'] = validation
+            active = {(issue['code'], issue['path']): issue for issue in validation['errors'] + validation['warnings']}
+            for question in codegen.get('open_questions', []):
+                code = question.get('validation_code', '')
+                if not code.startswith(('FIELD_SOURCE_', 'SOURCE_LOCATION_CONFLICT', 'SOURCE_EVIDENCE_INCOMPLETE')):
+                    continue
+                old_blocker = f"[{question['id']}] {question['text']}"
+                current_issue = active.get((code, question.get('path')))
+                question['status'] = 'open' if current_issue else 'resolved'
+                if current_issue:
+                    question['text'] = current_issue['message']
+                codegen['blockers'] = [f"[{question['id']}] {question['text']}" if item == old_blocker and current_issue else item
+                                       for item in codegen.get('blockers', []) if item != old_blocker or current_issue]
+            ready = ready and not validation['errors']
+        codegen['ready_for_codegen'] = ready and not codegen.get('blockers')
     impacted = set(affected)
     owner = {w: u['code_unit_id'] for u in units.values() for w in u['covered_waterlines']}
     while True:

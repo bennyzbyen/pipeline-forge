@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 from code_unit_evidence import enrich_schedule_waterlines
+from technical_contract import unit_source_reference_errors, build_source_reference_index
 
 
 PLAN_VERSION = 1
@@ -305,12 +306,46 @@ def _contract_complete(contract: Mapping[str, Any], route: str) -> list[str]:
     return blockers
 
 
+def evaluate_code_unit_readiness(facts: Mapping[str, Any], unit: Mapping[str, Any], *,
+                                 reference_index: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Recompute generated blockers while retaining unclassified/manual constraints."""
+    previous = set(unit.get("derived_blockers") or [])
+    stored = unit.get("readiness") if isinstance(unit.get("readiness"), Mapping) else {}
+    retained = unique(item for item in [*_as_list(unit.get("blockers")), *_as_list(stored.get("blockers"))]
+                      if item not in previous)
+    contract = unit.get("execution_contract") if isinstance(unit.get("execution_contract"), Mapping) else {}
+    generated = _contract_complete(contract, clean(unit.get("codegen_route"))) if unit.get("status") == "confirmed" else []
+    names = list(unit.get("covered_tables") or []) + list(contract.get("outputs") or {})
+    writes = contract.get("writes") or {}
+    if isinstance(writes, Mapping):
+        names.extend(clean(value.get("table") or value.get("target"))
+                     for value in writes.values() if isinstance(value, Mapping))
+    codegen = facts.get("codegen_contract") if isinstance(facts.get("codegen_contract"), Mapping) else {}
+    generated += [f"[{item['code']}] {item['message']}" for item in unit_source_reference_errors(codegen, names, reference_index=reference_index)]
+    derived = unique(item for item in generated if item not in retained)
+    blockers = unique([*retained, *derived])
+    return {"ready_for_codegen": unit.get("status") == "confirmed" and not blockers,
+            "blockers": blockers, "derived_blockers": derived}
+
+
+def refresh_code_unit_readiness(facts: Mapping[str, Any], unit: dict[str, Any]) -> dict[str, Any]:
+    current = evaluate_code_unit_readiness(facts, unit)
+    unit["readiness"] = {key: current[key] for key in ("ready_for_codegen", "blockers")}
+    unit["blockers"] = current["blockers"]
+    if current["derived_blockers"]:
+        unit["derived_blockers"] = current["derived_blockers"]
+    else:
+        unit.pop("derived_blockers", None)
+    return unit
+
+
 def _make_unit(
     unit_id: str,
     waterlines: list[dict[str, Any]],
     *,
     status: str,
     mapping: Mapping[str, Any] | None = None,
+    facts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     mapping = mapping or {}
     route_values = unique(clean(item.get("codegen_route")) for item in waterlines if clean(item.get("codegen_route")))
@@ -329,7 +364,6 @@ def _make_unit(
     blockers = unique(
         [clean(item) for item in _as_list(mapping.get("blockers")) if clean(item)]
         + inherited_blockers
-        + (_contract_complete(contract, route) if status == "confirmed" else [])
     )
     profiles = [
         {"waterline_id": item["waterline_id"], "profile": item["parameter_profile"]}
@@ -361,8 +395,7 @@ def _make_unit(
         [copy.deepcopy(item) for item in _as_list(mapping.get("tests"))]
         + [copy.deepcopy(test) for waterline in waterlines for test in waterline.get("tests", [])]
     )
-    ready = status == "confirmed" and not blockers
-    return {
+    unit = {
         "code_unit_id": slug(unit_id),
         "status": status,
         "codegen_route": route,
@@ -396,11 +429,12 @@ def _make_unit(
         "failure_semantics": copy.deepcopy(contract.get("failure_semantics") or {}),
         "tests": tests,
         "readiness": {
-            "ready_for_codegen": ready,
+            "ready_for_codegen": False,
             "blockers": blockers,
         },
         "blockers": blockers,
     }
+    return refresh_code_unit_readiness(facts or {}, unit)
 
 
 def _proposal_groups(waterlines: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -438,7 +472,7 @@ def _shared_project_facts(facts: Mapping[str, Any]) -> dict[str, Any]:
 def build_code_unit_proposal(facts: Mapping[str, Any]) -> dict[str, Any]:
     waterlines = derive_waterlines(facts)
     units = [
-        _make_unit(f"code_unit_{index + 1:03d}", group, status="proposed")
+        _make_unit(f"code_unit_{index + 1:03d}", group, status="proposed", facts=facts)
         for index, group in enumerate(_proposal_groups(waterlines))
     ]
     confidence_values = {item.get("boundary_confidence") for item in waterlines}
@@ -621,7 +655,7 @@ def confirm_code_unit_plan(
     for index, raw in enumerate(mapping["units"]):
         unit_id = slug(raw.get("code_unit_id"), f"code_unit_{index + 1:03d}")
         selected = [by_id[slug(item)] for item in _as_list(raw.get("covered_waterlines"))]
-        confirmed_units.append(_make_unit(unit_id, selected, status="confirmed", mapping=raw))
+        confirmed_units.append(_make_unit(unit_id, selected, status="confirmed", mapping=raw, facts=facts))
     fingerprint = evidence_fingerprint(waterlines)
     when = timestamp or datetime.now(timezone.utc).isoformat()
     previous_plan = facts.get("code_unit_plan") if isinstance(facts.get("code_unit_plan"), Mapping) else {}
@@ -716,6 +750,8 @@ def confirm_code_unit_plan(
 
 
 def validate_code_unit_contract(facts: Mapping[str, Any]) -> dict[str, Any]:
+    readiness_errors: list[str] = []
+    current_units: dict[str, Any] = {}
     errors: list[str] = []
     warnings: list[str] = []
     plan = facts.get("code_unit_plan")
@@ -779,6 +815,8 @@ def validate_code_unit_contract(facts: Mapping[str, Any]) -> dict[str, Any]:
         for item in units
     ):
         errors.append("unconfirmed code units cannot be ready_for_codegen")
+    codegen = facts.get("codegen_contract") if isinstance(facts.get("codegen_contract"), Mapping) else {}
+    reference_index = build_source_reference_index(codegen)
     for index, item in enumerate(units):
         if not isinstance(item, Mapping):
             errors.append(f"code_units[{index}] must be an object")
@@ -788,13 +826,23 @@ def validate_code_unit_contract(facts: Mapping[str, Any]) -> dict[str, Any]:
         if status == "confirmed" and not clean(item.get("codegen_route")):
             errors.append(f"code_units[{index}].codegen_route is missing")
         readiness = item.get("readiness") if isinstance(item.get("readiness"), Mapping) else {}
+        current = evaluate_code_unit_readiness(facts, item, reference_index=reference_index)
+        current_units[clean(item.get("code_unit_id"))] = {
+            "ready_for_codegen": current["ready_for_codegen"], "blockers": current["blockers"],
+            "stored_ready_for_codegen": readiness.get("ready_for_codegen") is True}
+        if readiness.get("ready_for_codegen") and not current["ready_for_codegen"]:
+            readiness_errors.append(f"code_units[{index}] is marked ready but current requirements block it: "
+                                    + "; ".join(current["blockers"]))
         if readiness.get("ready_for_codegen") and readiness.get("blockers"):
             errors.append(f"code_units[{index}] is ready while blockers remain")
         if status == "confirmed" and not readiness.get("ready_for_codegen"):
             warnings.append(f"{item.get('code_unit_id')} is confirmed but not ready for codegen")
+    errors.extend(readiness_errors)
     return {
         "status": "failed" if errors else "passed",
         "legacy": False,
+        "readiness_errors": unique(readiness_errors),
+        "unit_readiness": current_units,
         "error_count": len(unique(errors)),
         "warning_count": len(unique(warnings)),
         "errors": unique(errors),

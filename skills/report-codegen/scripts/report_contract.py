@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import re
+
+from declared_constraints import JOIN_VALIDATIONS, validate_declaration
 from typing import Any, Dict, List, Mapping, Sequence, Set
 
 
@@ -224,6 +226,8 @@ def validate_step(
         add_issue(errors, "unsupported_step", f"{path}.op", f"unsupported step op: {op!r}")
         return step_id
 
+    if op in {"filter", "rename", "derive", "aggregate", "deduplicate"} and not clean_text(step.get("input")):
+        add_issue(errors, "missing_step_input", f"{path}.input", f"{op} requires input; source is an alias only for select/project")
     if op in {"select", "filter", "rename", "derive", "aggregate", "deduplicate", "project"}:
         input_name = clean_text(step.get("input") or step.get("source"))
         if input_name not in available:
@@ -275,6 +279,9 @@ def validate_step(
             add_issue(errors, "invalid_join_keys", path, "join needs on, or equal-length left_on/right_on")
         if clean_text(step.get("how") or "left") not in {"left", "right", "inner", "outer"}:
             add_issue(errors, "invalid_join_type", path, "join how must be left/right/inner/outer")
+    if op == "join" and "validate" in step:
+        if not isinstance(step["validate"], str) or step["validate"] not in JOIN_VALIDATIONS:
+            add_issue(errors, "invalid_join_validation", f"{path}.validate", "declare one_to_one, one_to_many, many_to_one or many_to_many")
     if op == "aggregate":
         aggregations = step.get("aggregations")
         if not isinstance(aggregations, Mapping) or not aggregations:
@@ -298,7 +305,132 @@ def validate_step(
                 add_issue(errors, "unknown_union_input", path, f"union input is not available yet: {input_name!r}")
     if op == "deduplicate" and not string_list(step.get("subset")):
         add_issue(errors, "missing_deduplicate_subset", path, "deduplicate requires subset")
+    if op == "deduplicate" and "keep" in step:
+        keep = step["keep"]
+        if keep is not False and (not isinstance(keep, str) or keep not in {"first", "last"}):
+            add_issue(errors, "invalid_deduplicate_keep", f"{path}.keep", "keep must be first, last or false")
     return step_id
+
+
+class _ColumnSchema:
+    __slots__ = ("ordered", "names")
+
+    def __init__(self, columns):
+        self.ordered = tuple(columns)
+        self.names = frozenset(columns)
+
+
+def _checked_schema(columns, path, errors):
+    names = set()
+    valid = True
+    for index, column in enumerate(columns):
+        if not isinstance(column, str) or not column.strip():
+            add_issue(errors, "invalid_column_name", f"{path}[{index}]", "column names must be non-empty strings")
+            valid = False
+        elif column in names:
+            add_issue(errors, "duplicate_columns", f"{path}[{index}]", f"column is ambiguous because it occurs more than once: {column!r}")
+            valid = False
+        else:
+            names.add(column)
+    return _ColumnSchema(columns) if valid else None
+
+
+def _require_column_names(names, references, errors):
+    for column, path in references:
+        if not isinstance(column, str) or column not in names:
+            add_issue(errors, "unknown_input_column", path, f"column is absent from the declared input schema: {column!r}")
+
+
+def _expression_references(expression, path):
+    references = []
+    op = expression.get("op")
+    if op == "copy":
+        references.append((expression.get("column"), f"{path}.column"))
+    elif op == "coalesce":
+        references.extend((column, f"{path}.columns[{index}]") for index, column in enumerate(expression.get("columns") or []))
+    if op in {"add", "subtract", "multiply", "divide", "concat"}:
+        for index, operand in enumerate(expression.get("operands") or []):
+            if isinstance(operand, Mapping) and "column" in operand:
+                references.append((operand["column"], f"{path}.operands[{index}].column"))
+    return references
+
+
+def _step_column_schema(step, index, schemas, errors):
+    """Mirror runtime column changes without running data or copying filter schemas."""
+    path = f"execution_contract.steps[{index}]"
+    op = step.get("op")
+    initial_errors = len(errors)
+    result = None
+    if op == "union":
+        inputs = [schemas.get(name) for name in step.get("inputs") or []]
+        if any(schema is None for schema in inputs):
+            return None
+        columns = list(dict.fromkeys(column for schema in inputs for column in schema.ordered))
+        return _ColumnSchema(columns)
+    if op == "join":
+        left, right = schemas.get(step.get("left")), schemas.get(step.get("right"))
+        if left is None or right is None:
+            return None
+        on = step.get("on") or []
+        left_keys, right_keys = (on, on) if on else (step.get("left_on") or [], step.get("right_on") or [])
+        _require_column_names(left.names, [(column, f"{path}.{'on' if on else 'left_on'}[{position}]")
+                                         for position, column in enumerate(left_keys)], errors)
+        _require_column_names(right.names, [(column, f"{path}.{'on' if on else 'right_on'}[{position}]")
+                                          for position, column in enumerate(right_keys)], errors)
+        if len(errors) != initial_errors:
+            return None
+        suffixes = step.get("suffixes") or ["_x", "_y"]
+        if (not isinstance(suffixes, (list, tuple)) or len(suffixes) != 2
+                or any(value is not None and not isinstance(value, str) for value in suffixes)):
+            add_issue(errors, "invalid_join_suffixes", f"{path}.suffixes", "join suffixes must contain two strings or null values")
+            return None
+        common_keys = {left_key for left_key, right_key in zip(left_keys, right_keys) if left_key == right_key}
+        right_columns = [column for column in right.ordered if column not in common_keys]
+        overlap = left.names.intersection(right_columns)
+        if overlap and not any(suffixes):
+            add_issue(errors, "invalid_join_suffixes", f"{path}.suffixes", "overlapping non-key columns require a suffix on at least one side")
+            return None
+        columns = [column + suffixes[0] if column in overlap and suffixes[0] else column for column in left.ordered]
+        columns += [column + suffixes[1] if column in overlap and suffixes[1] else column for column in right_columns]
+        result = _checked_schema(columns, f"{path}.suffixes", errors)
+    else:
+        source = schemas.get(step.get("input") or step.get("source"))
+        if source is None:
+            return None
+        if op in {"select", "project"}:
+            columns = step.get("columns") or []
+            _require_column_names(source.names, [(column, f"{path}.columns[{position}]") for position, column in enumerate(columns)], errors)
+            result = _checked_schema(columns, f"{path}.columns", errors)
+        elif op == "filter":
+            _require_column_names(source.names, [(condition.get("column"), f"{path}.conditions[{position}].column")
+                                                for position, condition in enumerate(step.get("conditions") or [])], errors)
+            result = source
+        elif op == "deduplicate":
+            _require_column_names(source.names, [(column, f"{path}.subset[{position}]")
+                                                for position, column in enumerate(step.get("subset") or [])], errors)
+            result = source
+        elif op == "rename":
+            mapping = step.get("columns") or {}
+            _require_column_names(source.names, [(column, f"{path}.columns.{column}") for column in mapping], errors)
+            result = _checked_schema([mapping.get(column, column) for column in source.ordered], f"{path}.columns", errors)
+        elif op == "derive":
+            columns, names = list(source.ordered), set(source.names)
+            for column, expression in (step.get("columns") or {}).items():
+                _require_column_names(names, _expression_references(expression, f"{path}.columns.{column}"), errors)
+                if column not in names:
+                    columns.append(column)
+                    names.add(column)
+            result = _checked_schema(columns, f"{path}.columns", errors)
+        elif op == "aggregate":
+            group_by = step.get("group_by") or []
+            _require_column_names(source.names, [(column, f"{path}.group_by[{position}]")
+                                                for position, column in enumerate(group_by)], errors)
+            aggregations = step.get("aggregations") or {}
+            for column, aggregation in aggregations.items():
+                if aggregation.get("column"):
+                    _require_column_names(source.names, [(aggregation["column"], f"{path}.aggregations.{column}.column")], errors)
+            result = _checked_schema([*group_by, *aggregations], f"{path}.columns", errors)
+    return result if len(errors) == initial_errors else None
 
 
 def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -332,6 +464,7 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
         add_issue(errors, "missing_contract_sources", "execution_contract.sources", "at least one source is required")
         sources = {}
     available: Set[str] = set()
+    column_schemas = {}
     for source_name, source in sources.items():
         path = f"execution_contract.sources.{source_name}"
         name = clean_text(source_name)
@@ -348,6 +481,11 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
             add_issue(errors, "missing_source_location", f"{path}.location", "non-injected source needs location")
         if not string_list(source.get("columns")):
             add_issue(errors, "missing_source_columns", f"{path}.columns", "source columns are required")
+            column_schemas[name] = None
+        else:
+            column_schemas[name] = _checked_schema(source["columns"], f"{path}.columns", errors)
+        schema = column_schemas.get(name)
+        validate_declaration(source, schema.names if schema is not None else None, path, errors)
         available.add(name)
 
     steps = contract.get("steps")
@@ -358,8 +496,10 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
         if not isinstance(step, Mapping):
             add_issue(errors, "invalid_step", f"execution_contract.steps[{index}]", "step must be an object")
             continue
+        initial_errors = len(errors)
         step_id = validate_step(step, index, available, errors)
         if step_id:
+            column_schemas[step_id] = _step_column_schema(step, index, column_schemas, errors) if len(errors) == initial_errors else None
             available.add(step_id)
 
     expected_outputs = {
@@ -387,6 +527,12 @@ def validate_execution_contract(contract: Any, plan_outputs: Sequence[Mapping[st
         if input_name not in available:
             add_issue(errors, "unknown_output_input", f"{path}.input", f"output input is not available: {input_name!r}")
         columns = string_list(output.get("columns"))
+        schema = column_schemas.get(input_name)
+        if schema is not None and columns:
+            _checked_schema(output["columns"], f"{path}.columns", errors)
+            _require_column_names(schema.names, [(column, f"{path}.columns[{position}]")
+                                                for position, column in enumerate(output.get("columns") or [])], errors)
+        validate_declaration(output, set(columns) if columns else None, path, errors)
         expected_columns = expected_outputs.get(clean_text(output_name), [])
         if columns != expected_columns:
             add_issue(

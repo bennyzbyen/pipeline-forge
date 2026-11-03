@@ -60,6 +60,12 @@ def write_extracted_markdown(
                 f"rows `{summary.row_count}`, headers `{headers}`"
             )
 
+    issues = [(summary, issue) for summary in sheet_summaries for issue in summary.extraction_issues]
+    if issues:
+        lines.extend(["", "## Extraction Issues", ""])
+        lines.extend(f"- {issue['severity']} `{issue['code']}` in `{summary.csv_path.name}`: {issue['message']}"
+                     for summary, issue in issues)
+
     lines.extend(["", "## Paragraphs", ""])
     for idx, paragraph in enumerate(paragraphs, start=1):
         prefix = f"{idx:04d}"

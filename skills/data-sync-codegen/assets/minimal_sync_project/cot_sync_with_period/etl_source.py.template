@@ -18,6 +18,16 @@ from cot_config.plugin_config import (
 )
 
 
+_ROW_TRANSLATION = str.maketrans({
+    "\n": "",
+    "\r": "",
+    "\t": "",
+    "'": "",
+    '"': "",
+    "\x1D": "",
+})
+
+
 def get_mysql_url(mysql_table):
     if mysql_table in store_report_generator_table_list:
         return mysql_store_report_generator_url, mysql_store_report_generator_params
@@ -31,21 +41,7 @@ def create_mysql_engine(mysql_url):
 
 
 def process_row(row):
-    trans_table = str.maketrans({
-        "\n": "",
-        "\r": "",
-        "\t": "",
-        "'": "",
-        '"': "",
-        "\x1D": "",
-    })
-    cleaned = []
-    for value in row:
-        if isinstance(value, str):
-            cleaned.append(value.translate(trans_table))
-        else:
-            cleaned.append(value)
-    return cleaned
+    return [value.translate(_ROW_TRANSLATION) if isinstance(value, str) else value for value in row]
 
 
 def get_sync_mode(mysql_table, last_update_time_column, period_column, last_timestamp, period, engine, mysql_params):
