@@ -43,34 +43,38 @@
   }
   function open(button) {
     if (dialog.open) return;
-    const original = button.querySelector('svg');
+    const original = button.querySelector('svg, img');
     if (!original) return;
-    const svg = original.cloneNode(true);
-    // Avoid duplicate marker, clip, and accessibility IDs while the original is visible.
+    if (original.tagName === 'IMG' && !original.complete) {
+      original.addEventListener('load', () => open(button), { once: true });
+      return;
+    }
+    const box = original.viewBox?.baseVal;
+    view.width = box?.width || original.naturalWidth;
+    view.height = box?.height || original.naturalHeight;
+    if (!view.width || !view.height) return;
+    const artwork = original.cloneNode(true);
+    // Rename only local references in the focused SVG copy.
     const ids = new Map();
-    svg.querySelectorAll('[id]').forEach(node => {
+    [artwork, ...artwork.querySelectorAll('[id]')].forEach(node => {
+      if (!node.id) return;
       const previous = node.id, next = 'focus-' + previous;
       ids.set(previous, next); node.id = next;
     });
-    [svg, ...svg.querySelectorAll('*')].forEach(node => {
+    if (ids.size) [artwork, ...artwork.querySelectorAll('*')].forEach(node => {
       [...node.attributes].forEach(attribute => {
-        if (attribute.name === 'id') return;
         let value = attribute.value;
-        ids.forEach((next, previous) => {
-          value = value.replaceAll(`url(#${previous})`, `url(#${next})`);
-          if (value === `#${previous}`) value = `#${next}`;
-        });
-        if (attribute.name.startsWith('aria-')) value = value.split(' ').map(id => ids.get(id) || id).join(' ');
-        node.setAttribute(attribute.name, value);
+        if (value.includes('url(#')) value = value.replace(/url\(#([^)]+)\)/g, (ref, id) => ids.has(id) ? `url(#${ids.get(id)})` : ref);
+        else if (attribute.localName === 'href' && ids.has(value.slice(1)) && value.startsWith('#')) value = '#' + ids.get(value.slice(1));
+        else if (attribute.name === 'aria-labelledby' || attribute.name === 'aria-describedby') value = value.split(/\s+/).map(id => ids.get(id) || id).join(' ');
+        if (value !== attribute.value) attribute.value = value;
       });
     });
     opener = button;
-    art.replaceChildren(svg);
-    const box = svg.viewBox.baseVal;
-    view.width = box.width; view.height = box.height;
-    svg.style.width = `${box.width}px`;
-    art.style.width = `${box.width}px`; art.style.height = `${box.height}px`;
-    root.querySelector('#wl-dialog-title').textContent = button.dataset.caption || '流程图';
+    art.replaceChildren(artwork);
+    artwork.style.width = `${view.width}px`;
+    art.style.width = `${view.width}px`; art.style.height = `${view.height}px`;
+    root.querySelector('#wl-dialog-title').textContent = button.nextElementSibling?.textContent || '流程图';
     dialog.showModal(); fit(); requestAnimationFrame(fit);
   }
   document.querySelectorAll('.waterline-diagram-open').forEach(button => button.addEventListener('click', () => open(button)));

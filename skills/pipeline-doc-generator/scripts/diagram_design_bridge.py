@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 import xml.etree.ElementTree as ET
 
 
@@ -59,6 +60,31 @@ def contains(outer, inner):
     x, y, w, h = outer
     a, b, c, d = inner
     return x <= a and y <= b and a+c <= x+w and b+d <= y+h
+
+
+def review_new_edges(root, spec, *, existing_binding=False):
+    """Check facts the Diagram Design geometry checker cannot see."""
+    def has_segment(element):
+        tag = element.tag.rsplit("}", 1)[-1]
+        if element.get("stroke", "none") == "none" or float(element.get("stroke-width", 1)) <= 0:
+            return False
+        if tag == "path":
+            return any(cmd in {"L", "C"} for cmd, _ in path_commands(element.get("d", "")))
+        if tag == "line":
+            return any(float(element.get(axis+"1", 0)) != float(element.get(axis+"2", 0)) for axis in ("x", "y"))
+        return tag == "polyline" and len(re.findall(r"[^,\s]+", element.get("points", ""))) >= 4
+
+    groups = {e.get("data-edge-ids"): e for e in root.iter() if e.get("data-edge-ids")}
+    for edge in spec.get("edges", []):
+        identity = edge["id"]
+        group = groups.get(identity)
+        if group is None or not any(has_segment(element) for element in group.iter()):
+            raise ValueError(f"Edge {identity} needs its own drawn connector: {edge['from']} -> {edge['to']}")
+        if not str(edge.get("label") or "").strip():
+            message = f"Edge {identity} has no action label"
+            if not existing_binding:
+                raise ValueError(message)
+            print(f"Review: {message}; keep only if required by the approved baseline", file=sys.stderr)
 
 
 def validate_design(root, spec, check_digest=True):
@@ -166,6 +192,9 @@ def main():
     source = local_asset(args.facts.parent, args.svg)
     root = ET.parse(source).getroot()
     validate_design(root, spec, check_digest=False)
+    if args.slot == "data_flow":
+        binding = facts.get("render_preferences", {}).get("diagrams", {}).get(args.slot) or {}
+        review_new_edges(root, spec, existing_binding=binding.get("engine") == "diagram-design")
     root.set("data-spec-sha256", digest(spec))
     payload = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     source.write_bytes(payload)

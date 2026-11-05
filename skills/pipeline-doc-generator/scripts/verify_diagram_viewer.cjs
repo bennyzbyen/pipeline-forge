@@ -35,10 +35,13 @@ function svg(width, height) {
   result.marker = marker; result.edge = edge;
   return result;
 }
-const simple = new Element(), complex = new Element();
+const simple = new Element(), complex = new Element(), raster = new Element();
 const simpleSvg = svg(1150, 350), complexSvg = svg(1500, 900);
-simple.dataset.caption = '简单同步'; complex.dataset.caption = '复杂报表';
+simple.nextElementSibling = {textContent:'简单同步'}; complex.nextElementSibling = {textContent:'复杂报表'};
 simple.querySelector = () => simpleSvg; complex.querySelector = () => complexSvg;
+const photo = Object.assign(new Element(), {tagName:'IMG', complete:true, naturalWidth:1600, naturalHeight:960});
+photo.cloneNode = () => Object.assign(new Element(), {querySelectorAll: () => []});
+raster.querySelector = () => photo; raster.nextElementSibling = {textContent:'原稿图'};
 const lookup = {
   '.wl-dialog': dialog, '.wl-stage': stage, '.wl-art': art, '.wl-zoom': output,
   '[data-action="zoom-in"]': plus, '[data-action="zoom-out"]': minus,
@@ -47,7 +50,7 @@ const lookup = {
 root.querySelector = selector => { assert.ok(lookup[selector], selector); return lookup[selector]; };
 document = {
   getElementById: id => { assert.equal(id, 'waterline-diagram-viewer'); return root; },
-  querySelectorAll: selector => { assert.equal(selector, '.waterline-diagram-open'); return [simple, complex]; },
+  querySelectorAll: selector => { assert.equal(selector, '.waterline-diagram-open'); return [simple, complex, raster]; },
   activeElement: null,
 };
 const observers = [];
@@ -91,4 +94,7 @@ fire(close, 'click'); assert.equal(document.activeElement, complex); assert.equa
 fire(simple, 'click'); assert.equal(art.children[0].viewBox.baseVal.width, 1150);
 stage.rect.width=290; observers[0](); assert.ok(current().scale > .05 && current().scale < 1);
 fire(close, 'click'); assert.equal(document.activeElement, simple);
+fire(raster, 'click'); assert.equal(title.textContent, '原稿图'); assert.equal(art.style.width, '1600px');
+const rasterFit = current().scale; fire(plus, 'click'); near(current().scale, rasterFit*1.25);
+fire(close, 'click'); assert.equal(document.activeElement, raster);
 console.log(JSON.stringify({passed:true, checks:['focus','zoom','drag','wheel_anchor','fit','pinch','one_finger_pan','pointer_cancel','limits','keyboard','focus_restore','switch','resize','unique_svg_ids','original_unchanged']}, null, 2));

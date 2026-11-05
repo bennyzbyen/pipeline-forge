@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.5 - 2026-11-06
+
+- Keep pipeline documents on the requested revision, align report outputs with their pipelines and use the confirmed platform name.
+- Check Diagram Design routes before export, trim unused HTML effects and speed up long outlines and figure viewing.
+
 ## 2.9.4 - 2026-11-06
 
 - Honor declared COT table cycles, MySQL connection profiles and watermark settings. Verify split operators against their enabled sync modes.

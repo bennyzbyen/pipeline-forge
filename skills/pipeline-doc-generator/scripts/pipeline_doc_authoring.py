@@ -131,15 +131,18 @@ def semantic_hashes(facts):
             return [clean(item) for item in value]
         return value
     values = {key: facts.get(key) for key in CHANGE_LABELS if key != "target_columns"}
+    if facts["document"].get("release_mode") == "pinned":
+        # Resuming automatic numbering alone is not a content change. Keep existing versioned hashes compatible.
+        values["document"] = {**facts["document"], "release_mode": "versioned"}
     values["target_columns"] = {key: value for key, value in (facts.get("render_preferences") or {}).items()
-                                if key.startswith("include_target_") or key in {"include_source_filters", "include_field_history"}}
+                                if key.startswith("include_target_") or key in {"include_source_filters", "include_field_history", "pipeline_platform"}}
     return {key: hashlib.sha256(json.dumps(clean(value), sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest() for key, value in values.items()}
 
 
 def prepare_revision(facts):
     """Append one revision per real edit, not per renderer attempt or format."""
-    if facts.get("document", {}).get("release_mode") == "initial_draft":
-        return  # Iteration stays in change_log until a versioned release is requested.
+    if facts.get("document", {}).get("release_mode") in {"initial_draft", "pinned"}:
+        return
     state = facts.get("revision_state") or {}
     previous = state.get("content_hashes")
     current = semantic_hashes(facts)

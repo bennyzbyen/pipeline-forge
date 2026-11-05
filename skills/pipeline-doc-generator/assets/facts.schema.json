@@ -34,7 +34,7 @@
         "project_name": {"type": "string"},
         "description": {"type": "string"},
         "author": {"type": "string"},
-        "release_mode": {"enum": ["initial_draft", "versioned"], "description": "New documents stay at 0.0.1 during initial drafting. Preserve existing versioned histories."},
+        "release_mode": {"enum": ["initial_draft", "versioned", "pinned"], "description": "Start at 0.0.1, advance on content changes, or retain the current release and its history on request."},
         "release_history": {
           "type": "array",
           "items": {
@@ -152,6 +152,8 @@
         "include_target_category": {"type": ["boolean", "null"]},
         "include_target_report_type": {"type": ["boolean", "null"]},
         "include_target_range": {"type": ["boolean", "null"]},
+          "include_target_pipelines": {"type": "boolean", "default": false, "description": "Show the Pipelines linked to each report target."},
+          "pipeline_platform": {"enum": ["DataEngine", "DataHub"], "description": "Confirmed platform name for document headings and the PDF footer."},
     "include_target_notes": {"type": "boolean", "default": false, "description": "Sync Target notes and report table narratives are hidden unless explicitly requested; keep canonical write/key/logic facts."},
     "include_source_filters": {"type": "boolean", "default": true, "description": "False leaves source filter cells empty without changing canonical filters or data scope."},
     "include_field_history": {"type": "boolean", "default": true, "description": "False leaves source dictionary history cells empty; does not clear document release history or audit provenance."}

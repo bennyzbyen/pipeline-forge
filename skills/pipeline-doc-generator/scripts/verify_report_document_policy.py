@@ -10,7 +10,7 @@ import tempfile
 from pipeline_doc_authoring import checkpoint_revision, prepare_revision
 from pipeline_doc_common import apply_fixed_defaults, blocking_questions
 from pipeline_doc_report import target_reference, target_layer
-from render_pipeline_doc import render_markdown, target_logic_sections, split_pipe_row
+from render_pipeline_doc import render_markdown, target_logic_sections, target_table_report, split_pipe_row
 from validate_pipeline_doc import validate_facts
 from verify_pipeline_doc_generator import facts, run, RENDER, VALIDATE
 
@@ -96,6 +96,15 @@ def run_report_policy(root):
     blob = copy.deepcopy(data)
     blob["sources"][0]["location"] = "Azure Blob Storage"
     assert not any("CONNECTION" in q["id"] for q in blocking_questions(blob))
+    assert "关联水线" not in target_table_report(data)
+    assert "# 4. DataHub Pipeline" in render_markdown(data, "flow.svg")
+    data["render_preferences"].update(include_target_pipelines=True, pipeline_platform="DataEngine")
+    upstream = copy.deepcopy(data["pipelines"][0])
+    upstream.update(id="prepare_pipeline", name="prepare_orders", targets=[first["id"]])
+    data["pipelines"].append(upstream)
+    rows = [split_pipe_row(line) for line in target_table_report(data).splitlines()]
+    assert rows[0][-1] == "关联水线"
+    assert rows[2][-1] == "daily_pipeline" and rows[3][-1] == "daily_pipeline<br>prepare_orders"
     # Same name in different schemas cannot accidentally select a dictionary.
     ambiguous = copy.deepcopy(data)
     ambiguous["targets"][0]["table"] = ambiguous["targets"][1]["table"] = "ambiguous_table"
@@ -120,6 +129,9 @@ def run_report_policy(root):
     for suffix in ("md", "html"):
         text = (root / f"{title}.{suffix}").read_text(encoding="utf-8")
         assert "AUDIT_ONLY" not in text and "warehouse_i3_daily_metric" in text
+        assert "4. DataEngine Pipeline" in text and "4. DataHub Pipeline" not in text
+    from pypdf import PdfReader
+    assert "DataEngine" in PdfReader(root / f"{title}.pdf").pages[0].extract_text().splitlines()
     assert rendered["document"]["documentation"] == data["document"]["documentation"], "Audit evidence was erased"
     # Entering version management creates exactly one subsequent release.
     rendered["document"]["release_mode"] = "versioned"

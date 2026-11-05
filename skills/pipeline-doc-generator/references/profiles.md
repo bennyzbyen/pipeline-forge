@@ -36,6 +36,8 @@ If the same project combines substantial calculation and independent table repli
 
 ## Stable Section Policy
 
+For report chapter 4, use the evidenced `render_preferences.pipeline_platform` (DataEngine or DataHub). With no explicit choice, the template supplies its historical heading. Keep source storage and project names literal.
+
 - Preserve the selected profile’s H1 order and numbering.
 - Report target dictionaries use `3.1.1 <physical table>`, `3.1.2 <physical table>`, etc., directly below `3.1`; do not insert a category heading or use the business description as the title. Keep category and description in table metadata.
 - Preserve required H1 sections by default; explicit user deletion/restructuring overrides the template. When merely marked inapplicable, write `不适用（已确认）`.

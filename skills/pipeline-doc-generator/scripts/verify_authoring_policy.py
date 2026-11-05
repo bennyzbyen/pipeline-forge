@@ -111,6 +111,20 @@ def test_versions():
     prepare_revision(data)
     assert len(data["document"]["release_history"]) == 4
     assert data["document"]["release_history"][-1]["summary"] == "用户调整后的摘要"
+    pinned_history = copy.deepcopy(data["document"]["release_history"])
+    data["document"]["release_mode"] = "pinned"
+    for trigger in ("每日 08:00", "每日 10:00"):
+        data["pipelines"][0]["trigger"] = trigger
+        apply_fixed_defaults(data)
+        prepare_revision(data)
+        checkpoint_revision(data)
+        assert data["document"]["release_history"] == pinned_history
+    data["document"]["release_mode"] = "versioned"
+    prepare_revision(data)
+    assert data["document"]["release_history"] == pinned_history
+    data["pipelines"][0]["trigger"] = "每周一 10:00"
+    prepare_revision(data)
+    assert data["document"]["release_history"][-1]["version"] == "1.0.1"
     assert next_version("v1.2.9") == "v1.2.10" and next_version("R09") == "R10"
     pending = apply_fixed_defaults(facts("sync", "合成已确认待定作者"))
     pending["document"]["release_history"][0]["author"] = "待定"

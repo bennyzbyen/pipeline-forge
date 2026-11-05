@@ -16,7 +16,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-from pipeline_doc_common import OUTPUT_FORMATS, apply_fixed_defaults, blocking_questions, bullet_lines, configure_utf8_stdio, load_json, markdown_table, write_json, write_questions
+from pipeline_doc_common import OUTPUT_FORMATS, apply_fixed_defaults, blocking_questions, bullet_lines, configure_utf8_stdio, load_json, markdown_table, pipeline_platform, write_json, write_questions
 from pipeline_doc_authoring import checkpoint_revision, prepare_revision
 from pipeline_doc_presentation import connection_note, display_trigger, is_blob_connection, sas_url, same_prose, unique_paragraphs
 from pipeline_diagram_contract import validate_svg_safety
@@ -182,10 +182,18 @@ def target_table_report(facts: dict) -> str:
     targets = facts.get("targets") or []
     labels = list(dict.fromkeys(label for target in targets for label in storage_tables(target)))
     labels.sort(key=lambda label: (0 if label == "HBase" else 1 if label == "ClickHouse" else 2))
-    return markdown_table(["层级", "数据项", *(f"{label}表名" for label in labels)],
-                          [[target_layer(target), target.get("description", ""),
-                            *(storage_tables(target).get(label, "不适用") for label in labels)]
-                           for target in targets])
+    headers = ["层级", "数据项", *(f"{label}表名" for label in labels)]
+    show_pipelines = (facts.get("render_preferences") or {}).get("include_target_pipelines") is True
+    if show_pipelines:
+        headers.append("关联水线")
+    rows = []
+    for target in targets:
+        tables = storage_tables(target)
+        row = [target_layer(target), target.get("description", ""), *(tables.get(label, "不适用") for label in labels)]
+        if show_pipelines:
+            row.append("\n".join(p["name"] for p in facts["pipelines"] if target["id"] in (p.get("targets") or [])))
+        rows.append(row)
+    return markdown_table(headers, rows)
 
 
 def target_sync_notes(facts: dict) -> str:
@@ -372,7 +380,7 @@ def render_markdown(facts: dict, data_svg_rel: str, catalog_svg_rel: str = "") -
             "# 2. 数据源详情", "", "## 2.1 数据列表", "", source_table_report(facts), "",
             "# 3. Data Target", "", target_table_report(facts), "",
             "## 3.1 数据底表 & 逻辑说明", "", target_logic_sections(facts), "",
-            "# 4. DataHub Pipeline", "", project_pipeline_sections(facts, profile, catalog_svg_rel), "",
+            f"# 4. {pipeline_platform(facts)} Pipeline", "", project_pipeline_sections(facts, profile, catalog_svg_rel), "",
             "# 5. 资源评估", "", resources_section(facts), "",
         ]
     return "\n".join(str(item) for item in parts).rstrip() + "\n"
@@ -440,33 +448,21 @@ def embedded_image(markdown_path: Path, target: str, alt: str) -> str:
     candidate = (markdown_path.parent / target).resolve()
     if not candidate.is_file():
         raise FileNotFoundError(candidate)
+    caption = html.escape(alt, quote=True)
     if candidate.suffix.lower() == ".svg":
-        caption = html.escape(alt, quote=True)
-        return f'<figure><button type="button" class="waterline-diagram-open" data-caption="{caption}" aria-label="聚焦查看：{caption}" aria-haspopup="dialog">{safe_inline_svg(candidate)}<span class="waterline-diagram-hint" aria-hidden="true">点击聚焦 · 可缩放和拖动</span></button><figcaption>{caption}</figcaption></figure>'
-    mime = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
-    data = base64.b64encode(candidate.read_bytes()).decode("ascii")
-    return f'<figure><img src="data:{mime};base64,{data}" alt="{html.escape(alt, quote=True)}"><figcaption>{html.escape(alt)}</figcaption></figure>'
+        artwork = safe_inline_svg(candidate)
+    else:
+        mime = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        data = base64.b64encode(candidate.read_bytes()).decode("ascii")
+        artwork = f'<img src="data:{mime};base64,{data}" alt="{caption}" decoding="async">'
+    return (f'<figure><button type="button" class="waterline-diagram-open" aria-label="聚焦查看：{caption}" aria-haspopup="dialog">{artwork}'
+            f'<span class="waterline-diagram-hint" aria-hidden="true">点击聚焦 · 可缩放和拖动</span></button><figcaption>{caption}</figcaption></figure>')
 
 
 def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
     lines = markdown.splitlines()
     headings: list[tuple[int, str, str]] = []
-    used_ids: set[str] = set()
-    for line in lines:
-        match = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if not match:
-            continue
-        base = f"section-{len(headings) + 1}"
-        anchor = base
-        suffix = 1
-        while anchor in used_ids:
-            suffix += 1
-            anchor = f"{base}-{suffix}"
-        used_ids.add(anchor)
-        headings.append((len(match.group(1)), match.group(2), anchor))
-
     body: list[str] = []
-    heading_cursor = 0
     index = 0
     in_code = False
     code_lines: list[str] = []
@@ -497,8 +493,9 @@ def markdown_to_html(markdown: str, markdown_path: Path, title: str) -> str:
         heading = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading:
             close_list()
-            level, text, anchor = headings[heading_cursor]
-            heading_cursor += 1
+            level, text = len(heading[1]), heading[2]
+            anchor = f"section-{len(headings) + 1}"
+            headings.append((level, text, anchor))
             body.append(f'<h{level} id="{anchor}">{inline_markup(text)}</h{level}>')
             index += 1
             continue

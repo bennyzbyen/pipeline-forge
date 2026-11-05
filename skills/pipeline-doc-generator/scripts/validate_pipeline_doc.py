@@ -92,7 +92,7 @@ def h1_headings(markdown: str) -> list[str]:
 def validate_markdown(path: Path, facts: dict, profile: str, errors: list[str], metrics: dict) -> str:
     text = path.read_text(encoding="utf-8")
     headings = h1_headings(text)
-    expected = [facts["document"]["title"], *expected_headings(profile)]
+    expected = [facts["document"]["title"], *expected_headings(profile, facts)]
     if headings != expected:
         errors.append(f"Markdown H1 order mismatch: expected={expected}, actual={headings}")
     asset_dir = f"{path.stem}_files"
@@ -178,6 +178,7 @@ class HTMLSecurityProbe(HTMLParser):
 
 def validate_html(path: Path, facts: dict, errors: list[str], metrics: dict) -> str:
     payload = path.read_bytes()
+    metrics["html_bytes"] = len(payload)
     text = payload.decode("utf-8")
     lower = text.lower()
     if re.search(r"<th\b[^>]*>\s*catalog\s*</th>", lower):
@@ -302,7 +303,7 @@ def main() -> int:
             errors.append(f"Cannot verify canonical HTML: {type(exc).__name__}")
         if metrics.get("markdown_tables") != metrics.get("html_tables"):
             errors.append(f"Markdown/HTML table count mismatch: {metrics.get('markdown_tables')} != {metrics.get('html_tables')}")
-        for heading in expected_headings(args.profile):
+        for heading in expected_headings(args.profile, facts):
             if normalize_text(heading) not in normalize_text(html_text):
                 errors.append(f"HTML missing profile heading: {heading}")
     result = {"valid": not errors, "profile": args.profile, "errors": errors, "warnings": warnings, "metrics": metrics}

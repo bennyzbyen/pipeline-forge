@@ -1,6 +1,7 @@
 .waterline-diagram-open{display:block;width:100%;padding:0;border:0;background:#fff;border-radius:10px;cursor:zoom-in;color:#203148;text-align:left}
 .waterline-diagram-open:focus-visible{outline:3px solid #366dba;outline-offset:4px}
-.waterline-diagram-open .waterline-flow{width:100%;height:auto}
+.waterline-diagram-open img{display:block;max-width:100%;height:auto;margin:auto}
+@media screen{.waterline-diagram-open :is(.waterline-flow,img){max-height:min(60vh,36rem);object-fit:contain}}
 .waterline-diagram-hint{display:block;padding:6px 10px;text-align:right;font:12px "Microsoft YaHei","Segoe UI",sans-serif;color:#51627a}
 #waterline-diagram-viewer{--wl-paper:rgba(249,252,255,.97);--wl-toolbar:rgba(235,245,252,.88);--wl-control:rgba(249,252,255,.9);--wl-control-hover:#fff;--wl-wash:#fff;--wl-grid:#dce5ef;--wl-ink:#203148;--wl-muted:#51627a;--wl-line:rgba(102,132,163,.3);--wl-highlight:rgba(255,255,255,.88);color-scheme:light;font-family:"Microsoft YaHei","Segoe UI",sans-serif}
 #waterline-diagram-viewer .wl-dialog{width:calc(100% - 24px);max-width:1700px;height:calc(100dvh - 32px);max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--wl-line);border-radius:18px;background:var(--wl-paper);color:var(--wl-ink);box-shadow:0 24px 90px rgba(3,15,30,.32);overflow:hidden}

@@ -11,7 +11,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-from diagram_design_bridge import digest, local_asset, path_commands, read_bound_asset, validate_design
+from diagram_design_bridge import digest, local_asset, path_commands, read_bound_asset, review_new_edges, validate_design
 
 HERE = Path(__file__).resolve().parent
 NS = '{http://www.w3.org/2000/svg}'
@@ -62,6 +62,20 @@ def run_regressions(directory):
     rejected(lambda: require_bindings({'profile': 'sync'}))
     require_bindings({'profile': 'report', 'catalog': {'enabled': True}, 'render_preferences': {'diagrams': {'data_flow': {}}}})
     validate_design(root, spec)
+    review_new_edges(root, spec)
+    edge = next(e for e in root.iter() if e.get('data-edge-ids'))
+    route = edge.find(NS+'path')
+    edge.remove(route)
+    rejected(lambda: review_new_edges(root, spec))  # Correct metadata and label alone used to pass.
+    edge.insert(0, route)
+    path_data = route.attrib.pop('d')
+    rejected(lambda: review_new_edges(root, spec))
+    route.set('d', path_data)
+    unlabeled = copy.deepcopy(spec)
+    unlabeled['edges'][0].pop('label')
+    validate_design(root, unlabeled, check_digest=False)  # Previously bound artwork remains readable.
+    rejected(lambda: review_new_edges(root, unlabeled))
+    review_new_edges(root, unlabeled, existing_binding=True)  # Frozen historical panels can be rebound.
     for attribute, replacement in [('data-node-id', 'unknown'), ('data-to', 'sync'), ('data-platform-members', 'sync'), ('data-bounds', '700 112 224 128')]:
         changed = copy.deepcopy(root)
         next(e for e in changed.iter() if e.get(attribute)).set(attribute, replacement)

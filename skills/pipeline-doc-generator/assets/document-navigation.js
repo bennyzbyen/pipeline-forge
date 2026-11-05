@@ -92,6 +92,7 @@
   let dragState = null;
   let suppressClick = null;
   let pending = false;
+  let outlineMoved = false;
 
   const storageKey = 'waterline-outline-v2-two-levels:' + window.location.pathname;
   let savedBranches = {};
@@ -133,7 +134,7 @@
       savedBranches[id] = expanded;
       persistBranches();
       if (preview && !linkIsVisible(preview.link)) clearPreview();
-      schedule();
+      scheduleOutline();
     });
     branches.push(branch);
   }
@@ -156,7 +157,7 @@
     return entries.filter(entry => linkIsVisible(entry.link));
   }
   function setIndicator(entry, pointerY) {
-    if (!entry) return;
+    if (!entry || !toggle.checked) return;
     const item = entry.link.getBoundingClientRect();
     const panel = navigation.getBoundingClientRect();
     const height = Math.max(1, item.height || item.bottom - item.top);
@@ -198,9 +199,8 @@
     setIndicator(active);
   }
   function select(entry) {
-    if (!entry) return false;
-    const changed = active !== entry;
-    if (active && active !== entry) {
+    if (!entry || active === entry) return false;
+    if (active) {
       active.link.removeAttribute('aria-current');
       active.link.removeAttribute('aria-description');
       active.link.removeAttribute('aria-keyshortcuts');
@@ -209,8 +209,7 @@
     active.link.setAttribute('aria-current', 'location');
     active.link.setAttribute('aria-description', '可直接拖动切换章节；方向键预览，Enter 打开');
     active.link.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown Enter Escape');
-    if (!preview) setIndicator(active);
-    return changed;
+    return true;
   }
   function nearestVisibleEntry(pointerY) {
     const available = visibleEntries();
@@ -338,7 +337,7 @@
       }
     }
     persistBranches();
-    schedule();
+    scheduleOutline();
   }
 
   function reveal() {
@@ -351,19 +350,29 @@
       return;
     }
     const threshold = Math.min(120, window.innerHeight * 0.2);
-    let selected = entries[0];
-    for (const entry of entries) {
-      if (entry.heading.getBoundingClientRect().top <= threshold) selected = entry;
-      else break;
+    let index = entries.length - 1;
+    const atBottom = window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+    if (!atBottom) {
+      // Headings follow document order. Read current geometry even after images load or tables reflow.
+      let low = 0, high = entries.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (entries[mid].heading.getBoundingClientRect().top <= threshold) low = mid + 1;
+        else high = mid;
+      }
+      index = Math.max(0, low - 1);
     }
-    if (window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
-      selected = entries[entries.length - 1];
-    }
-    selected = entriesByLink.get(visibleLink(selected.link)) || selected;
+    const selected = entriesByLink.get(visibleLink(entries[index].link)) || entries[index];
     if (select(selected)) reveal();
+    else if (outlineMoved && !preview) setIndicator(active);
+    outlineMoved = false;
   }
   function schedule() {
     if (!pending) { pending = true; window.requestAnimationFrame(update); }
+  }
+  function scheduleOutline() {
+    outlineMoved = true;
+    schedule();
   }
   function toggleState() {
     label.title = toggle.checked ? '收起目录' : '展开目录';
@@ -387,14 +396,14 @@
     }
   });
   window.addEventListener('scroll', schedule, { passive: true });
-  window.addEventListener('resize', schedule);
+  window.addEventListener('resize', scheduleOutline);
   lensMotion.addEventListener?.('change', () => {
     if (dragState) dragState.velocity = 0;
     setIndicator(preview || active, dragState?.dragging ? clampPointerY(dragState.lastY) : undefined);
   });
-  navigation.addEventListener('scroll', schedule, { passive: true });
+  navigation.addEventListener('scroll', scheduleOutline, { passive: true });
   window.addEventListener('hashchange', openHashAncestors);
-  window.addEventListener('load', schedule);
+  window.addEventListener('load', scheduleOutline);
   openHashAncestors();
   toggleState();
   update();

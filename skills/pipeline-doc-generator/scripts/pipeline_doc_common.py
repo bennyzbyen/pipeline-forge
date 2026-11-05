@@ -362,9 +362,14 @@ REPORT_HEADINGS = [
 ]
 
 
-def expected_headings(profile: str) -> list[str]:
+def pipeline_platform(facts: dict, default: str = "DataHub") -> str:
+    value = (facts.get("render_preferences") or {}).get("pipeline_platform")
+    return value if value in ("DataEngine", "DataHub") else default
+
+
+def expected_headings(profile: str, facts: dict | None = None) -> list[str]:
     if profile == "sync":
         return SYNC_HEADINGS
     if profile == "report":
-        return REPORT_HEADINGS
+        return [heading.replace("DataHub", pipeline_platform(facts or {})) for heading in REPORT_HEADINGS]
     raise ValueError(f"unknown profile: {profile}")

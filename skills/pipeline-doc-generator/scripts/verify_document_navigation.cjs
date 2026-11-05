@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-function scenario(mobile) {
+function scenario(mobile, count = 3) {
   const handlers = new Map(), frames = [];
   const listen = (name, callback) => handlers.set(name, callback);
-  const links = [0, 1, 2].map(index => ({
+  const links = Array.from({ length: count }, (_, index) => ({
     attrs: { href: '#section-' + index },
     handlers: {},
     getAttribute(key) { return this.attrs[key]; },
@@ -17,8 +17,9 @@ function scenario(mobile) {
     closest() { return null; },
     getBoundingClientRect() { return { top: index * 100, bottom: index * 100 + 50 }; },
   }));
-  let tops = [0, 800, 2400];
-  const headings = links.map((_, index) => ({ getBoundingClientRect: () => ({ top: tops[index] }) }));
+  let tops = count === 3 ? [0, 800, 2400] : links.map((_, i) => i * 250);
+  let headingReads = 0;
+  const headings = links.map((_, index) => ({ getBoundingClientRect() { headingReads++; return { top: tops[index] }; } }));
   const toggle = { checked: true, attrs: {}, addEventListener: listen,
     setAttribute(key, value) { this.attrs[key] = value; }, focus() { this.focused = true; } };
   const label = {};
@@ -39,6 +40,16 @@ function scenario(mobile) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../assets/document-navigation.js'), 'utf8'), { window, document });
   assert.equal(toggle.checked, !mobile);
   assert.equal(links[0].attrs['aria-current'], 'location');
+  if (count > 3) {
+    window.scrollY = (count - 2) * 250;
+    document.documentElement.scrollHeight = count * 250 + window.innerHeight;
+    tops = tops.map(top => top - window.scrollY);
+    headingReads = 0;
+    runFrame();
+    assert.equal(links[count - 2].attrs['aria-current'], 'location');
+    assert.ok(headingReads <= Math.ceil(Math.log2(count)) + 1, headingReads);
+    return;
+  }
   tops = [-1000, -200, 1400]; window.scrollY = 1000; runFrame();
   assert.equal(links[1].attrs['aria-current'], 'location'); // Long-table reading keeps its section.
   tops = [-2100, -1300, 300]; window.scrollY = 2100; runFrame();
@@ -56,7 +67,7 @@ function scenario(mobile) {
   tops = [-3200, -2400, 600]; window.scrollY = 3200; runFrame();
   assert.equal(links[2].attrs['aria-current'], 'location'); // Last short section at page bottom.
 }
-scenario(false); scenario(true);
+scenario(false); scenario(true); scenario(false, 1024);
 function themeScenario(saved, systemDark, storageBlocked, reduced = false, animationAvailable = true) {
   const attrs = {}, rootAttrs = {}, listeners = {};
   const motionQuery = { matches: reduced, addEventListener: (_name, action) => { motionQuery.change = action; } };

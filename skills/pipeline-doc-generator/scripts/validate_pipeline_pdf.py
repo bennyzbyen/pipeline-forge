@@ -35,7 +35,7 @@ def validate_pdf(path: Path, facts: dict, errors: list, metrics: dict):
             from diagram_design_bridge import digest
             if metadata.get("/WaterlineDiagramBindingsSHA256") != digest(facts["render_preferences"]["diagrams"]):
                 errors.append("PDF is stale relative to the reviewed diagram binding")
-        if metadata.get("/WaterlineContentSHA256") != content_digest(markdown, facts["flow"]):
+        if metadata.get("/WaterlineContentSHA256") != content_digest(markdown, facts["flow"], facts.get("render_preferences", {}).get("pipeline_platform")):
             errors.append("PDF is stale relative to the canonical document/flow")
         blocks = parse_markdown(markdown)
         figure_count = sum(kind=="image" and value[1].lower().endswith(".svg") for kind, value in blocks)

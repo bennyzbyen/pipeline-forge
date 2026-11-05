@@ -18,6 +18,8 @@ When DDL generation is requested or authorized from PRD/HLD fields, produce a lo
 
 Similar-looking field keys are a discrepancy to investigate, not an automatic spelling correction. Use applicable schema/DDL, related fields and the user's explicit resolution; persist the correction in facts and generation inputs while retaining the raw source cell. Never infer a global renaming rule from one corrected field.
 
+For syncs, distinguish the upstream refresh frequency and replacement scope from the downstream trigger, read window and runtime parameters. A timestamp's DDL default alone cannot establish a watermark. Check how the producer updates or rebuilds rows, including period boundaries, before documenting reuse of an existing parameter.
+
 For calculations, distinguish source units, result units, conversion and aggregation grain. Samples do not prove units, completeness or valid duplicate handling. Keep numerator/denominator rules explicit for ratios; do not average rates or distribute a coarse period into finer periods without evidence. Temporary exclusions apply only to their confirmed scope/version. Adding an input does not itself require a new physical table; derive that decision from the current processing and storage contract.
 
 ## DOCX And Embedded Excel

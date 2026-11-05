@@ -23,12 +23,16 @@ from reportlab.platypus import BaseDocTemplate, Flowable, Frame, Image, KeepToge
 from reportlab.platypus.tableofcontents import TableOfContents
 
 from pipeline_diagram_contract import VISUAL_VERSION, validate_svg, validate_svg_safety
+from pipeline_doc_common import pipeline_platform
 
 INK, MUTED, BLUE, LINE = "#203148", "#51627a", "#2563eb", "#dce4ed"
 
 
-def content_digest(markdown, flow):
-    return hashlib.sha256(json.dumps({"markdown": markdown, "flow": flow, "diagram_visual_version": VISUAL_VERSION}, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+def content_digest(markdown, flow, platform=None):
+    content = {"markdown": markdown, "flow": flow, "diagram_visual_version": VISUAL_VERSION}
+    if platform:
+        content["pipeline_platform"] = platform
+    return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def register_fonts():
@@ -260,9 +264,10 @@ class VectorFlow(Flowable):
 
 
 class WaterlineDoc(BaseDocTemplate):
-    def __init__(self, filename, title, pagesize, **kwargs):
+    def __init__(self, filename, title, pagesize, platform="DataEngine / DataHub", **kwargs):
         super().__init__(filename, pagesize=pagesize, leftMargin=36, rightMargin=36, topMargin=44, bottomMargin=40, title=title, author="", pageCompression=1, keepTogetherClass=HeadingGroup, **kwargs)
         self.document_title = title
+        self.platform = platform
         self.addPageTemplates([self.template("body", pagesize), self.template("diagram", landscape(A3))])
 
     def template(self, name, size):
@@ -279,7 +284,7 @@ class WaterlineDoc(BaseDocTemplate):
         canvas.drawString(36, h-24, header)
         canvas.setStrokeColor(colors.HexColor(LINE)); canvas.setLineWidth(.5)
         canvas.line(36, 30, w-36, 30)
-        canvas.drawString(36, 18, "DataEngine / DataHub")
+        canvas.drawString(36, 18, self.platform)
         canvas.drawRightString(w-36, 18, f"第 {doc.page} 页")
         canvas.restoreState()
 
@@ -409,11 +414,12 @@ def render_pdf(markdown, markdown_path, output, facts):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="waterline_pdf_") as temporary:
         intermediate = Path(temporary) / "document.pdf"
-        doc = WaterlineDoc(str(intermediate), facts["document"]["title"], size)
+        platform = pipeline_platform(facts, "")
+        doc = WaterlineDoc(str(intermediate), facts["document"]["title"], size, platform or "DataEngine / DataHub")
         doc.multiBuild(story)
         reader, writer = PdfReader(intermediate), PdfWriter()
         writer.clone_document_from_reader(reader)
-        writer.add_metadata({"/Title": facts["document"]["title"], "/Creator": "Pipeline Document Generator", "/WaterlineContentSHA256": content_digest(markdown, facts["flow"]), "/WaterlineTextAudit": "1", "/WaterlineTableCount": str(sum(kind=="table" for kind, _ in blocks)), "/WaterlineFigureCount": str(len(figures)), "/WaterlineProfile": facts["profile"]})
+        writer.add_metadata({"/Title": facts["document"]["title"], "/Creator": "Pipeline Document Generator", "/WaterlineContentSHA256": content_digest(markdown, facts["flow"], platform), "/WaterlineTextAudit": "1", "/WaterlineTableCount": str(sum(kind=="table" for kind, _ in blocks)), "/WaterlineFigureCount": str(len(figures)), "/WaterlineProfile": facts["profile"]})
         if facts.get("render_preferences", {}).get("diagrams"):
             from diagram_design_bridge import digest
             writer.add_metadata({"/WaterlineDiagramBindingsSHA256": digest(facts["render_preferences"]["diagrams"])})
