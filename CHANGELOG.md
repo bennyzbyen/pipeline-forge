@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.4 - 2026-11-06
+
+- Honor declared COT table cycles, MySQL connection profiles and watermark settings. Verify split operators against their enabled sync modes.
+- Report completed writes, the failing stage and the loaded operator package from a job log, including explicit Gateway application-disabled errors.
+
 ## 2.9.3 - 2026-11-06
 
 - Preserve the original field discovery, parameter ownership and Gateway credential provider when refactoring an existing operator.

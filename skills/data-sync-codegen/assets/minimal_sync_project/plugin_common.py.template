@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 
 from loguru import logger
 
+from cot_config import plugin_config
 from cot_config.plugin_config import App_key, App_secret, env, fs_root_dir
 
 try:
@@ -32,6 +33,23 @@ try:
     import mlpapp
 except ImportError:  # pragma: no cover - deployment dependency
     mlpapp = None
+
+
+def get_mysql_url(mysql_table):
+    group = getattr(plugin_config, "table_configs", {}).get(mysql_table, {}).get("source_group")
+    if not group:  # Older projects route by the original table lists.
+        if mysql_table in plugin_config.store_report_generator_table_list:
+            group = "store_report_generator"
+        elif mysql_table in plugin_config.store_report_table_list:
+            group = "store_report"
+        else:
+            group = "report_ps_p"
+    return getattr(plugin_config, f"mysql_{group}_url"), getattr(plugin_config, f"mysql_{group}_params")
+
+
+def period_csv_files(file_dir, period, mysql_table):
+    owner = f"{period}_{mysql_table}"
+    return sorted(str(path) for path in Path(file_dir).glob("*.csv") if path.stem.rpartition("_")[0] == owner)
 
 
 def return_pipeline_result(metrics: list) -> dict:
@@ -129,10 +147,10 @@ class TimeStamp_Update:
         try:
             if self.fs_client.exists(full_update_time_path):
                 self.fs_client.copy_to_local(full_update_time_path, str(local_path))
-                df = pd.read_csv(local_path, sep="\t")
+                last_timestamp = str(pd.read_csv(local_path, sep="\t")["date"].iloc[0])
             else:
-                df = pd.DataFrame({"date": ["1970-01-01 00:00:00"]})
-            last_timestamp = str(df["date"].iloc[0])
+                contract = getattr(plugin_config, "runtime_contract", {})
+                last_timestamp = contract.get("initial_watermark", "1970-01-01 00:00:00")
             logger.info("stage_complete stage=timestamp_read table={} timestamp={}", mysql_table, last_timestamp)
             return last_timestamp
         finally:

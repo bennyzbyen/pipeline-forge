@@ -1,6 +1,6 @@
 # Versioning
 
-PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The current stable version is `2.9.3`.
+PipelineForge uses [Semantic Versioning](https://semver.org/) in the form `MAJOR.MINOR.PATCH`. The current stable version is `2.9.4`.
 
 ## Increment Rules
 

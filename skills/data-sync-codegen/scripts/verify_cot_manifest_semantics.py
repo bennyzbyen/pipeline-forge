@@ -13,7 +13,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 
 VALID_SYNC_MODES = {"with_period", "without_period"}
-VALID_SOURCE_GROUPS = {"report_ps_p", "store_report", "store_report_generator"}
 SAFE_SCAFFOLD_ISSUE = "safe_scaffold_runtime_disabled"
 RUNTIME_KEYS = (
     "mysql_table",
@@ -39,18 +38,24 @@ def load_json(path: Path) -> Dict[str, Any]:
     return value
 
 
-def load_literal_assignment(path: Path, assignment_name: str) -> Any:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def assignment_nodes(path: Path) -> dict[str, ast.expr]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    assignments = {}
     for node in tree.body:
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
             continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if any(isinstance(target, ast.Name) and target.id == assignment_name for target in targets):
-            value_node = node.value
-            if value_node is None:
-                break
-            return ast.literal_eval(value_node)
-    raise ValueError(f"literal assignment {assignment_name!r} not found in {path}")
+        for target in targets:
+            if isinstance(target, ast.Name):
+                assignments.setdefault(target.id, node.value)
+    return assignments
+
+
+def load_literal_assignment(path: Path, assignment_name: str, nodes=None) -> Any:
+    assignments = nodes if nodes is not None else assignment_nodes(path)
+    if assignment_name not in assignments:
+        raise ValueError(f"literal assignment {assignment_name!r} not found in {path}")
+    return ast.literal_eval(assignments[assignment_name])
 
 
 def clean_text(value: Any) -> str:
@@ -112,6 +117,7 @@ def validate_table(
     table: Mapping[str, Any],
     runtime: Mapping[str, Any],
     rowkey_rules: Mapping[str, Any],
+    source_groups: set[str],
     contract_ready: bool,
     safe_scaffold: bool,
     errors: List[Dict[str, str]],
@@ -132,7 +138,7 @@ def validate_table(
     for key in ("last_update_time_column", "hbase_table", "clickhouse_table", "source_group"):
         if not clean_text(table.get(key)):
             add_issue(errors, "missing_required_value", f"{key} is required", table_name)
-    if clean_text(table.get("source_group")) not in VALID_SOURCE_GROUPS:
+    if clean_text(table.get("source_group")) not in source_groups:
         add_issue(
             errors,
             "invalid_source_group",
@@ -272,7 +278,11 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
     if len(tables) != len(raw_tables):
         raise ValueError("cot_sync_manifest.json tables contains a non-object item")
 
-    runtime = load_literal_assignment(plugin_config_path, "table_configs")
+    config_nodes = assignment_nodes(plugin_config_path)
+    runtime = load_literal_assignment(plugin_config_path, "table_configs", config_nodes)
+    source_groups = {name.removeprefix("mysql_").removesuffix("_url") for name in config_nodes
+                     if name.startswith("mysql_") and name.endswith("_url")
+                     and name.removesuffix("_url") + "_params" in config_nodes}
     rowkey_rules = load_literal_assignment(rowkey_config_path, "hbase_rowkey_rules")
     if not isinstance(runtime, Mapping) or not isinstance(rowkey_rules, Mapping):
         raise ValueError("generated table_configs and hbase_rowkey_rules must be mappings")
@@ -306,6 +316,7 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
             table,
             runtime,
             rowkey_rules,
+            source_groups,
             contract_ready,
             safe_scaffold,
             errors,
@@ -324,8 +335,8 @@ def validate_project(project_dir: Path) -> Dict[str, Any]:
 
     expected_with = {result["table"] for result in table_results if result["sync_mode"] == "with_period"}
     expected_without = {result["table"] for result in table_results if result["sync_mode"] == "without_period"}
-    actual_with = set(load_literal_assignment(plugin_config_path, "with_period_tables"))
-    actual_without = set(load_literal_assignment(plugin_config_path, "without_period_tables"))
+    actual_with = set(load_literal_assignment(plugin_config_path, "with_period_tables", config_nodes))
+    actual_without = set(load_literal_assignment(plugin_config_path, "without_period_tables", config_nodes))
     if expected_with != actual_with:
         add_issue(errors, "with_period_set_mismatch", f"with_period_tables differs: expected={sorted(expected_with)}, actual={sorted(actual_with)}")
     if expected_without != actual_without:

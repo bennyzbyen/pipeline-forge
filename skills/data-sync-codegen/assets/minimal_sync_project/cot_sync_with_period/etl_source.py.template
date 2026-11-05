@@ -5,17 +5,7 @@ import pandas as pd
 import pymysql
 from loguru import logger
 
-from plugin_common import ClientWrapper
-from cot_config.plugin_config import (
-    mysql_report_ps_p_params,
-    mysql_report_ps_p_url,
-    mysql_store_report_generator_params,
-    mysql_store_report_generator_url,
-    mysql_store_report_params,
-    mysql_store_report_url,
-    store_report_generator_table_list,
-    store_report_table_list,
-)
+from plugin_common import ClientWrapper, get_mysql_url
 
 
 _ROW_TRANSLATION = str.maketrans({
@@ -26,14 +16,6 @@ _ROW_TRANSLATION = str.maketrans({
     '"': "",
     "\x1D": "",
 })
-
-
-def get_mysql_url(mysql_table):
-    if mysql_table in store_report_generator_table_list:
-        return mysql_store_report_generator_url, mysql_store_report_generator_params
-    if mysql_table in store_report_table_list:
-        return mysql_store_report_url, mysql_store_report_params
-    return mysql_report_ps_p_url, mysql_report_ps_p_params
 
 
 def create_mysql_engine(mysql_url):

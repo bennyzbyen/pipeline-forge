@@ -92,7 +92,7 @@ Prefer the production-compatible grouped params shape:
     "mysql_table": "zo_hswmt_detail_p",
     "last_update_time_column": "inksaa_last_modified_timestamp",
     "period_column": "period",
-    "period": ["2026P03"],
+    "period": [],
     "code_column": "code",
     "key_column": "id",
     "batch_size": 100000,
@@ -129,13 +129,13 @@ Use these only as review candidates when direct task evidence is absent. None co
 - Source MySQL table: ClickHouse table basename from the COT matrix.
 - HBase target: `source_hbase_table` from the COT matrix.
 - ClickHouse target: full ClickHouse table from the COT matrix, including database prefix when present.
-- With-period classification: table name ending in `_p`, HBase table ending in `_p`, or business/report text containing COT period wording such as `截P` or project collection.
+- Per table, use its declared `sync_mode` and `source_informations` for the period/batch, update and replacement columns. Without declarations, legacy naming and report wording supply candidates.
 - Without-period classification: execution-report tables without `_p` period naming.
 - Do not classify a table as with-period only because a field dictionary contains `period`; execution reports may keep a period field while still using timestamp-only incremental sync.
 - Update timestamp: prefer `inksaa_last_modified_timestamp`, then `last_update_timestamp`, then common update-time columns.
 - With-period rowkey candidates may suggest period plus a business code; suggestions are not confirmed runtime rules.
 - Without-period candidates may suggest id or inksaa_id; require an evidence-backed rowkey_contract before enabling runtime.
-- Source database group: with-period tables default to `report_ps_p`; execution-style without-period tables default to `store_report_generator`.
+- Set `source_group` for a known connection. Both MySQL readers use that profile. A new group gets separate deployment placeholders.
 - Any rowkey, source database, or timestamp inferred without direct document evidence must be listed in generated `questions.md`.
 
 ## COT 2026 Historical Exceptions
@@ -159,7 +159,7 @@ Default flow:
 Production-compatible sync-list logic:
 
 - Manual period rerun: `[(period, "full")]` for each requested period and do not update timestamp.
-- Automatic run: fetch last timestamp from FS, query updated periods where `last_update_time_column > last_timestamp`, then compare updated row count with total row count per period.
+- Automatic runs read the marker under `runtime_contract.fs_root_dir` and use `initial_watermark` when it is absent. Compare changed and total row counts per period.
 - If updated row count equals total period count, mark that period `full`; otherwise mark `delta`.
 - Export full period with `where period_column = period`.
 - Export delta period with `where period_column = period and last_update_time_column > last_timestamp`.

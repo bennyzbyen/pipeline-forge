@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional
 
 PATTERNS = [
     {
+        "id": "gateway_app_disabled", "category": "gateway", "severity": "high",
+        "patterns": [r"\bauth(?:entication)?\s+failed\s*:\s*app[ _-]?key\s+is\s+disabled\b"],
+        "root_cause": "Gateway 拒绝认证，返回了应用 Key 已禁用。",
+        "impact": "该次 Gateway 调用失败。已完成的目标写入以本次运行的阶段记录为准。",
+        "fix": "核对实际部署包所属的应用和运行环境，再核对平台上的启用状态。",
+        "verify": "确认同一应用在对应环境通过认证。",
+    },
+    {
         "id": "python_api_compatibility", "category": "environment", "severity": "high",
         "patterns": [r"AttributeError:.*['\"]str['\"].*has no attribute ['\"](?:removeprefix|removesuffix)['\"]"],
         "root_cause": "字符串 API 在实际运行环境中不可用；需核对解释器及实际对象，不从异常猜测具体版本。",
@@ -33,7 +41,7 @@ PATTERNS = [
         "root_cause": "DataEngine SINGLE 包装参数没有被正确拆包，或 body.params 没有被 JSON 解析成业务参数。",
         "impact": "任务在入口层失败，通常不会写 HBase/ClickHouse，也不会安全更新时间戳。",
         "fix": "检查 plugin_main.py 的参数读取逻辑，确认 algorithm_io_mode == SINGLE 时解析 params.body.params；同时核对运行参数是否包含 source_informations/hbase_informations/clickhouse_information。",
-        "verify": "日志中应出现完整业务 params，并能打印 mysql_table、hbase_table、clickhouse_table。",
+        "verify": "核对拆包后的表名和参数键。",
     },
     {
         "id": "missing_runtime_param",
@@ -46,7 +54,7 @@ PATTERNS = [
         "root_cause": "运行参数缺失必填字段，或生成代码没有从表配置补齐默认参数。",
         "impact": "任务在参数初始化或目标写入前失败；一般不会写入目标表。",
         "fix": "补齐 params JSON，或让入口从 table_configs 按 mysql_table 补齐 period_column、rowkey_rule_columns、目标表等默认值。",
-        "verify": "重跑前打印 params，确认缺失字段已存在且表名与任务一致。",
+        "verify": "重跑前核对参数键和目标表名。",
     },
     {
         "id": "no_changed_data",
@@ -301,12 +309,44 @@ def score_patterns(text: str) -> List[Dict[str, Any]]:
 
 def analyze_log(text: str) -> Dict[str, Any]:
     lines = normalize_lines(text)
+    start = next((i for i in range(len(lines) - 1, -1, -1) if re.search(r"\bpipeline_start(?:\s|$)", lines[i])), 0)
+    lines = lines[start:]
+    stages = {}
+    failed_stage = ""
+    last_progress = 0
+    for i, line in enumerate(lines):
+        event = re.search(r"\b(stage_start|stage_complete|stage_skip|pipeline_failed)\s+.*?\bstage=([\w.-]+)", line)
+        if not event:
+            continue
+        kind, stage = event.groups()
+        status = re.search(r"\bstatus=([\w.-]+)", line)
+        if kind == "stage_start":
+            stages[stage] = "started"
+            last_progress = i
+        elif kind == "pipeline_failed":
+            stages[stage] = "failed"
+            failed_stage = stage
+        elif kind == "stage_skip" or (status and status[1] == "skipped"):
+            stages[stage] = "skipped"
+        elif stages.get(stage) != "skipped":
+            if not status or status[1] in {"success", "ok", "passed", "completed"}:
+                stages[stage] = "completed"
+                last_progress = i
+            else:
+                stages[stage] = "unconfirmed"
     traceback_info = extract_traceback(lines)
     # Successful platform messages are context, not root-cause evidence.
     exception = traceback_info["exception_line"]
     root_hits = score_patterns(exception) if exception else []
-    failure_text = "\n".join(line for line in lines if re.search(r"\b(ERROR|WARNING|failed|failure|unavailable)\b", line, re.I))
-    hits = root_hits or score_patterns(failure_text)
+    failure_text = "\n".join(line for line in lines[last_progress:] if re.search(r"\b(ERROR|WARNING|failed|failure|unavailable)\b", line, re.I))
+    hits = root_hits
+    if not hits or hits[0]["id"] in {"hbase_gateway_fs", "gateway_client_failure"}:
+        context_hits = score_patterns(failure_text)
+        disabled = [hit for hit in context_hits if hit["id"] == "gateway_app_disabled"]
+        hits = root_hits or context_hits
+        if disabled:
+            hits = disabled
+            root_hits = [hit for hit in root_hits if hit["id"] == "gateway_app_disabled"]
     primary = hits[0] if hits else None
     competing = []
     if primary:
@@ -338,12 +378,21 @@ def analyze_log(text: str) -> Dict[str, Any]:
     else:
         confidence = "high"
         confidence_reason = "完整 traceback 与唯一最高优先级错误模式一致。"
+    completed = [name for name, state in stages.items() if state == "completed"]
+    impact = primary["impact"] if primary else "影响范围未确认。"
+    if failed_stage:
+        impact = f"本次运行在 {failed_stage} 失败。"
+    if completed:
+        impact += "日志确认已完成 " + "、".join(completed) + "。"
     return {
         "primary_classification": primary["category"] if primary else "unknown",
         "primary_pattern_id": primary["id"] if primary else "unknown",
-        "confirmed_issue": primary["root_cause"] if primary else "日志中没有匹配到明确失败模式，需要补充完整 traceback、参数和失败前后 50 行日志。",
-        "impact_scope": primary["impact"] if primary else "影响范围未确认。",
-        "minimum_fix": primary["fix"] if primary else "先补齐完整日志，再按参数、路径/环境、数据缺失、外部服务、业务代码顺序排查。",
+        "confirmed_issue": primary["root_cause"] if primary else (
+            f"日志记录了 {failed_stage} 失败，具体原因待核对该阶段的原始异常。" if failed_stage
+            else "需要失败附近的异常和阶段记录来定位原因。"),
+        "impact_scope": impact,
+        "minimum_fix": primary["fix"] if primary else (
+            f"核对 {failed_stage} 调用的原始异常或响应状态。" if failed_stage else "补充失败附近的日志。"),
         "verification": primary["verify"] if primary else "确认日志包含参数、环境、源 SQL、目标写入和完整异常。",
         "diagnosis_status": "confirmed" if confidence == "high" else "hypothesis",
         "confidence": confidence,
@@ -351,8 +400,11 @@ def analyze_log(text: str) -> Dict[str, Any]:
         "competing_pattern_ids": competing,
         "classification_basis": "exception_line" if root_hits else "failure_context",
         "runtime_version": "unknown",
-        "failure_stage": "module_load" if primary and primary["id"] == "dependency_or_import" else "exception_call" if exception else "unknown",
-        "exception_history": [line.strip() for line in lines if re.search(r"(?:Error|Exception):", line)],
+        "failure_stage": failed_stage or ("module_load" if primary and primary["id"] == "dependency_or_import" else "exception_call" if exception else "unknown"),
+        "completed_stages": completed,
+        "operator_packages": list(dict.fromkeys(re.findall(
+            r'(?m)^\s*File "[^"\n]*[/\\]plugins[/\\]([\w.-]+_\d{8}_\d{6}(?:_\d{6})?)[/\\]', "\n".join(lines)))),
+        "exception_history": [safe_line(line.strip()) for line in lines if re.search(r"(?:Error|Exception):", line)],
         "matched_patterns": [
             {
                 "id": item["id"],
@@ -363,19 +415,24 @@ def analyze_log(text: str) -> Dict[str, Any]:
             }
             for item in hits[:5]
         ],
-        "first_real_exception": traceback_info["exception_line"],
+        "first_real_exception": safe_line(traceback_info["exception_line"]),
         "traceback_count": traceback_info["traceback_count"],
-        "key_log_lines": find_key_lines(lines),
-        "tail": tail_nonempty(lines),
-        "uncertain_points": build_uncertainty(text, primary),
+        "key_log_lines": [safe_line(line) for line in find_key_lines(lines)],
+        "tail": [safe_line(line) for line in tail_nonempty(lines)],
+        "uncertain_points": build_uncertainty("\n".join(lines), primary),
     }
+
+
+def safe_line(line: str) -> str:
+    pattern = r"""(?:\b(?:[A-Za-z0-9]+[_-])*(?:app[ _-]?(?:key|secret)|api[_-]?key|token|secret|password|passwd|authorization)["']?\s*[:=：]|\bBearer\s+\S+|://[^/\s:@]+:[^/\s@]+@)"""
+    return "[敏感日志行已隐藏]" if re.search(pattern, line, re.I) else line
 
 
 def build_uncertainty(text: str, primary: Optional[Dict[str, Any]]) -> List[str]:
     missing = []
     lowered = text.lower()
     if "params" not in lowered and "source_informations" not in lowered:
-        missing.append("日志中没有看到完整运行参数，无法确认表名、period/date、rowkey 和目标表是否正确。")
+        missing.append("日志缺少参数摘要，表名和同步范围待核对。")
     if "running env" not in lowered and "env" not in lowered:
         missing.append("日志中没有明确运行环境，无法确认 UAT/PROD cluster、密钥和库名前缀。")
     if "traceback" not in lowered and primary and primary["severity"] == "high":
@@ -404,9 +461,11 @@ def render_markdown(result: Dict[str, Any]) -> str:
         "",
         "## Evidence",
         f"- Primary classification: `{result['primary_classification']}` / `{result['primary_pattern_id']}`",
-        f"- First real exception: `{result['first_real_exception'] or 'not found'}`",
+        f"- Traceback 末行：`{result['first_real_exception'] or 'not found'}`",
         f"- Traceback count: {result['traceback_count']}",
     ]
+    if result["operator_packages"]:
+        lines.append("- 堆栈中的算子包：" + ", ".join(result["operator_packages"]))
     if result["competing_pattern_ids"]:
         lines.append("- Competing patterns: " + ", ".join(f"`{item}`" for item in result["competing_pattern_ids"]))
     if result["matched_patterns"]:

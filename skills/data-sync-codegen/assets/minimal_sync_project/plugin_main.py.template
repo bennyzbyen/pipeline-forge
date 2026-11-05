@@ -75,7 +75,10 @@ def calc_single(params: dict):
             + ", ".join(str(item) for item in issues)
         )
 
-    gate = readiness_gate(params.get('upstream_readiness'), manual=bool(source_info.get('period')),
+    manual = bool(source_info.get('period'))
+    if manual and table_name in WITHOUT_PERIOD:
+        raise ValueError("Manual period is not supported by this table")
+    gate = readiness_gate(params.get('upstream_readiness'), manual=manual,
                           probe=params.get('upstream_probe'), notify=params.get('upstream_notify'))
     if gate['status'] == 'skipped_upstream_timeout':
         return {'metrics': [gate], 'status': gate['status'], 'watermark_advanced': False}

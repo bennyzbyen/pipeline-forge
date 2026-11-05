@@ -100,6 +100,9 @@ def fake_common(events: List[Tuple[Any, ...]]) -> types.ModuleType:
     module = types.ModuleType("plugin_common")
 
     class TimeStamp_Update:
+        def __init__(self):
+            events.append(("open_watermark_client",))
+
         def fetch_last_timestamp(self, mysql_table: str) -> str:
             events.append(("fetch_timestamp", mysql_table))
             return "2026-05-31 08:00:00"
@@ -153,7 +156,7 @@ def make_with_period_modules(events: List[Tuple[Any, ...]], sync_list: Any, last
         events.append(("write_clickhouse", clickhouse_table, tuple(sync_items), period_column, code_column))
         return {"operation": "insert_clickhouse", "clickhouse_size": 2}
 
-    def hbase_op(hbase_table, file_dir, sync_items, rowkey_rule_columns):
+    def hbase_op(hbase_table, file_dir, sync_items, rowkey_rule_columns, mysql_table=None):
         events.append(("write_hbase", hbase_table, tuple(sync_items), tuple(rowkey_rule_columns)))
         return {"operation": "insert_hbase", "hbase_size": 2}
 
@@ -259,6 +262,7 @@ def test_with_period_manual(project_dir: Path) -> Dict[str, Any]:
         module = import_from_path("sync_with_period", project_dir / "sync_with_period.py")
         result = module.COT_REPORT_WITH_P(with_period_params(period=["2026P03"])).run()
     assert "fetch_timestamp" not in [event[0] for event in events], events
+    assert "open_watermark_client" not in [event[0] for event in events], events
     assert "get_sync_mode" not in [event[0] for event in events], events
     assert "update_timestamp" not in [event[0] for event in events], events
     assert_event_order(events, ["clean_dir", "fetch_mysql", "write_clickhouse", "write_hbase", "return_result", "clean_files"])
@@ -334,26 +338,23 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
     sync_with = types.ModuleType("sync_with_period")
     sync_without = types.ModuleType("sync_without_period")
 
-    class COT_REPORT_WITH_P:
+    class FakeSync:
         def __init__(self, params: dict):
-            events.append(("with_init", {key: value for key, value in params.items() if key not in {"upstream_probe", "upstream_notify"}}))
+            events.append((self.branch + "_init", {key: value for key, value in params.items() if key not in {"upstream_probe", "upstream_notify"}}))
             self.params = params
 
         def run(self):
-            events.append(("with_run", self.params["source_informations"]["mysql_table"]))
-            return {"branch": "with", "params": self.params}
+            events.append((self.branch + "_run", self.params["source_informations"]["mysql_table"]))
+            return {"branch": self.branch, "params": self.params}
 
-    class COT_REPORT_WITHOUT_P:
-        def __init__(self, params: dict):
-            events.append(("without_init", {key: value for key, value in params.items() if key not in {"upstream_probe", "upstream_notify"}}))
-            self.params = params
+    class WithPeriod(FakeSync):
+        branch = "with"
 
-        def run(self):
-            events.append(("without_run", self.params["source_informations"]["mysql_table"]))
-            return {"branch": "without", "params": self.params}
+    class WithoutPeriod(FakeSync):
+        branch = "without"
 
-    sync_with.COT_REPORT_WITH_P = COT_REPORT_WITH_P
-    sync_without.COT_REPORT_WITHOUT_P = COT_REPORT_WITHOUT_P
+    sync_with.COT_REPORT_WITH_P = WithPeriod
+    sync_without.COT_REPORT_WITHOUT_P = WithoutPeriod
     with isolated_imports(project_dir, {"sync_with_period": sync_with, "sync_without_period": sync_without}):
         module = import_from_path("plugin_main", project_dir / "plugin_main.py")
         assert module._normalize_period(None) is None
@@ -367,10 +368,13 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
             pass
         else:
             raise AssertionError("invalid non-empty period shape must fail")
-        assert module.WITH_PERIOD, "generated project must configure at least one with-period table"
-        assert module.WITHOUT_PERIOD, "generated project must configure at least one without-period table"
-        with_table = module.WITH_PERIOD[0]
-        without_table = module.WITHOUT_PERIOD[0]
+        active = {}
+        for branch, tables in (("with", module.WITH_PERIOD), ("without", module.WITHOUT_PERIOD)):
+            expected = {name for name, cfg in module.table_configs.items() if cfg["sync_mode"] == branch + "_period"}
+            assert set(tables) == expected, f"{branch}-period dispatch differs from the configured tables"
+            active[branch] = next((name for name in tables if module.table_configs[name].get("runtime_enabled") is not False), None)
+        table = active["with"] or active["without"]
+        assert table, "generated project must configure at least one runnable table"
         before = len(events)
         try:
             module.calc_single({'source_table': 'fixture_unknown'})
@@ -379,17 +383,36 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
         else:
             raise AssertionError('unknown table must fail before source reads')
         assert len(events) == before
-        gate_params = {'source_table': with_table, 'upstream_readiness': {'enabled': True, 'manual_bypass': True, 'timeout_seconds': 1},
+        gate_params = {'source_table': table, 'upstream_readiness': {'enabled': True, 'manual_bypass': True, 'timeout_seconds': 1},
                        'upstream_probe': lambda timeout: 'timeout', 'upstream_notify': lambda result: (_ for _ in ()).throw(RuntimeError('notify'))}
         timeout_result = module.calc_single(gate_params)
         assert timeout_result['status'] == 'skipped_upstream_timeout' and timeout_result['watermark_advanced'] is False
         assert timeout_result['metrics'][0]['notification_failed'] is True and len(events) == before
-        gate_params['source_informations']['period'] = ['2026P01', '2026P02']
-        assert module.calc_single(gate_params)['branch'] == 'with'
-        with_result = module.calc_single({"source_informations": {"mysql_table": with_table}})
-        without_result = module.calc_single({"source_informations": {"mysql_table": without_table}})
+        if active["with"]:
+            gate_params['source_informations']['period'] = ['2026P01', '2026P02']
+            assert module.calc_single(gate_params)['branch'] == 'with'
+        if active["without"]:
+            before = len(events)
+            try:
+                module.calc_single({"source_informations": {"mysql_table": active["without"], "period": ["B1"]}})
+            except ValueError as error:
+                assert "Manual period" in str(error)
+            else:
+                raise AssertionError("a period override must not run an unscoped automatic sync")
+            assert len(events) == before
+        for branch, name in active.items():
+            if name is None:
+                continue
+            result = module.calc_single({"source_informations": {"mysql_table": name}})
+            assert result["branch"] == branch
+            params, defaults = result["params"], module.table_configs[name]
+            assert params["hbase_informations"]["hbase_table"] == defaults["hbase_table"]
+            assert params["hbase_informations"]["rowkey_rule_columns"] == defaults["rowkey_rule_columns"]
+            assert params["clickhouse_information"]["clickhouse_table"] == defaults["clickhouse_table"]
+            assert params["source_informations"]["last_update_time_column"] == defaults["last_update_time_column"]
+            assert params["source_informations"].get("period_column") == (defaults["period_column"] or None)
         alternate = module.calc_single({
-            "source_informations": {"mysql_table": with_table, "period_column": "batch", "code_column": "fixture_key"},
+            "source_informations": {"mysql_table": table, "period_column": "batch", "code_column": "fixture_key"},
             "hbase_informations": {"hbase_table": "fixture.alternate", "rowkey_rule_columns": ["batch", "fixture_key"]},
             "clickhouse_information": {"clickhouse_table": "fixture.alternate"},
         })["params"]
@@ -398,21 +421,10 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
         assert alternate["hbase_informations"] == {"hbase_table": "fixture.alternate", "rowkey_rule_columns": ["batch", "fixture_key"]}
         assert alternate["clickhouse_information"]["clickhouse_table"] == "fixture.alternate"
 
-    assert with_result["branch"] == "with", with_result
-    assert without_result["branch"] == "without", without_result
-    with_params = with_result["params"]
-    without_params = without_result["params"]
-    with_defaults = module.table_configs[with_table]
-    without_defaults = module.table_configs[without_table]
-    assert with_params["hbase_informations"]["hbase_table"] == with_defaults["hbase_table"], with_params
-    assert with_params["clickhouse_information"]["clickhouse_table"] == with_defaults["clickhouse_table"], with_params
-    assert with_params["source_informations"]["period_column"] == with_defaults["period_column"], with_params
-    assert without_params["hbase_informations"]["rowkey_rule_columns"] == without_defaults["rowkey_rule_columns"], without_params
-    assert without_params["clickhouse_information"]["clickhouse_table"] == without_defaults["clickhouse_table"], without_params
-    return {"case": "plugin_main_defaults", "events": events, "with_table": with_table, "without_table": without_table}
+    return {"case": "plugin_main_defaults", "events": events, "with_table": active["with"], "without_table": active["without"]}
 
 
-def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
+def test_hbase_final_request(project_dir: Path, check_without: bool = True) -> Dict[str, Any]:
     import tempfile
     import pandas as pd
     from unittest.mock import patch
@@ -458,8 +470,9 @@ def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
             else:
                 raise AssertionError("a record without a usable key must not reach delete_df")
             assert deleted == ["009"]
-        without = import_from_path("cot_sync_without_period.hbase_operation", project_dir / "cot_sync_without_period/hbase_operation.py")
-        assert isinstance(without.HBaseOperation().hbase_client, FakeHBaseClient)
+        if check_without:
+            without = import_from_path("cot_sync_without_period.hbase_operation", project_dir / "cot_sync_without_period/hbase_operation.py")
+            assert isinstance(without.HBaseOperation().hbase_client, FakeHBaseClient)
     final_request = requests[0]
     assert final_request["row_start"] == "2026P03", final_request
     assert final_request["row_stop"] == "2026P03Z", final_request
@@ -467,19 +480,29 @@ def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
     return {"case": "hbase_final_request", "row_prefix_count": len(final_request["row_prefixs"]), "status": "passed"}
 
 
-def test_target_failure_watermark(project_dir: Path) -> Dict[str, Any]:
-    for periods in (None, ['2026P01', '2026P02']):
+def test_target_failure_watermark(project_dir: Path, with_period=True, without_period=True) -> Dict[str, Any]:
+    runs = [("with", None), ("with", ["2026P01", "2026P02"])] if with_period else []
+    if without_period:
+        runs.append(("without", None))
+    for branch, periods in runs:
         events = []
         overrides = {'plugin_common': fake_common(events)}
-        overrides.update(make_with_period_modules(events, [('2026P01', 'full'), ('2026P02', 'full')], '2026-06-01'))
         def fail(*args):
             events.append(('write_hbase_failed',))
             raise ValueError('fixture second target failure')
-        overrides['cot_sync_with_period.hbase_operation'].hbase_op = fail
+        if branch == "with":
+            overrides.update(make_with_period_modules(events, [('2026P01', 'full'), ('2026P02', 'full')], '2026-06-01'))
+            overrides['cot_sync_with_period.hbase_operation'].hbase_op = fail
+            params, runner = with_period_params(periods), "COT_REPORT_WITH_P"
+        else:
+            overrides.update(make_without_period_modules(events, True, '2026-06-01', 1))
+            overrides['cot_sync_without_period.hbase_operation'].HBaseOperation.hbase_op = fail
+            params, runner = without_period_params(), "COT_REPORT_WITHOUT_P"
         with isolated_imports(project_dir, overrides):
-            module = import_from_path('sync_with_period', project_dir / 'sync_with_period.py')
+            module_name = f"sync_{branch}_period"
+            module = import_from_path(module_name, project_dir / (module_name + ".py"))
             try:
-                module.COT_REPORT_WITH_P(with_period_params(periods)).run()
+                getattr(module, runner)(params).run()
             except RuntimeError as error:
                 assert isinstance(error.__cause__, ValueError)
             else:
@@ -519,20 +542,16 @@ def test_delta_and_rowkey(project_dir: Path) -> Dict[str, Any]:
 
 
 def run_verification(project_dir: Path) -> Dict[str, Any]:
-    cases = [
-        test_plugin_main_defaults,
-        test_hbase_final_request,
-        test_with_period_manual,
-        test_with_period_incremental,
-        test_with_period_no_changes,
-        test_without_period_changed,
-        test_without_period_no_changes,
-        test_target_failure_watermark,
-        test_delta_and_rowkey,
-    ]
-    results = []
-    for case in cases:
-        results.append(case(project_dir))
+    dispatch = test_plugin_main_defaults(project_dir)
+    with_period, without_period = bool(dispatch["with_table"]), bool(dispatch["without_table"])
+    results = [dispatch]
+    if with_period:
+        results.append(test_hbase_final_request(project_dir, check_without=without_period))
+        for case in (test_with_period_manual, test_with_period_incremental, test_with_period_no_changes, test_delta_and_rowkey):
+            results.append(case(project_dir))
+    if without_period:
+        results.extend([test_without_period_changed(project_dir), test_without_period_no_changes(project_dir)])
+    results.append(test_target_failure_watermark(project_dir, with_period, without_period))
     return {"status": "ok", "case_count": len(results), "cases": results}
 
 

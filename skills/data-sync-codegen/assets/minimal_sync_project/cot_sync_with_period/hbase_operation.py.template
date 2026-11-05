@@ -5,7 +5,7 @@ import os
 import pandas as pd
 from loguru import logger
 
-from plugin_common import ClientWrapper
+from plugin_common import ClientWrapper, period_csv_files
 
 
 default_insert_sep = "\x1D"
@@ -95,20 +95,22 @@ def insert_hbase(file_list, hbase_table, hbase_columns, hbase_client=None):
         )
 
 
-def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns):
+def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns, mysql_table=None):
     start_time = datetime.datetime.now()
     total_size = 0
     delete_size = 0
     hbase_client = None
     for period, mode in sync_list:
-        source_pattern = f"{file_dir}/{period}*.csv"
-        source_files = glob.glob(source_pattern)
+        if mysql_table is None:  # Older direct callers only supply the period and directory.
+            source_files = glob.glob(f"{glob.escape(str(file_dir))}/{glob.escape(str(period))}_*.csv")
+        else:
+            source_files = period_csv_files(file_dir, period, mysql_table)
         if not source_files:
             logger.warning("stage_skip stage=hbase_write target={} period={} reason=no_source_files", hbase_table, period)
             continue
 
         size, hbase_columns = transfer_csv_file(source_files, rowkey_rule_columns)
-        insert_files = glob.glob(f"{file_dir}/{period}*.csv.gz")
+        insert_files = [path + ".gz" for path in source_files]
         if hbase_client is None:
             hbase_client = ClientWrapper(client_type="hbase").hbase_client
         if mode == "full":

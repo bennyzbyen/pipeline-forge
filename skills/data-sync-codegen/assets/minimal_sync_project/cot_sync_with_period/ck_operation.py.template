@@ -1,11 +1,10 @@
-import glob
 from datetime import datetime
 
 import pandas as pd
 from clickhouse_connect.driver.tools import insert_file
 from loguru import logger
 
-from plugin_common import ClientWrapper
+from plugin_common import ClientWrapper, period_csv_files
 from cot_config.plugin_config import ck_legacy_database_tables, cluster
 
 
@@ -77,7 +76,7 @@ def clickhouse_op(file_dir, sync_list, clickhouse_table, period_column, code_col
     size = 0
     delete_size = 0
     for period, mode in sync_list:
-        matching_files = glob.glob(f"{file_dir}/{period}*.csv")
+        matching_files = period_csv_files(file_dir, period, mysql_table)
         if not matching_files:
             logger.warning("stage_skip stage=clickhouse_write target={} period={} reason=no_source_files", clickhouse_table, period)
             continue

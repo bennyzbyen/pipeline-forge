@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import pprint
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -280,13 +281,27 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
         if not doc_source_table:
             continue
 
+        profile = row.get("parameters")
+        source_params = (profile if isinstance(profile, Mapping) else row).get("source_informations") or {}
+        if not isinstance(source_params, Mapping):
+            raise ValueError(f"{doc_source_table}: source_informations must be an object")
+        params = {**row, **source_params}
         source_table = normalize_cot_table_name(doc_source_table, historical_profile)
         fields = field_map.get(doc_source_table, [])
-        with_period = is_with_period(row, source_table, fields, historical_profile)
-        update_column = select_column(fields, DEFAULT_UPDATE_COLUMNS, "inksaa_last_modified_timestamp")
-        period_column = select_column(fields, ["period"], "period") if with_period else ""
-        code_column = select_column(fields, DEFAULT_CODE_COLUMNS, "code")
-        key_column = select_column(fields, DEFAULT_KEY_COLUMNS, "id")
+        legacy_period = is_with_period(row, source_table, fields, historical_profile)
+        source_group = clean_text(params.get("source_group")) or classify_source_group(source_table, legacy_period, historical_profile)
+        mode = clean_text(params.get("sync_mode"))
+        if not mode and row.get("mode") in ("with_period", "without_period"):
+            mode = row["mode"]
+        if mode and mode not in {"with_period", "without_period"}:
+            raise ValueError(f"{source_table}: unsupported sync_mode {mode!r}")
+        with_period = bool(clean_text(params["period_column"])) if "period_column" in params else legacy_period
+        if mode:
+            with_period = mode == "with_period"
+        update_column = clean_text(params.get("last_update_time_column")) or select_column(fields, DEFAULT_UPDATE_COLUMNS, "inksaa_last_modified_timestamp")
+        period_column = (clean_text(params.get("period_column")) or select_column(fields, ["period"], "period")) if with_period else ""
+        code_column = clean_text(params.get("code_column")) or select_column(fields, DEFAULT_CODE_COLUMNS, "code")
+        key_column = clean_text(params.get("key_column")) or select_column(fields, DEFAULT_KEY_COLUMNS, "id")
 
         if with_period:
             rowkey_rule_columns = [period_column, code_column]
@@ -301,9 +316,9 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
 
         if not fields:
             questions.append(f"{source_table}: field dictionary was not available; verify update column and rowkey columns.")
-        if with_period and code_column in {"id", "inksaa_id"}:
+        if with_period and not params.get("code_column") and code_column in {"id", "inksaa_id"}:
             questions.append(f"{source_table}: code column was inferred as {code_column}; verify COT rowkey business key.")
-        if update_column == "inksaa_last_modified_timestamp" and update_column not in fields:
+        if not params.get("last_update_time_column") and update_column == "inksaa_last_modified_timestamp" and update_column not in fields:
             questions.append(f"{source_table}: update timestamp column was defaulted to {update_column}; verify source schema.")
 
         mapping = target_map.get(doc_source_table, {})
@@ -317,7 +332,7 @@ def build_table_configs(facts: Dict[str, Any], extracted_tables: Optional[Path])
             "business_desc": clean_text(row.get("business_desc")),
             "report_type": clean_text(row.get("report_type")),
             "source_range": clean_text(row.get("source_range")),
-            "source_group": classify_source_group(source_table, with_period, historical_profile),
+            "source_group": source_group,
             "historical_profile": 'cot_2026' if historical_profile else '',
             "truncate_targets": [target for target in ('clickhouse', 'hbase') if truncate_confirmed and target in (truncate.get('targets') or [])],
             "sync_mode": "with_period" if with_period else "without_period",
@@ -390,8 +405,24 @@ def render_plugin_config(
     configs: Dict[str, Dict[str, Any]],
     project_name: str,
     runtime_contract: Dict[str, Any] | None = None,
+    *,
+    fs_root: str | None = None,
 ) -> str:
     runtime_contract = runtime_contract if isinstance(runtime_contract, dict) else {}
+    for key in ("fs_root_dir", "initial_watermark"):
+        if key in runtime_contract and not (isinstance(runtime_contract[key], str) and runtime_contract[key].strip()):
+            raise ValueError(f"runtime_contract.{key} requires a nonempty string")
+    if fs_root is None:
+        fs_root = runtime_contract.get("fs_root_dir", f"/datahub/project_storage/{project_name}")
+    extra_profiles = ""
+    builtin_groups = {"report_ps_p", "store_report", "store_report_generator"}
+    for group in sorted({item["source_group"] for item in configs.values()} - builtin_groups):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", group):
+            raise ValueError("Invalid MySQL connection profile identifier")
+        params = {"host": "<MYSQL_HOST>", "port": "<MYSQL_PORT>", "user": "<MYSQL_USER>",
+                  "password": "<MYSQL_PASSWORD>", "db": group, "charset": "utf8"}
+        extra_profiles += (f'\nmysql_{group}_url = "mysql+pymysql://<USER>:<PASSWORD>@<HOST>:<PORT>/{group}?charset=utf8mb4"\n'
+                           f'mysql_{group}_params = {py_literal(params)}\n')
     with_period_tables = [name for name, item in configs.items() if item["sync_mode"] == "with_period"]
     without_period_tables = [name for name, item in configs.items() if item["sync_mode"] == "without_period"]
     store_report_generator_table_list = [
@@ -439,7 +470,7 @@ if environment_connection_matrix and not environment_profile.get("connection_mod
     raise ValueError("environment profile is missing connection_mode")
 logger.info("running env configured: {{}}", bool(env))
 
-fs_root_dir = "/datahub/project_storage/{project_name}"
+fs_root_dir = {json.dumps(fs_root, ensure_ascii=False)}
 
 App_key = "<APP_KEY>"
 App_secret = "<APP_SECRET>"
@@ -473,7 +504,7 @@ mysql_store_report_params = {{
     "charset": "utf8",
 }}
 
-cluster = environment_profile.get("clickhouse_cluster", "<CLICKHOUSE_CLUSTER>")
+{extra_profiles}cluster = environment_profile.get("clickhouse_cluster", "<CLICKHOUSE_CLUSTER>")
 
 table_configs = {py_literal(runtime_table_configs)}
 
@@ -502,7 +533,7 @@ def build_example_params(configs: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         source_info.update(
             {
                 "period_column": preferred["period_column"],
-                "period": ["<PERIOD>"],
+                "period": [],
                 "code_column": preferred["code_column"],
             }
         )
@@ -587,9 +618,12 @@ def write_manifest(
     safe_scaffold: bool = False,
     project_name: str = "",
 ) -> None:
+    runtime = codegen_contract.get("runtime_contract")
+    runtime = runtime if isinstance(runtime, dict) else {}
     manifest = {
         "manifest_version": 2,
         "project_name": project_name,
+        "fs_root_dir": runtime.get("fs_root_dir", f"/datahub/project_storage/{project_name}"),
         "summary": {
             "table_count": len(configs),
             "with_period_count": len([item for item in configs.values() if item["sync_mode"] == "with_period"]),
@@ -714,7 +748,10 @@ def scaffold_project(args: argparse.Namespace) -> None:
         if prior_manifest.is_file():
             prior = load_json(prior_manifest)
             old_configs = {item["mysql_table"]: item for item in prior["tables"]}
-            managed = render_plugin_config(old_configs, prior.get("project_name", args.project_name), prior.get("runtime_contract", {}))
+            old_name = prior.get("project_name", args.project_name)
+            # Prior manifests without an effective path always rendered the project-name default.
+            old_root = prior.get("fs_root_dir", f"/datahub/project_storage/{old_name}")
+            managed = render_plugin_config(old_configs, old_name, prior.get("runtime_contract", {}), fs_root=old_root)
         if config_path.read_text(encoding="utf-8-sig") != managed:
             raise ValueError("Existing cot_config/plugin_config.py is project-owned; adapt it in place or scaffold into a fresh directory.")
     copy_template_tree(template_root, args.output_dir, args.force)

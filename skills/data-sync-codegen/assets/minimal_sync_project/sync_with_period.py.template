@@ -28,7 +28,7 @@ class COT_REPORT_WITH_P:
 
         self.clickhouse_information = params.get("clickhouse_information", {})
         self.clickhouse_table = self.clickhouse_information.get("clickhouse_table")
-        self.timestamp_update = TimeStamp_Update()
+        self.timestamp_update = None if self.period else TimeStamp_Update()
         self._last_timestamp = None
 
     def _resolve_sync_range(self):
@@ -88,7 +88,7 @@ class COT_REPORT_WITH_P:
         if not self.rowkey_rule_columns:
             raise ValueError("rowkey_rule_columns is required for HBase write")
         logger.info("stage_start stage=hbase_write target={} sync_items={}", self.hbase_table, len(sync_list))
-        return hbase_operation.hbase_op(self.hbase_table, self.file_dir, sync_list, self.rowkey_rule_columns)
+        return hbase_operation.hbase_op(self.hbase_table, self.file_dir, sync_list, self.rowkey_rule_columns, self.mysql_table)
 
     def run(self):
         """Run source export, target replacement, and guarded progress update."""
