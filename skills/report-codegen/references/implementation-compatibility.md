@@ -35,6 +35,48 @@ Preserve this per code unit when units have different structures. In particular 
 - return value/JSON serialization and error propagation;
 - existing deterministic tests and execution commands.
 
+### Refactoring a deployed operator or deriving a new year
+
+Trace one real run from the previous entrypoint through parameter resolution, source
+selection, both writers and watermark handling. Carry over the provider of each value.
+Pipeline parameters can own the physical targets, update column, period or batch,
+replacement key and ordered RowKey columns. Retain their existing defaults, identifier
+checks and write scope. An example Excel row or field dictionary is evidence for that
+run. Turning its values into an equality check rejects other valid runs.
+
+For a whole-row sync, retain ordered runtime column discovery (`SELECT *` with cursor
+metadata, or `SHOW COLUMNS` and a dynamic select list). Carry that order through CSV,
+ClickHouse and HBase, including new nullable business columns. Check the keys consumed
+by the operation. Keep explicit projections for reports that define them. Add a target
+schema/type preflight only when the source or current requirement calls for one.
+Test a new column and a different valid parameter on the native execution path.
+
+For Gateway, trace the client back to the selected operator's configuration. Preserve
+the file, credential provider, environment selector and per-unit/profile routing.
+An environment selector such as `running_env` can choose QA/UAT/PROD while the key pair
+comes from a file. Changing the provider, moving a key to an environment variable or
+rotating credentials requires a specific instruction. A private operator ZIP must carry
+the authorized runtime config and the original fixed `gateway/`, `hbase/` and `fs/`
+files. Keep shared core and unit-specific config separate when assembling split ZIPs.
+
+Use the project's packager. Compare the **finished ZIP** to the authoritative unit
+directory and fixed-package source, with the entrypoint at its deployment path.
+
+```text
+python <pipeline-forge-guide>/scripts/verify_operator_package.py --zip <operator.zip> --unit-root <unit> --config cot_config/plugin_config.py --platform-root <original-operator>
+```
+
+Select the actual config path, repeat `--config` for other runtime config files and
+use `--entrypoint` for a different layout. For split operators run this once per ZIP
+with its own trusted unit root. Exercise the packaged entrypoint offline with fake
+clients to check each profile routes to that unit's provider. Report paths and pass/fail
+only. Keep secret values out of logs, handoffs, examples and the plugin. For a shareable
+sanitized example use the separate candidate workflow.
+
+Use an approved, populated config as the reference for a credential-bearing delivery.
+Matching placeholder files still need deployment configuration. Gateway application
+activation is a separate platform check.
+
 Missing correctness facts remain blockers only for the dependent code. Do not invent a
 deployment model or treat every optional implementation detail as a confirmation gate.
 

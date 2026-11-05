@@ -15,8 +15,7 @@ default_rowkey_key = "rowkey"
 
 class HBaseOperation:
     def __init__(self):
-        self.clients = ClientWrapper(client_type="gateway")
-        self.fs_client = self.clients.fs_client
+        self.clients = ClientWrapper(client_type="hbase")
         self.hbase_client = self.clients.hbase_client
 
     def truncate_hbase(self, hbase_table_name):

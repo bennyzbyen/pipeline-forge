@@ -40,7 +40,7 @@ Act as the beginner-friendly front door for PipelineForge. Select and sequence t
 | Pipeline Export template or request for an importable workbook | Read `references/specialized-routes.md`, then use `pipeline-excel-builder`. |
 | DDL, schema, field list, or database conversion request | Read `references/specialized-routes.md`, then use `db-ddl-generator-skill`. |
 | Job log, error screenshot, or failed DataEngine/DataHub run | Read `references/specialized-routes.md`, then use `data-job-log-debugger`. |
-| Existing synchronization or report project review | Use the matching codegen skill and its verifiers; do not regenerate unrelated files. |
+| Existing operator, annual derivative or refactor | Trace the selected original and adapt it with the matching codegen skill. Verify native behavior and any requested private ZIP against the unit's own config and fixed packages. See `../report-codegen/references/implementation-compatibility.md`. |
 
 When blockers need user input, read `references/beginner-questions.md` before presenting them.
 

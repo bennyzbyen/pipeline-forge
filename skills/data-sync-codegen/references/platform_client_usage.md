@@ -27,6 +27,10 @@ fs_client = gateway_client.getFsClient()
 
 ## HBase Read Patterns
 
+- Keep the previous scan bounds, prefixes and Gateway request semantics. A requested qualifier may be returned alongside RowKey even when the consumer uses only RowKey.
+- Read by the columns the operation actually consumes. Gateway exports can contain blank rows, empty or unnamed trailing columns, null qualifiers, reordered headers and extra fields. Accept those without imposing an exact width or a non-null rule on unused fields. For raw TSV, honor the wrapper's delimiter, BOM and header conventions. A stale-key diff uses only genuine RowKeys; if a nonblank record has no identifiable key, stop before deleting. Preserve the text of keys, including leading zeros.
+- For calculations and writes, enforce their documented required inputs and ordered output separately from the export shape.
+
 - Create HBase clients through the Gateway facade. Pass the configured `fs_root_dir` to `getHbaseClient` when available.
 - Prefer `query_df(...)` with the default export mode. Do not set `mode="query"` unless the existing project already uses it.
 - Period/range reads normally use `row_start=period`, `row_stop=f"{period}Z"`.

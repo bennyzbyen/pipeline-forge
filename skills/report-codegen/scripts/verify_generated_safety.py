@@ -59,9 +59,32 @@ def check_source(source):
     return findings
 
 
-def verify(project_dir):
+def add_reference_options(parser):
+    parser.add_argument('--reference-root', type=Path, help='Separate trusted operator source for a private delivery.')
+    parser.add_argument('--preserve-config', action='append', default=[], metavar='PATH',
+                        help='Verify this relative runtime config against the reference without printing values.')
+
+
+def verify(project_dir, reference_root=None, preserved_configs=()):
+    project_dir = Path(project_dir).resolve()
     findings = []
-    for path in sorted(Path(project_dir).rglob('*.py')):
+    preserved = set()
+    if bool(reference_root) != bool(preserved_configs):
+        raise ValueError('--reference-root and --preserve-config must be used together')
+    for name in preserved_configs:
+        relative = Path(name)
+        if relative.anchor or '..' in relative.parts or not relative.parts:
+            raise ValueError('preserved config must be a project-relative file')
+        reference = Path(reference_root).resolve()
+        baseline = (reference / relative).resolve()
+        current = (project_dir / relative).resolve()
+        if (not baseline.is_relative_to(reference) or not current.is_relative_to(project_dir)
+                or not baseline.is_file() or not current.is_file() or baseline.samefile(current)
+                or current.read_bytes() != baseline.read_bytes()):
+            findings.append({'path': str(relative), 'line': 0, 'rule': 'preserved_config_mismatch'})
+        else:
+            preserved.add(relative)
+    for path in sorted(project_dir.rglob('*.py')):
         if '__pycache__' in path.parts:
             continue
         try:
@@ -69,14 +92,20 @@ def verify(project_dir):
         except SyntaxError as error:
             items = [{'line': error.lineno, 'rule': 'invalid_python'}]
         for item in items:
-            findings.append({'path': str(path.relative_to(project_dir)), **item})
-    return {'status': 'failed' if findings else 'passed', 'findings': findings}
+            relative = path.relative_to(project_dir)
+            if item['rule'] != 'hardcoded_credential' or relative not in preserved:
+                findings.append({'path': str(relative), **item})
+    result = {'status': 'failed' if findings else 'passed', 'findings': findings}
+    if preserved_configs:
+        result['verified_reference_configs'] = sorted(str(path) for path in preserved)
+    return result
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project-dir', type=Path, required=True)
+    add_reference_options(parser)
     args = parser.parse_args()
-    result = verify(args.project_dir)
+    result = verify(args.project_dir, args.reference_root, args.preserve_config)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(result['status'] != 'passed')

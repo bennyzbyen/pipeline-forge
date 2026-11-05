@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.3 - 2026-11-06
+
+- Preserve the original field discovery, parameter ownership and Gateway credential provider when refactoring an existing operator.
+- Verify private ZIP configuration and fixed platform files per operator, and tolerate unused columns in HBase old-key exports.
+
 ## 2.9.2 - 2026-11-02
 
 - Correct requirement table roles, field lineage and declared value or join constraints while preserving pending business rules.

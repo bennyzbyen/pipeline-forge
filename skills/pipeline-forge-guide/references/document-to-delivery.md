@@ -46,6 +46,8 @@ If the user explicitly wants a test project, generate only the safe placeholder 
 
 Build the project dispatch view with `scripts/build_code_unit_dispatch.py --facts <structured_facts.json> --output-root <output-root>`. Execute only the commands for confirmed ready units and respect the dependency graph.
 
+For a source-based refactor or annual derivative, carry `implementation_contract.mode=preserve_existing` per unit. Adapt the selected execution path and verify native behavior. The dispatch view omits bundled commands for native units. Follow `../../report-codegen/references/implementation-compatibility.md` for parameter ownership, evolving fields and private ZIP verification.
+
 For synchronization units, preserve table dispatch, with-period/without-period behavior, rowkeys, source and target names, delete/truncate rules, rerun behavior, timestamps, and DataEngine metrics. Pass `--code-unit-id` when the project has multiple units.
 
 For report units, preserve component boundaries, source filters, joins, KPI formulas, grouping, output column order, null/default behavior, target replacement predicates, and any FS/HBase preparation stage. Build and scaffold each unit with `--code-unit-id`. Generic standard/bySKU units also require their own bounded normalized `execution_contract`; unresolved natural-language formulas remain blockers instead of guessed executable code.
@@ -54,7 +56,7 @@ Generate only requested and evidence-supported components. A compiling placehold
 
 ## 5. Verify Locally
 
-Always compile generated Python. Then run the applicable packaged checks:
+Compile generated Python. For a native implementation run its own offline tests and the reference-aware safety check. For bundled layouts run the applicable packaged checks:
 
 - Sync: `verify_cot_manifest_semantics.py` for every table, then `verify_codegen_observability.py` and `verify_cot_runtime_semantics.py`.
 - Report: `verify_report_plan_semantics.py` for every output/field/write contract, then `verify_codegen_observability.py`; run `verify_report_runtime_semantics.py` for specialized types and the packaged generic runtime regression after changing standard/bySKU contract generation.

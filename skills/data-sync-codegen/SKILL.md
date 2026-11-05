@@ -28,14 +28,15 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 
 ## Contract
 
-- Use bundled patterns, scaffolds, and verifiers as the portable source of truth; production samples are optional comparison evidence only.
+- For a refactor or annual derivative, use the user-selected source and its actual entrypoint as the implementation baseline. Record `implementation_contract.mode=preserve_existing`. Follow the bundled route for a new scaffold or an authorized framework migration.
 - Keep `gateway/`, `hbase/`, and `fs/` as fixed platform packages. Put table-specific behavior in COT modules and config.
 - Do not connect to databases or production services during generation or local verification.
-- Preserve in-scope existing connection values when editing their file. New files, examples, logs, and docs use placeholders unless the user explicitly supplies values for insertion.
+- Preserve each existing Gateway credential provider, environment selector and operator-specific config through private deployment packaging. Use placeholders in new examples and templates.
 
 ## Workflow
 
-1. Read `references/cot_sync_patterns.md`.
+1. For a source-based job read `../report-codegen/references/implementation-compatibility.md`, adapt the selected project directly and run its focused native tests. Preserve whole-row discovery, parameter ownership, scan range and target/watermark semantics. For an operator ZIP run the final archive comparison there. The scaffold and class-specific verifiers below apply to the bundled layout.
+   Read `references/cot_sync_patterns.md` for the applicable COT behavior.
 2. Read `references/code_comments_and_runtime_logging.md` before generating or reviewing business code.
 3. Read `references/platform_client_usage.md` when code touches Gateway, HBase, or FS.
 4. If `codegen_contract.component_kind` or `component_hints[].component_kind` is `bysku_report_pipeline`, route to `report-codegen`; it is not a COT table-sync shape.

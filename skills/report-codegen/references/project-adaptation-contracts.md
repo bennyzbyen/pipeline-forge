@@ -119,9 +119,14 @@ chosen path as selection evidence; do not use filesystem enumeration order.
 
 `scripts/verify_generated_safety.py --project-dir <generated-project>` checks literal
 credentials, `verify=False`, literal raises and raw runtime-parameter logging without
-printing source values. Both observability validators also run it. Use external config,
-real Exception objects and scoped metrics. Existing in-scope credentials in a user's file
-are not silently rewritten: report the finding and distinguish it from newly generated code.
+printing source values. Both observability validators also run it. For private deployment
+code, pass `--reference-root <trusted-operator> --preserve-config <relative-file>` for
+each approved config copied intact from the selected unit. The verifier compares bytes
+against a separate original, reports drift and still checks other files and hazards.
+For an intentional change to a mixed business/connection file, review the credential
+provider and exercise the affected profiles offline before selecting that approved file
+as the package reference. Never alter credential lookup to clear a scan. Public examples
+and shared candidates retain the default placeholder check.
 The check is bounded AST inspection, not a complete secret detector or data-flow proof;
 manually review aliases, dynamic construction, connection URLs and logging wrappers.
 

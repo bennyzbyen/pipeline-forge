@@ -11,11 +11,6 @@ from plugin_common import ClientWrapper
 default_insert_sep = "\x1D"
 default_rowkey_key = "rowkey"
 
-clients = ClientWrapper(client_type="gateway")
-fs_client = clients.fs_client
-hbase_client = clients.hbase_client
-
-
 def process_rowkeys(df_data, rowkey_rule_columns, hbase_rowkey_key=default_rowkey_key):
     # Requirement: column order and the final-character prefix are the HBase rowkey contract.
     temp_rowkey = ""
@@ -43,7 +38,9 @@ def transfer_csv_file(matching_files, rowkey_rule_columns):
     return df_size, hbase_columns
 
 
-def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
+def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files, hbase_client=None):
+    if hbase_client is None:
+        hbase_client = ClientWrapper(client_type="hbase").hbase_client
     old_rowkeys = hbase_client.query_df(
         hbase_table_name=hbase_table_name,
         columns=[rowkey_rule_columns[0]],
@@ -51,14 +48,27 @@ def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
         row_stop=f"{period}Z",
         row_prefixs=[str(item) for item in range(10)],
     )
-    if old_rowkeys is None or old_rowkeys.empty:
+    if old_rowkeys is None or len(old_rowkeys) == 0:
         logger.info("stage_skip stage=hbase_delete target={} reason=no_existing_rows", hbase_table_name)
         return 0
-    old_rowkeys = old_rowkeys[[default_rowkey_key]]
+    # Gateway exports may include empty qualifiers, extra columns or a BOM header.
+    # Only the exported RowKey participates in the old-minus-new comparison.
+    key_columns = [name for name in old_rowkeys if str(name).lstrip("\ufeff") in {"rowkey", "RowKey", "HBASE_ROW_KEY"}]
+    if len(key_columns) != 1:
+        raise ValueError("HBase export requires one identifiable RowKey column")
+    keys = old_rowkeys[key_columns[0]]
+    missing = keys.isna() | keys.eq("")
+    if missing.any():
+        rows_without_keys = old_rowkeys.loc[missing]
+        blank_rows = (rows_without_keys.isna() | rows_without_keys.eq("")).all(axis=1)
+        if not blank_rows.all():
+            raise ValueError("HBase export contains a record without a RowKey")
+    old_rowkeys = keys.loc[~missing].astype(str).rename(default_rowkey_key).to_frame()
 
     new_rowkey_frames = []
     for file_path in insert_files:
-        new_rowkey_frames.append(pd.read_csv(file_path, sep=default_insert_sep, compression="gzip", header=None, usecols=[0]))
+        new_rowkey_frames.append(pd.read_csv(file_path, sep=default_insert_sep, compression="gzip", header=None,
+                                             usecols=[0], dtype=str, keep_default_na=False))
     if not new_rowkey_frames:
         return 0
 
@@ -73,7 +83,9 @@ def delete_hbase(hbase_table_name, rowkey_rule_columns, period, insert_files):
     return len(delete_rowkeys)
 
 
-def insert_hbase(file_list, hbase_table, hbase_columns):
+def insert_hbase(file_list, hbase_table, hbase_columns, hbase_client=None):
+    if hbase_client is None:
+        hbase_client = ClientWrapper(client_type="hbase").hbase_client
     for file_path in file_list:
         hbase_client.insert_file(
             file_path=file_path,
@@ -87,6 +99,7 @@ def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns):
     start_time = datetime.datetime.now()
     total_size = 0
     delete_size = 0
+    hbase_client = None
     for period, mode in sync_list:
         source_pattern = f"{file_dir}/{period}*.csv"
         source_files = glob.glob(source_pattern)
@@ -96,9 +109,11 @@ def hbase_op(hbase_table, file_dir, sync_list, rowkey_rule_columns):
 
         size, hbase_columns = transfer_csv_file(source_files, rowkey_rule_columns)
         insert_files = glob.glob(f"{file_dir}/{period}*.csv.gz")
+        if hbase_client is None:
+            hbase_client = ClientWrapper(client_type="hbase").hbase_client
         if mode == "full":
-            delete_size += delete_hbase(hbase_table, rowkey_rule_columns, period, insert_files)
-        insert_hbase(insert_files, hbase_table, hbase_columns)
+            delete_size += delete_hbase(hbase_table, rowkey_rule_columns, period, insert_files, hbase_client)
+        insert_hbase(insert_files, hbase_table, hbase_columns, hbase_client)
         total_size += size
 
     end_time = datetime.datetime.now()

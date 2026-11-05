@@ -50,21 +50,31 @@ def main() -> int:
         raise ValueError("two-level code-unit contract is required for project dispatch")
     if plan.get("status") != "confirmed":
         raise ValueError("project dispatch requires a confirmed code_unit_plan")
+    project_implementation = facts.get("implementation_contract") or facts.get("codegen_contract", {}).get("implementation_contract")
+    output_root = args.output_root.expanduser().resolve()
     rows = []
     for unit in units:
         readiness = unit.get("readiness") if isinstance(unit.get("readiness"), dict) else {}
-        rows.append(
-            {
-                "code_unit_id": unit.get("code_unit_id", ""),
-                "codegen_route": unit.get("codegen_route", ""),
-                "component_kind": unit.get("component_kind", ""),
-                "covered_waterlines": unit.get("covered_waterlines", []),
-                "depends_on": unit.get("depends_on", []),
-                "ready_for_codegen": readiness.get("ready_for_codegen") is True,
-                "blockers": readiness.get("blockers", []),
-                "commands": command_for(unit, facts_path, args.output_root.expanduser().resolve()),
-            }
-        )
+        implementation = unit.get("implementation_contract", project_implementation) or {}
+        if not isinstance(implementation, dict):
+            raise ValueError("implementation_contract must be an object")
+        row = {
+            "code_unit_id": unit.get("code_unit_id", ""),
+            "codegen_route": unit.get("codegen_route", ""),
+            "component_kind": unit.get("component_kind", ""),
+            "covered_waterlines": unit.get("covered_waterlines", []),
+            "depends_on": unit.get("depends_on", []),
+            "ready_for_codegen": readiness.get("ready_for_codegen") is True,
+            "blockers": readiness.get("blockers", []),
+        }
+        if implementation.get("mode") in {"preserve_existing", "native_python"}:
+            row["implementation_mode"] = implementation["mode"]
+            row["commands"] = {}
+            row["next_action"] = ("Implement in the selected native layout and test its entrypoint offline."
+                                  if row["ready_for_codegen"] else "Resolve the listed blockers for this native unit.")
+        else:
+            row["commands"] = command_for(unit, facts_path, output_root)
+        rows.append(row)
     payload = {
         "status": "confirmed",
         "confirmed_count": plan.get("confirmed_count"),

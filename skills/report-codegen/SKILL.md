@@ -31,7 +31,7 @@ Do not require separate HLD, LLD, manifest, traceability, or persistent codegen-
 - Treat source/target mappings, field order, KPI formulas, filters, joins, grouping, null behavior, and write strategy as requirement facts, not opportunities for invention.
 - Keep `gateway/`, `hbase/`, and `fs/` as fixed platform packages; report logic belongs in `data_utils/` and `params_configs/`.
 - Do not connect to production systems during generation or local verification.
-- Preserve in-scope existing connection values when editing their file. New files, examples, logs, and docs use placeholders unless the user explicitly supplies values for insertion.
+- Preserve the existing Gateway credential provider, environment selector and per-operator config in private deployment ZIPs. Compare the actual ZIP with its unit source using the command in `references/implementation-compatibility.md`. Use placeholders in new examples and documentation and redact credential values from logs.
 
 ## Implementation Compatibility
 

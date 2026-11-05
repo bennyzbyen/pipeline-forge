@@ -53,9 +53,9 @@ def find_method(class_node: ast.ClassDef, name: str) -> ast.FunctionDef | ast.As
     )
 
 
-def verify(project_dir: Path) -> dict:
+def verify(project_dir: Path, reference_root=None, preserved_configs=()) -> dict:
     from verify_generated_safety import verify as verify_safety
-    safety = verify_safety(project_dir)
+    safety = verify_safety(project_dir, reference_root, preserved_configs)
     errors: list[str] = [f"{item['path']}:{item['line']}: {item['rule']}" for item in safety["findings"]]
     parsed: dict[Path, tuple[str, ast.Module]] = {}
     logger_calls = 0
@@ -126,13 +126,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", type=Path, required=True)
     parser.add_argument("--json-out", type=Path)
+    from verify_generated_safety import add_reference_options
+    add_reference_options(parser)
     args = parser.parse_args()
 
     project_dir = args.project_dir.expanduser().resolve()
     if not project_dir.is_dir():
         parser.error(f"project directory does not exist: {project_dir}")
 
-    result = verify(project_dir)
+    result = verify(project_dir, args.reference_root, args.preserve_config)
     payload = json.dumps(result, ensure_ascii=False, indent=2)
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)

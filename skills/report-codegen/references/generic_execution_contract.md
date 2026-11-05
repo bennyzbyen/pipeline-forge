@@ -63,7 +63,7 @@ Supported kinds:
 - `mssql` and `mysql`: use injected data or the explicit callable runtime adapter `mssql_reader` / `mysql_reader`.
 - `injected`: requires `params.source_data[source_name]`; intended for verified fixtures or host-managed adapters.
 
-Every source requires an exact `columns` list. Non-injected sources also require `location`.
+Every source declares its requested `columns`. For HBase, the reader accepts extra or empty export columns and projects the requested qualifiers that are present. On nonempty input, downstream operations and declared constraints enforce the fields they consume. Non-injected sources also require `location`.
 
 ### Declared Value And Grain Constraints
 

@@ -388,6 +388,15 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
         assert module.calc_single(gate_params)['branch'] == 'with'
         with_result = module.calc_single({"source_informations": {"mysql_table": with_table}})
         without_result = module.calc_single({"source_informations": {"mysql_table": without_table}})
+        alternate = module.calc_single({
+            "source_informations": {"mysql_table": with_table, "period_column": "batch", "code_column": "fixture_key"},
+            "hbase_informations": {"hbase_table": "fixture.alternate", "rowkey_rule_columns": ["batch", "fixture_key"]},
+            "clickhouse_information": {"clickhouse_table": "fixture.alternate"},
+        })["params"]
+        assert alternate["source_informations"]["period_column"] == "batch"
+        assert alternate["source_informations"]["code_column"] == "fixture_key"
+        assert alternate["hbase_informations"] == {"hbase_table": "fixture.alternate", "rowkey_rule_columns": ["batch", "fixture_key"]}
+        assert alternate["clickhouse_information"]["clickhouse_table"] == "fixture.alternate"
 
     assert with_result["branch"] == "with", with_result
     assert without_result["branch"] == "without", without_result
@@ -404,30 +413,53 @@ def test_plugin_main_defaults(project_dir: Path) -> Dict[str, Any]:
 
 
 def test_hbase_final_request(project_dir: Path) -> Dict[str, Any]:
+    import tempfile
+    import pandas as pd
+    from unittest.mock import patch
+
     requests: List[Dict[str, Any]] = []
+    scanned = pd.DataFrame(columns=["rowkey"])
+    deleted = []
 
     class FakeHBaseClient:
         def query_df(self, **kwargs):
             requests.append(dict(kwargs))
-            import pandas as pd
+            return scanned
 
-            return pd.DataFrame(columns=["rowkey"])
+        def delete_df(self, df, hbase_table_name):
+            assert list(df.columns) == ["rowkey"]
+            deleted.extend(df["rowkey"])
 
-    common = types.ModuleType("plugin_common")
+    gateway = types.ModuleType("gateway.client")
+    class FakeGateway:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    class ClientWrapper:
-        def __init__(self, client_type: str):
-            assert client_type == "gateway"
-            self.fs_client = object()
-            self.hbase_client = FakeHBaseClient()
+        def getHbaseClient(self, fs_root_dir):
+            return FakeHBaseClient()
 
-    common.ClientWrapper = ClientWrapper
+    gateway.GateWayClient = FakeGateway
     module_path = project_dir / "cot_sync_with_period" / "hbase_operation.py"
-    with isolated_imports(project_dir, {"plugin_common": common}):
+    with isolated_imports(project_dir, {}), patch.dict(sys.modules, {"gateway.client": gateway}):
         module = import_from_path("cot_sync_with_period.hbase_operation", module_path)
         result = module.delete_hbase("l2_fixture.table", ["period", "code"], "2026P03", [])
-    assert result == 0, result
-    assert len(requests) == 1, requests
+        assert result == 0 and len(requests) == 1
+        with tempfile.TemporaryDirectory() as tmp:
+            incoming = Path(tmp) / "incoming.csv.gz"
+            pd.Series(["001", "NA"]).to_csv(incoming, index=False, header=False, compression="gzip")
+            scanned = pd.DataFrame({"unused": [None] * 4, "\ufeffRowKey": ["001", "NA", "009", None], "": [""] * 4})
+            assert module.delete_hbase("l2_fixture.table", ["period", "code"], "2026P03", [incoming]) == 1
+            assert deleted == ["009"]
+            scanned = pd.DataFrame({"rowkey": [None], "extra": ["nonblank record"]})
+            try:
+                module.delete_hbase("l2_fixture.table", ["period", "code"], "2026P03", [incoming])
+            except ValueError as error:
+                assert "RowKey" in str(error)
+            else:
+                raise AssertionError("a record without a usable key must not reach delete_df")
+            assert deleted == ["009"]
+        without = import_from_path("cot_sync_without_period.hbase_operation", project_dir / "cot_sync_without_period/hbase_operation.py")
+        assert isinstance(without.HBaseOperation().hbase_client, FakeHBaseClient)
     final_request = requests[0]
     assert final_request["row_start"] == "2026P03", final_request
     assert final_request["row_stop"] == "2026P03Z", final_request

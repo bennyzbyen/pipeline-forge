@@ -19,6 +19,7 @@ Extract requirement evidence into a technical-design handoff. For a document-onl
 ## Contract
 
 - Preserve original Chinese business terms, field names, table names, formulas, and source-document provenance.
+- For a refactor or annual derivative, trace the selected source entrypoint. In the existing handoff record which values come from parameters, which columns are discovered at runtime, which keys each operation consumes, and where each unit resolves its Gateway credentials. Record paths and provider names only. Keep sample fields as a baseline when the source passes through whole rows.
 - Treat Markdown pipe tables, embedded Excel workbooks, and Word正文 tables as primary evidence. Do not reduce them to attachment or CSV filename lists.
 - Prefer waterline/DataEngine evidence for physical tables, fields, storage, and schedules; use PRD evidence for goals, KPI rules, abnormal rules, and UI aggregation. Record material conflicts in `questions.md`.
 - Keep uncertain mappings, rowkeys, formulas, credentials, and production paths unresolved rather than inventing them.

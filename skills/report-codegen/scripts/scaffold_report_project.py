@@ -93,6 +93,8 @@ def copy_minimal_project(target: Path) -> None:
         if relative.name.endswith(".template"):
             relative = relative.with_name(relative.name[: -len(".template")])
         destination = target / relative
+        if relative.as_posix() == "params_configs/db_config.py" and destination.exists():
+            continue  # Keep the existing file intact until the validated update.
         if relative.parts and relative.parts[0] in FIXED_PLATFORM_PACKAGE_DIRS and destination.exists():
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -448,7 +450,7 @@ hbase_rowkey_rules = {rules_literal}
     (target / "params_configs" / "rowkey_config.py").write_text(content, encoding="utf-8")
 
 
-def write_db_config(target: Path, plan: Dict[str, Any]) -> None:
+def render_db_config(plan: Dict[str, Any]) -> str:
     database = "<CLICKHOUSE_DB>"
     for item in plan.get("physical_targets", []):
         if item.get("database"):
@@ -481,7 +483,7 @@ cluster = "" if env in {{"uat", "qa"}} else "ON CLUSTER <CLUSTER_NAME>"
 mssql_url = "<MSSQL_SQLALCHEMY_URL>"
 mssql_token = "<MSSQL_TOKEN>"
 '''
-    (target / "params_configs" / "db_config.py").write_text(content, encoding="utf-8")
+    return content
 
 
 def write_data_process(target: Path, plan: Dict[str, Any]) -> None:
@@ -750,6 +752,13 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
         if not isinstance(entry, dict) or entry.get("profile") not in {"cot", "q3", "direct"} or entry.get("confirmed") is not True or not entry.get("evidence"):
             raise ValueError("entry_contract requires profile, confirmed=true and evidence")
         profile = entry["profile"]
+    db_config = target / "params_configs" / "db_config.py"
+    config_text = render_db_config(plan)
+    if db_config.exists():
+        prior_plan = target / "report_codegen_plan.json"
+        managed = render_db_config(load_json(prior_plan)) if prior_plan.is_file() else config_text
+        if db_config.read_text(encoding="utf-8-sig") != managed:
+            raise ValueError("Existing params_configs/db_config.py is project-owned; adapt it in place or scaffold into a fresh directory.")
     clean_target(target)
     if safe_scaffold:
         write_safe_scaffold_marker(target)
@@ -758,7 +767,7 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
     write_col_config(target, plan)
     write_execution_contract_config(target, plan)
     write_rowkey_config(target, plan)
-    write_db_config(target, plan)
+    db_config.write_text(config_text, encoding="utf-8")
     write_data_source(target, plan)
     write_data_process(target, plan)
     write_data_storage(target, plan)

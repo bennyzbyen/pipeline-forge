@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
@@ -312,6 +313,24 @@ def run_case(component_kind: str, temp_root: Path) -> Dict[str, Any]:
             "clickhouse_insert_file": fake_insert_file,
         }
         source_data, time_range = DataSource(params).run()
+        if component_kind == "standard_report":
+            contract = importlib.import_module("params_configs.execution_contract").execution_contract
+            stores = contract["sources"]["stores"]
+            gateway = Mock()
+            gateway.query_df.return_value = params["source_data"]["stores"].assign(extra=None)
+            hbase_params = dict(params, hbase_client=gateway, source_data={"orders": params["source_data"]["orders"]})
+            with patch.dict(stores, kind="hbase", location="fixture.stores", columns=[*stores["columns"], "unused"]):
+                source_data, time_range = DataSource(hbase_params).run()
+                assert list(source_data["stores"]) == ["store_code", "region"]
+                assert "unused" in gateway.query_df.call_args.kwargs["columns"]
+                gateway.query_df.return_value = gateway.query_df.return_value.drop(columns=["store_code"])
+                missing_key, _ = DataSource(hbase_params).run()
+                try:
+                    DataProcess(missing_key, time_range, hbase_params).run()
+                except (KeyError, ValueError) as error:
+                    assert "store_code" in str(error)
+                else:
+                    raise AssertionError("a missing join key must fail before writing")
         outputs = DataProcess(source_data, time_range, params).run()
         result = outputs["region_sales"]
         assert list(result.columns) == ["region", "period", "revenue", "store_count", "avg_revenue"], result

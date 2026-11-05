@@ -84,6 +84,12 @@ class DataSource:
         columns = list(config.get("columns") or [])
         if df is None:
             return pd.DataFrame(columns=columns)
+        if config.get("kind") == "hbase":
+            if len(df) == 0:
+                return pd.DataFrame(columns=columns)
+            # Gateway may omit sparse qualifiers or append empty columns. Downstream
+            # steps and explicit constraints validate the fields they actually use.
+            return df.loc[:, [column for column in columns if column in df.columns]].copy()
         missing = [column for column in columns if column not in df.columns]
         if missing:
             raise ValueError(f"source {source_name} missing configured columns: {missing}")

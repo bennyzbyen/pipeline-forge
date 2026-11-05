@@ -8,6 +8,7 @@ import csv
 import json
 import pprint
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -371,6 +372,8 @@ def copy_template_tree(template_root: Path, output_dir: Path, force: bool) -> No
             continue
         target_name = relative.name.removesuffix(".template")
         target = output_dir / relative.parent / target_name
+        if target == output_dir / "cot_config" / "plugin_config.py" and target.exists():
+            continue  # Keep the existing file intact until the validated update.
         if relative.parts and relative.parts[0] in FIXED_PLATFORM_PACKAGE_DIRS and target.exists():
             continue
         if target.exists() and not force:
@@ -582,9 +585,11 @@ def write_manifest(
     questions: List[str],
     codegen_contract: Dict[str, Any],
     safe_scaffold: bool = False,
+    project_name: str = "",
 ) -> None:
     manifest = {
         "manifest_version": 2,
+        "project_name": project_name,
         "summary": {
             "table_count": len(configs),
             "with_period_count": len([item for item in configs.values() if item["sync_mode"] == "with_period"]),
@@ -659,6 +664,14 @@ def scaffold_project(args: argparse.Namespace) -> None:
 
     facts = load_json(args.structured_facts)
     unit = select_code_unit(facts, getattr(args, "code_unit_id", ""), "data-sync-codegen")
+    implementation = (unit or {}).get("implementation_contract", facts.get("implementation_contract"))
+    if implementation is not None or facts.get("codegen_contract", {}).get("implementation_contract") is not None:
+        # Both generators must honor the same native/reference vs bundled decision.
+        report_scripts = skill_dir.parent / "report-codegen" / "scripts"
+        if str(report_scripts) not in sys.path:
+            sys.path.append(str(report_scripts))
+        from implementation_contract import require_bundled_layout
+        require_bundled_layout({"implementation_contract": implementation, "codegen_contract": facts.get("codegen_contract", {})})
     if unit:
         facts = facts_for_code_unit(facts, unit)
     codegen_contract = facts.get("codegen_contract", {})
@@ -690,15 +703,25 @@ def scaffold_project(args: argparse.Namespace) -> None:
         if not isinstance(entry, dict) or entry.get("profile") not in {"cot", "q3", "direct"} or entry.get("confirmed") is not True or not entry.get("evidence"):
             raise ValueError("entry_contract requires profile, confirmed=true and evidence")
         profile = entry["profile"]
+    config_path = args.output_dir / "cot_config" / "plugin_config.py"
+    config_text = render_plugin_config(configs, args.project_name, codegen_contract.get("runtime_contract", {}))
+    if config_path.exists():
+        if not args.force:
+            raise FileExistsError(f"{config_path} already exists. Use a fresh directory for a new scaffold.")
+        # Rebuild an untouched scaffold, but never overwrite a site's connection provider.
+        prior_manifest = args.output_dir / "cot_sync_manifest.json"
+        managed = config_text
+        if prior_manifest.is_file():
+            prior = load_json(prior_manifest)
+            old_configs = {item["mysql_table"]: item for item in prior["tables"]}
+            managed = render_plugin_config(old_configs, prior.get("project_name", args.project_name), prior.get("runtime_contract", {}))
+        if config_path.read_text(encoding="utf-8-sig") != managed:
+            raise ValueError("Existing cot_config/plugin_config.py is project-owned; adapt it in place or scaffold into a fresh directory.")
     copy_template_tree(template_root, args.output_dir, args.force)
     (args.output_dir / "entry_contract.py").write_text(f"ENTRY_PROFILE = {profile!r}\n", encoding="utf-8")
     if safe_scaffold:
         write_safe_scaffold_marker(args.output_dir)
-    config_path = args.output_dir / "cot_config" / "plugin_config.py"
-    config_path.write_text(
-        render_plugin_config(configs, args.project_name, codegen_contract.get("runtime_contract", {})),
-        encoding="utf-8",
-    )
+    config_path.write_text(config_text, encoding="utf-8")
     rowkey_config_path = args.output_dir / "cot_config" / "rowkey_config.py"
     rowkey_config_path.write_text(render_rowkey_config(configs), encoding="utf-8")
     write_manifest(
@@ -707,6 +730,7 @@ def scaffold_project(args: argparse.Namespace) -> None:
         questions,
         facts.get("codegen_contract", {}),
         safe_scaffold=safe_scaffold,
+        project_name=args.project_name,
     )
     write_code_unit_artifacts(args.output_dir, unit)
 

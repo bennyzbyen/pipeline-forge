@@ -18,7 +18,7 @@ Copy or adapt only files required for the requested report components:
 - target DDL or schemas needed for ordered-column validation;
 - concise implementation metadata needed to reproduce verification.
 
-Exclude `.git`, credentials, environment secrets, production data, local logs, caches, temporary outputs, and unrelated documentation. New or normalized configuration values remain placeholders.
+For a shareable comparison candidate, exclude `.git`, credentials, environment secrets, production data, local logs, caches, temporary outputs, and unrelated documentation. For an authorized private deployment ZIP, use the operator's own configuration and the package checks in `implementation-compatibility.md`.
 
 Use `scripts/scaffold_reference_report_project.py` when the reference has a bounded source directory and explicit supporting files:
 
@@ -32,7 +32,7 @@ python scripts/scaffold_reference_report_project.py \
 
 Run the same selection with `--scan-only` before copying when the reference may contain local configuration. The script refuses a non-empty target, excludes caches, structurally scans Python and JSON credential assignments, blocks non-placeholder values before copying, and writes `REFERENCE_PROVENANCE.json` with relative paths and hashes.
 
-If the credential scan blocks, do not bypass it or copy the raw values into the candidate. Use a separate, auditable candidate-only transformation that replaces runtime values with environment lookups and test-only values with explicit fake fixtures, then rescan the sanitized candidate. Never modify the supplied reference merely to make the scan pass.
+If the shareable-candidate scan blocks, keep the original provider interface and use placeholders or an injected fake fixture in the separate example. Never convert the source or a deployment candidate to environment lookups to clear a scan. Package the deployable operator from its authorized private source.
 
 ## Evidence And Changes
 

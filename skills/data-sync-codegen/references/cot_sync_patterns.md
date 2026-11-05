@@ -54,7 +54,7 @@ Read `platform_client_usage.md` before generating or modifying code that uses `g
 
 ## Bundled Scaffold
 
-When a target directory is empty or no local production sample exists, use `assets/minimal_sync_project/` as the scaffold source. The scaffold is self-contained for normal code generation and includes entry points, timestamp handling, MySQL export, with-period/without-period HBase writers, and ClickHouse writers. It must still be adapted to the dev document:
+For a new bundled implementation, use `assets/minimal_sync_project/` as the scaffold source. An empty destination for an annual derivative still follows the selected predecessor. The bundled scaffold includes entry points, timestamp handling, MySQL export, with-period/without-period HBase writers, and ClickHouse writers. Adapt it to the dev document:
 
 - replace placeholder table lists and field lists
 - decide whether with-period, without-period, or both modules are needed
@@ -62,7 +62,7 @@ When a target directory is empty or no local production sample exists, use `asse
 - preserve existing `gateway/`, `hbase/`, and `fs/` package files; if absent, only create minimal placeholders needed for import compatibility
 - add TODO comments only for genuinely unconfirmed business facts
 
-For COT yearly sync work, prefer running `scripts/scaffold_cot_sync_project.py` instead of hand-copying templates. The script consumes `structured_facts.json`, optionally enriches fields from an extracted embedded-CSV directory, and writes a generated project plus `cot_sync_manifest.json`, `params.example.json`, `questions.md`, `verification.md`, and `cot_config/rowkey_config.py`.
+For new bundled COT work, use `scripts/scaffold_cot_sync_project.py`. The script consumes `structured_facts.json`, optionally enriches fields from an extracted embedded-CSV directory, and writes a generated project plus `cot_sync_manifest.json`, `params.example.json`, `questions.md`, `verification.md`, and `cot_config/rowkey_config.py`.
 
 After scaffolding, run `scripts/verify_cot_runtime_semantics.py --project-dir <generated-project>`. This verifier uses fake modules and must not connect to MySQL, HBase, ClickHouse, FS, or Gateway. It checks:
 
