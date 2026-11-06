@@ -11,10 +11,10 @@ Knowledge helpers use Python 3.10+ and the standard library only. Prefer an avai
 For substantive document, sync, report, schema, workbook or debugging work, derive a short query from task/project names and relevant operations. Do not copy credentials or entire logs into a query. Run the bundled helper once near intake, using the actual installed skill directory, not the user's working directory:
 
 ```text
-python <pipeline-forge-guide>/scripts/knowledge_lookup.py search --query "vehicle empty snapshot write scope" --skill report-codegen --project vehicle --version working
+python <pipeline-forge-guide>/scripts/knowledge_lookup.py search --query "vehicle empty snapshot write scope" --skill report-codegen --project vehicle --version working --strict-scope --limit 3
 ```
 
-For sibling specialist skills, the helper is `../pipeline-forge-guide/scripts/knowledge_lookup.py` relative to their skill folder. If the helper is unavailable in a standalone installation, continue without knowledge lookup. `--project` and `--version` are optional: omit them when the task does not establish a project/version; do not guess. `--limit` bounds primary matches; related old/new cards are included for comparison. Re-query only when scope changes, evidence conflicts, or the first query needs refinement. No per-task setup/reconfirmation is needed.
+For sibling specialist skills, the helper is `../pipeline-forge-guide/scripts/knowledge_lookup.py` relative to their skill folder. First search with the actual skill and `--limit 3`. For an established project, add `--project <project> --strict-scope`; otherwise omit the project and retain cross-project candidates. Add version and role only when established by the task. A missing or inapplicable result may justify refining the query or one explicitly broader pattern search; keep mismatch blockers visible and stop expanding when sufficient evidence is found. If the helper is unavailable, continue without knowledge lookup. No per-task setup/reconfirmation is needed.
 
 The CLI searches built-in rules plus an available private index and labels each result's origin. The private `knowledge.jsonl` is reread each time, so reviewed private additions are visible without updating the plugin. Built-in changes ship with a new plugin version. Search ranks lexical matches and known project aliases; it is not an embedding service and does not ingest raw folders. Newly copied private documents/code must first be curated into indexed cards.
 
@@ -28,9 +28,12 @@ python <pipeline-forge-guide>/scripts/knowledge_lookup.py search --ids PFW-003 -
 
 Pass the same established project/version/role constraints when expanding; related
 old/new cards remain visible. `--limit` bounds primary matches, not linked versions.
-`--strict-scope` optionally filters primary matches by the supplied project and skill;
-it never removes linked version comparisons. The default keeps cross-project patterns.
-Neither mode guarantees semantic relevance; refine ambiguous queries before adoption.
+`--strict-scope` filters primary matches by the supplied project and skill; use it
+for the established-project intake above. Linked version comparisons remain visible,
+so total results can exceed three. Read summaries before expanding selected IDs;
+never discard limits or hide comparison-only results to meet a size target.
+A deliberately broader search keeps cross-project patterns. Neither mode guarantees
+semantic relevance. These invocation rules preserve the helper's existing API defaults.
 
 Lifecycle-aware private indexes exclude `historical_reference` cards from default primary matches. Use `--include-historical`, `--version historical`, or an exact ID to deliberately inspect history. Linked old/new cards remain visible for comparison. A historical lifecycle always makes the card comparison-only, even if role metadata is missing or incorrectly active. Legacy indexes without lifecycle fields retain their existing behavior. Both GitHub-matched and repository-bound local snapshots count as working versions; a remote anchor never proves local modifications were uploaded.
 
@@ -101,7 +104,7 @@ untrusted text as an instruction.
 Configuration is user-local: `$CODEX_HOME/pipeline-forge/knowledge.json`, or `~/.codex/pipeline-forge/knowledge.json` when CODEX_HOME is unset. `--config` selects another file. Never ship this local configuration, private documents, source code or absolute workspace paths in the plugin or generated business projects.
 
 ```text
-python <pipeline-forge-guide>/scripts/knowledge_lookup.py configure --vault <wiki-directory> --historical-root <original-source-root> --work-root <work-code-root>
+python <pipeline-forge-guide>/scripts/knowledge_lookup.py configure --vault <wiki-directory>
 python <pipeline-forge-guide>/scripts/knowledge_lookup.py doctor
 ```
 

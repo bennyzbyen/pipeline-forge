@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.9.6 - 2026-11-06
+
+- Prefer three scoped knowledge matches for established projects and expand selected evidence on demand.
+
 ## 2.9.5 - 2026-11-06
 
 - Keep pipeline documents on the requested revision, align report outputs with their pipelines and use the confirmed platform name.
