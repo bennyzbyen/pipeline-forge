@@ -4,6 +4,7 @@
 
 - Keep pipeline documents on the requested revision, align report outputs with their pipelines and use the confirmed platform name.
 - Check Diagram Design routes before export, trim unused HTML effects and speed up long outlines and figure viewing.
+- Restore the report scaffold's configuration writer and preserve project-owned database settings on regeneration.
 
 ## 2.9.4 - 2026-11-06
 

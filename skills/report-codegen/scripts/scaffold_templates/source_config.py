@@ -1,4 +1,6 @@
-"""Specialized source field, range, and rename metadata."""
+"""Source mappings and database configuration for report scaffolds."""
+
+from typing import Any, Dict
 
 VEHICLE_HBASE_FIELD_OVERRIDES = {
     "l0_mdp.mars_calendar": ["dataid", "m_year", "m_period"],
@@ -283,3 +285,38 @@ SUPERVISOR_MSSQL_RENAME_MAP = {
 }
 
 FIXED_PLATFORM_PACKAGE_DIRS = {"gateway", "hbase", "fs"}
+
+
+def render_db_config(plan: Dict[str, Any]) -> str:
+    database = "<CLICKHOUSE_DB>"
+    for item in plan.get("physical_targets", []):
+        if item.get("database"):
+            database = item["database"]
+            break
+    return f'''# coding: utf-8
+import os
+
+env = os.environ.get("running_env") or "uat"
+
+app_key = "<APP_KEY>"
+app_secret = "<APP_SECRET>"
+fs_root_dir = "/datahub/project_storage/<PROJECT_NAME>"
+fs_save_report_dir = "/datahub/project_storage/<PROJECT_NAME>/supervisor_portal"
+fs_save_source_dir = "/datahub/project_storage/<PROJECT_NAME>/cmt_sellout"
+pipeline_base_url = "<DATAHUB_PIPELINE_BASE_URL>"
+pipeline_user_name = "<PIPELINE_USERNAME>"
+pipeline_api_key = "<PIPELINE_API_KEY>"
+pipeline_process_uids = []
+
+clickhouse_connect_params = {{
+    "CLICKHOUSE_HOST": "<CLICKHOUSE_HOST>",
+    "CLICKHOUSE_PORT": "8123",
+    "CLICKHOUSE_USER": "<CLICKHOUSE_USER>",
+    "CLICKHOUSE_PASSWORD": "<CLICKHOUSE_PASSWORD>",
+    "CLICKHOUSE_DB": "{database}",
+}}
+cluster = "" if env in {{"uat", "qa"}} else "ON CLUSTER <CLUSTER_NAME>"
+
+mssql_url = "<MSSQL_SQLALCHEMY_URL>"
+mssql_token = "<MSSQL_TOKEN>"
+'''

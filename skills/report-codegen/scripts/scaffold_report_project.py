@@ -39,6 +39,7 @@ from scaffold_templates.source_config import (
     VEHICLE_HBASE_FIELD_OVERRIDES,
     VEHICLE_HBASE_RANGE_OVERRIDES,
     VEHICLE_RENAME_MAP,
+    render_db_config,
 )
 from scaffold_templates.supervisor import (
     write_supervisor_portal_data_process,
@@ -450,40 +451,20 @@ hbase_rowkey_rules = {rules_literal}
     (target / "params_configs" / "rowkey_config.py").write_text(content, encoding="utf-8")
 
 
-def render_db_config(plan: Dict[str, Any]) -> str:
-    database = "<CLICKHOUSE_DB>"
-    for item in plan.get("physical_targets", []):
-        if item.get("database"):
-            database = item["database"]
-            break
-    content = f'''# coding: utf-8
-import os
+def prepare_db_config(target: Path, plan: Dict[str, Any]) -> tuple[Path, str]:
+    db_config = target / "params_configs" / "db_config.py"
+    config_text = render_db_config(plan)
+    if db_config.exists():
+        prior_plan = target / "report_codegen_plan.json"
+        managed = render_db_config(load_json(prior_plan)) if prior_plan.is_file() else config_text
+        if db_config.read_text(encoding="utf-8-sig") != managed:
+            raise ValueError("Existing params_configs/db_config.py is project-owned; adapt it in place or scaffold into a fresh directory.")
+    return db_config, config_text
 
-env = os.environ.get("running_env") or "uat"
 
-app_key = "<APP_KEY>"
-app_secret = "<APP_SECRET>"
-fs_root_dir = "/datahub/project_storage/<PROJECT_NAME>"
-fs_save_report_dir = "/datahub/project_storage/<PROJECT_NAME>/supervisor_portal"
-fs_save_source_dir = "/datahub/project_storage/<PROJECT_NAME>/cmt_sellout"
-pipeline_base_url = "<DATAHUB_PIPELINE_BASE_URL>"
-pipeline_user_name = "<PIPELINE_USERNAME>"
-pipeline_api_key = "<PIPELINE_API_KEY>"
-pipeline_process_uids = []
-
-clickhouse_connect_params = {{
-    "CLICKHOUSE_HOST": "<CLICKHOUSE_HOST>",
-    "CLICKHOUSE_PORT": "8123",
-    "CLICKHOUSE_USER": "<CLICKHOUSE_USER>",
-    "CLICKHOUSE_PASSWORD": "<CLICKHOUSE_PASSWORD>",
-    "CLICKHOUSE_DB": "{database}",
-}}
-cluster = "" if env in {{"uat", "qa"}} else "ON CLUSTER <CLUSTER_NAME>"
-
-mssql_url = "<MSSQL_SQLALCHEMY_URL>"
-mssql_token = "<MSSQL_TOKEN>"
-'''
-    return content
+def write_db_config(target: Path, plan: Dict[str, Any]) -> None:
+    db_config, config_text = prepare_db_config(target, plan)
+    db_config.write_text(config_text, encoding="utf-8")
 
 
 def write_data_process(target: Path, plan: Dict[str, Any]) -> None:
@@ -752,13 +733,7 @@ def scaffold(plan_path: Path, target: Path, allow_blocked_scaffold: bool = False
         if not isinstance(entry, dict) or entry.get("profile") not in {"cot", "q3", "direct"} or entry.get("confirmed") is not True or not entry.get("evidence"):
             raise ValueError("entry_contract requires profile, confirmed=true and evidence")
         profile = entry["profile"]
-    db_config = target / "params_configs" / "db_config.py"
-    config_text = render_db_config(plan)
-    if db_config.exists():
-        prior_plan = target / "report_codegen_plan.json"
-        managed = render_db_config(load_json(prior_plan)) if prior_plan.is_file() else config_text
-        if db_config.read_text(encoding="utf-8-sig") != managed:
-            raise ValueError("Existing params_configs/db_config.py is project-owned; adapt it in place or scaffold into a fresh directory.")
+    db_config, config_text = prepare_db_config(target, plan)
     clean_target(target)
     if safe_scaffold:
         write_safe_scaffold_marker(target)
